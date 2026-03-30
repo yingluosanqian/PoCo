@@ -1,910 +1,729 @@
-# TUI 架构重构方案
+# TUI 架构设计
 
-## 目标
+这份文档描述的是 **PoCo 当前 TUI 的实际架构**。
 
-把当前 TUI 重构成一套更简单、更像产品本身的结构：
+它不讲迁移计划，不讲阶段划分，也不讲“以后可能怎么做”。这里只回答三件事：
 
-- 先绑定一个 bot
-- 然后直接进入工作区
-- 在一个统一的工作区界面里完成配置
-
-重构的核心不是“继续优化菜单”，而是去掉现在这种多层菜单系统。
+- TUI 现在是怎么组织的
+- 为什么这样组织
+- 改 UI 或加功能时应该遵守什么约束
 
 ---
 
-## 非目标
+## 1. 产品模型
 
-这次重构不解决以下问题：
-
-- 不引入通用 UI DSL
-- 不做插件系统
-- 不做任意平台的动态扩展框架
-- 不在本次里重写 relay / provider 层
-- 不把 TUI 做成一套通用表单引擎
-
-这份方案只解决：
-
-- 启动绑定流
-- 工作区配置流
-- 状态与渲染边界
-
----
-
-## 当前问题
-
-现在的 TUI 能工作，但结构已经明显偏重了。
-
-主要问题：
-
-- 一个大的 `PoCoTui` 同时负责了太多事情
-- 登录流、菜单流、配置流、渲染、service glue 都混在一起
-- UI 状态太分散
-  - `_view`
-  - `_login_step`
-  - `_root_selected`
-  - `_config_stack`
-  - `_show_scroll`
-- 产品本质上是“设置型界面”，但当前实现更像老式终端菜单系统
-- `menu -> section -> field -> sub-menu` 的层级太深
-
----
-
-## 新的产品模型
-
-新的 TUI 只保留两个顶层界面：
+当前 TUI 只有两个顶层阶段：
 
 1. `Bind Bot`
 2. `Workspace`
 
+也就是说，PoCo 的 TUI 不是传统的“根菜单 -> 子菜单 -> 配置页”模型，而是：
+
+- 先绑定一个 bot
+- 然后进入统一的工作区设置界面
+
+这和产品本质更一致。
+
 ### Bind Bot
 
-这是启动后的绑定流程。
+用于：
 
-用户流程：
+- 选择平台
+- 选择已保存 bot
+- 或输入新的 `APP ID / APP Secret`
 
-- 先选平台
-  - `Feishu`
-  - `Slack`
-  - `Discord`
-- 如果平台还没实现
-  - 显示 `Not implemented yet`
-- 如果选择 `Feishu`
-  - 先选一个已保存 bot
-  - 或选择 `New Bot`
-- 如果选择 `New Bot`
-  - 输入 `APP ID`
-  - 输入 `APP Secret`
+当前支持的平台入口有：
 
-绑定完成后：
+- `Feishu`
+- `Slack`
+- `Discord`
 
-- 当前工作区绑定到这个 bot
-- 如有必要，保存凭据
-- 直接进入 `Workspace`
+其中只有 `Feishu` 已实现，其他平台只展示占位提示。
 
 ### Workspace
 
 这是唯一的主工作界面。
 
-右侧不再先显示一个抽象的菜单页，而是直接显示当前 section 的内容。
+工作区内的配置通过 section 切换完成，目前有 4 个 section：
 
-建议保留这 4 个 section：
-
-- `Agent & Model`
+- `Agent`
 - `Bot`
 - `PoCo`
 - `Language`
 
-用户直接在这些 section 之间切换，而不是先进菜单再点进去。
+不再存在单独的“根菜单页”。
 
 ---
 
-## Textual 集成策略
+## 2. 代码结构
 
-这里必须先拍板，否则后面一切设计都会摇摆。
+当前 TUI 的核心文件是：
 
-本方案明确采用：
+- [poco/tui/app.py](/root/project/pocket_go/poco/tui/app.py)
+- [poco/tui/state.py](/root/project/pocket_go/poco/tui/state.py)
+- [poco/tui/sections.py](/root/project/pocket_go/poco/tui/sections.py)
+- [poco/tui/resources.py](/root/project/pocket_go/poco/tui/resources.py)
 
-**Textual 只做渲染壳，不做业务状态源。**
+它们的职责如下。
 
-也就是：
+### `app.py`
 
-- `AppState` 是唯一业务状态源
-- 键盘事件先转成 typed action
-- reducer 产出新 state
-- Textual widget 只读 state，不写业务状态
-- Textual 的 reactive 只用于触发刷新，不保存业务状态
+这是 Textual 外壳，也是当前 TUI 的主控制器。
 
-不要混成两套状态系统：
+负责：
 
-- 一套在 Textual reactive/watch 里
-- 一套在 reducer/state tree 里
-
-否则调试会非常痛苦。
-
-更准确地说：
-
-- Textual
-  - 接收键盘事件
-  - 管理布局和绘制
-  - 管理组件生命周期
-- state/reducer
-  - 负责业务状态
-  - 负责状态迁移
-  - 不直接做渲染副作用
-
----
-
-## 交互模型
-
-### Bind Bot
-
-- `↑ / ↓`：切换选项
-- `Enter`：继续
-- `Esc / q`：返回
-
-### Workspace
-
-- `← / →`：切换 section
-- `↑ / ↓`：在当前 section 的字段中移动
-- `Enter`：激活当前字段
-- `Esc / q`：退出当前编辑态
-- `Ctrl+R`：保存并重启 relay
-
-这样可以直接去掉一整层“根菜单”。
-
----
-
-## Enter 行为表
-
-`Enter` 是这套 TUI 里最复杂的键，所以不能只写成一句“继续”或“打开字段”，必须显式建模。
-
-### Bind Bot
-
-- `Enter` on `platform`
-  - 派发 `SelectPlatform(platform)`
-- `Enter` on `saved_bot`
-  - 派发 `BindExistingBot(app_id)`
-- `Enter` on `new_bot`
-  - 派发 `BeginNewBotBinding`
-- `Enter` on `app_id`
-  - 派发 `SubmitAppId(value)`
-- `Enter` on `app_secret`
-  - 派发 `SubmitAppSecret(value)`
-
-### Workspace
-
-- `Enter` on section title
-  - 无操作
-  - section 切换只用 `← / →`
-- `Enter` on `ReadOnly`
-  - 无操作
-- `Enter` on `SubviewOpen`
-  - 派发 `OpenSubview(section, subview_id)`
-- `Enter` on `ChoiceSelect`
-  - 派发 `OpenChoiceEditor(field_key)`
-- `Enter` on `TextInput`
-  - 派发 `BeginInput(field_key)`
-- `Enter` on `ActionTrigger`
-  - 直接派发该字段绑定的 typed action
-
-### 输入态
-
-- `Enter` on input submitted
-  - 派发 `CommitInput(field_key, value)`
-- `Esc / q`
-  - 派发 `CancelInput`
-
-这张行为表应该先于 reducer 落地，避免 reducer 重新长成新的 if/else 泥潭。
-
----
-
-## 状态模型
-
-所有 TUI 状态都应该收口到一个统一的状态树里，不再散落在 `PoCoTui` 的私有字段里。
-
-关键要求：
-
-- business state 和 transient state 分层
-- 每个状态对象的 lifetime 和 ownership 明确
-- 草稿、已确认值、通知不要混在同一个 dataclass 里
-
-对于当前项目规模，这里**暂时不强制**再拆一层 `DomainState / UiState`。  
-这是后续可能的演化方向，但不是这次重构的前置条件。
-
-```python
-@dataclass
-class AppState:
-    screen: ScreenKind
-    bind_bot: BindBotState
-    workspace: WorkspaceState
-    runtime: RuntimeState
-    notification: Notification | None
-```
-
-```python
-class ScreenKind(Enum):
-    BIND_BOT = "bind_bot"
-    WORKSPACE = "workspace"
-```
-
-```python
-@dataclass
-class BindBotState:
-    step: BindBotStep
-    selected_index: int
-    platform: Platform | None
-    saved_bots: list[BotAccount]
-    draft: BindBotDraft | None
-```
-
-```python
-@dataclass
-class BindBotDraft:
-    app_id: str = ""
-    app_secret: str = ""
-```
-
-```python
-@dataclass
-class WorkspaceState:
-    active_section: WorkspaceSection
-    sections: dict[WorkspaceSection, SectionState]
-    input_state: InputState | None
-```
-
-```python
-@dataclass
-class SectionState:
-    selected_index: int
-    scroll: int
-    subview: SubviewId | None
-```
-
-```python
-@dataclass
-class InputState:
-    field_key: str
-    steps: list[str]
-    current: int = 0
-    buffer: str = ""
-    draft: dict[str, str] = field(default_factory=dict)
-```
-
-```python
-@dataclass
-class Notification:
-    message: str
-    kind: Literal["info", "error"]
-    ttl: int | None = None
-```
-
-这里 `InputState` 不应该只是 `str | None`，`step` 也不应该是一个无约束字符串。
-
-原因是现在已经存在多步骤输入场景，例如：
-
-- `extra_env_key`
-- `extra_env_value`
-
-如果值域是有限的，就不应该再退回字符串 dispatch。
-
-这里建议两种实现里选一种：
-
-- 用 per-flow enum
-- 或者直接用 `steps + current index`
-
-这份方案先采用第二种，因为它更通用：
-
-- `steps=["key", "value"]`
-- `current=0/1`
-
-这样：
-
-- reducer 不需要理解任意自由字符串
-- 多步骤输入的顺序也变成显式数据
-
----
-
-## 关键不变量
-
-这部分是架构里的硬约束，不是建议。
-
-- 任意时刻只能有一个 active screen
-- `screen == WORKSPACE` 时，必须已经存在有效 bot binding
-- `input_state is not None` 时，普通字段导航被冻结
-- `subview is not None` 时，只允许子视图相关动作
-- `selected_index` 必须始终落在当前字段列表合法范围内
-- `workspace.active_section` 必须始终对应一个存在的 section
-- screen 切换只能由顶层 reducer 或 system reducer 触发
-- screen reducer 不得直接修改 `state.screen`
-
-这些约束应该在 reducer 测试里直接验证，而不是靠 UI 手测兜底。
-
----
-
-## Action 设计
-
-这里不建议用字符串 dispatch。
-
-这种写法是错误方向：
-
-```python
-FieldDef(on_enter="restart_relay")
-```
-
-因为它把类型信息降级成了字符串，后面 reducer 里还要再 match 一遍。
-
-建议使用 typed action，也就是 sum type / dataclass action。
-
-```python
-@dataclass
-class RestartRelay:
-    pass
-
-@dataclass
-class CommitInput:
-    field_key: str
-    value: str
-
-@dataclass
-class OpenSubview:
-    section: WorkspaceSection
-    subview_id: SubviewId
-
-AppAction = BindBotAction | WorkspaceAction | SystemAction
-```
-
-并且 action 也不应该全部平铺在一个文件里。  
-更合理的是按 screen 分组：
-
-- `BindBotAction`
-- `WorkspaceAction`
-- `SystemAction`
-
-如果后面并不需要 replay / trace / log，也不必把 action 系统做得特别重。  
-但 action 本身必须保持强类型，不应该退化成字符串名字。
-
----
-
-## Reducer 设计
-
-不能只有一个全局大 reducer。
-
-否则只是把今天的 `if/else` 从 `PoCoTui` 挪到了另一个文件。
-
-应该做成分层 reducer：
-
-```python
-def reduce_app(state: AppState, action: AppAction) -> AppState:
-    state = reduce_system(state, action)
-    match state.screen:
-        case ScreenKind.BIND_BOT:
-            return replace(state, bind_bot=reduce_bind_bot(state.bind_bot, action))
-        case ScreenKind.WORKSPACE:
-            return replace(state, workspace=reduce_workspace(state.workspace, action))
-```
-
-```python
-def reduce_bind_bot(state: BindBotState, action: BindBotAction) -> BindBotState:
-    ...
-```
-
-```python
-def reduce_workspace(state: WorkspaceState, action: WorkspaceAction) -> WorkspaceState:
-    ...
-```
-
-```python
-def reduce_section(
-    state: SectionState,
-    action: SectionAction,
-    fields: list[FieldDef],
-) -> SectionState:
-    ...
-```
-
-原则：
-
-- `SystemAction` 先由 `reduce_system` 处理
-- `reduce_system` 是唯一允许切换 `state.screen` 的地方
-- screen reducer 不处理跨 screen 状态
-- 顶层 reducer 只做路由
-- screen reducer 只处理 screen 自己的状态
-- section reducer 只处理 section 自己的导航和子视图
-
-这里要特别强调一个实现约定：
-
-- `reduce_system` 跑完之后，再读取一次 `state.screen`
-- 顶层 reducer 只能根据**更新后的** `state.screen` 做路由
-- `reduce_bind_bot` 和 `reduce_workspace` 不允许顺手改 `state.screen`
-
-这样每一层都可以单独测试，不会线性膨胀。
-
----
-
-## 副作用模型
-
-reducer 必须保持纯函数。
-
-像这些操作都不是纯状态迁移：
-
-- 保存 bot 凭据
-- 保存配置
-- 读取已保存 bots
-- 校验 `APP ID / APP Secret`
-- 重启 relay
-- 读取 runtime 状态
-
-这些都应该通过 effect 层执行，而不是让 reducer 或 screen 直接调用 service。
-
-建议最小闭环：
-
-```python
-AppAction -> reducer -> (AppState, list[AppEffect])
-AppEffect -> effect runner -> EffectResultAction
-EffectResultAction -> reducer -> AppState
-```
-
-这里不需要一开始就做很重的 effect 框架，但必须保证三件事：
-
-- reducer 不直接做 IO
-- effect 结果会回流成显式 action
-- 失败也必须是显式结果，不允许静默吞掉
-
-例如：
-
-- `SubmitAppSecret` 触发 `ValidateBotCredentialsEffect`
-- 校验成功后回流 `BotCredentialsValidated`
-- 校验失败后回流 `BotCredentialsRejected`
-
----
-
-## 建议的代码结构
-
-```text
-poco/tui/
-  app.py
-  state.py
-  resources.py
-  actions/
-    bind_bot.py
-    workspace.py
-    system.py
-  reducers/
-    app.py
-    bind_bot.py
-    workspace.py
-    section.py
-  screens/
-    bind_bot.py
-    workspace.py
-  sections/
-    agent.py
-    bot.py
-    poco.py
-    language.py
-  widgets/
-    layout.py
-    summary.py
-    footer.py
-```
-
-### 各层职责
-
-#### `app.py`
-
-只负责 Textual 外壳：
-
-- 挂载 widgets
+- 组装左右面板、输入框、footer
 - 接收键盘事件
-- 调 reducer
-- 刷新 UI
+- 根据当前状态决定渲染什么
+- 调用配置服务读写配置
+- 在绑定 bot 后原地切换 service/store
+- 管理 choice editor、input editor、subview 的进入与退出
 
-#### `state.py`
+不负责：
 
-定义所有状态 dataclass。
+- 定义 section 字段 schema
+- 定义状态数据结构
+- 管理旧式多层菜单系统
 
-#### `actions/`
+### `state.py`
 
-定义 typed action，按 screen 分组。
+定义 TUI 运行时状态：
 
-#### `reducers/`
+- 当前 screen
+- bind-bot 流程状态
+- workspace 状态
+- choice editor 状态
+- input editor 状态
+- 各 section 的选中位置、滚动位置、subview
 
-定义分层 reducer，按 screen / section 分组。
+### `sections.py`
 
-#### `screens/`
+定义各 section 的字段模型和显示规则。
 
-顶层 screen 逻辑：
+负责：
 
-- `BindBotScreen`
-- `WorkspaceScreen`
+- 一个 section 应该有哪些字段
+- 每个字段是什么交互类型
+- 哪些字段是只读
+- 哪些字段打开子视图
+- Claude backend 相关的字段如何组织
 
-#### `sections/`
+### `resources.py`
 
-每个 section 一个模块。
+负责静态资源：
 
-每个 section 负责：
-
-- 字段定义
-- 文案
-- 编辑行为
-- 子视图
-
-#### `widgets/`
-
-纯渲染组件：
-
-- 左侧摘要面板
-- 底部栏
-- 通用布局块
-
----
-
-## 依赖规则
-
-目录结构不是重点，依赖方向才是重点。
-
-这里至少要写死这些禁止项：
-
-- renderer 不得 import service
-- reducer 不得触发 IO
-- `state.py` 不得引用 Textual 类型
-- section schema 不得依赖 widget
-- action 定义不得依赖 service 实例
-
-允许的依赖方向应该尽量简单：
-
-```text
-actions -> state
-reducers -> actions, state
-screens -> reducers, actions, state
-widgets -> state
-app -> screens, widgets, reducers, state
-effect runner -> services, state, actions
-```
-
-如果后面出现层间倒灌，就优先修依赖方向，而不是继续增加 helper。
+- logo
+- CSS
+- 中英文字典
 
 ---
 
-## Workspace 左侧摘要面板
+## 3. 当前状态模型
 
-左侧摘要不应该重复 section 菜单本身，否则和直接切换 section 没有区别。
+当前状态以 [poco/tui/state.py](/root/project/pocket_go/poco/tui/state.py) 为中心。
 
-建议左侧固定展示这些内容：
-
-- Logo
-- 当前 bot 显示名
-  - `alias > app_name > app_id`
-- Relay 状态
-  - `RUNNING / STOPPED`
-- 当前 section 名
-- 当前 workspace 绑定状态
-
-它的作用是：
-
-- 给用户稳定上下文
-- 让右侧专心做 section 内容
-
-它不应该承担“再来一套导航系统”的职责。
-
----
-
-## 字段模型
-
-这里不要再用不正交的：
-
-- `input`
-- `choice`
-- `action`
-- `readonly`
-
-因为它混了两个维度：
-
-- 可编辑性
-- 交互类型
-
-更合理的是用一个正交的 `interaction` 模型：
+核心结构可以概括成：
 
 ```python
-@dataclass
-class FieldDef:
-    key: str
-    label: str
-    interaction: FieldInteraction
+AppState
+├── screen
+├── bind_bot
+├── workspace
+└── runtime
 ```
 
-```python
-@dataclass
-class TextInput:
-    secret: bool = False
-    validator: "Validator | None" = None
+### `AppState`
 
-@dataclass
-class ChoiceSelect:
-    choices: list[str]
+顶层状态对象。
 
-@dataclass
-class ActionTrigger:
-    action: AppAction
+当前包含：
 
-@dataclass
-class SubviewOpen:
-    subview_id: SubviewId
+- 当前 screen
+- bind-bot 状态
+- workspace 状态
+- runtime 摘要状态
 
-@dataclass
-class ReadOnly:
-    pass
+### `ScreenKind`
 
-class SubviewId(Enum):
-    SHOW_CONFIG = "show_config"
-    CHOICE_EDITOR = "choice_editor"
+当前只有两个值：
 
-FieldInteraction = (
-    TextInput
-    | ChoiceSelect
-    | ActionTrigger
-    | SubviewOpen
-    | ReadOnly
-)
-```
+- `BIND_BOT`
+- `WORKSPACE`
 
-```python
-Validator = Callable[[str], str | None]
-```
+这是一条硬约束：**顶层 screen 不再扩张。**
 
-约定：
+像：
 
-- 返回 `None`
-  - 表示校验通过
-- 返回错误字符串
-  - 表示校验失败，并把这条字符串显示给用户
+- `show config`
+- Claude backend 管理
+- Bot advanced
 
-这样每种交互类型的参数是内聚的：
+都不属于新的顶层 screen，而是 `Workspace` 内部的子视图。
 
-- `ChoiceSelect`
-  - 只有 choice 相关信息
-- `TextInput`
-  - 只有输入相关信息
-- `ActionTrigger`
-  - 直接带 typed action
-- `SubviewOpen`
-  - 明确表示这不是编辑，而是打开一个子视图
+### `BindBotState`
 
-`ChoiceSelect` 的当前选中值不应存在 `SectionState` 里。  
-它应该始终来自当前的 **committed config snapshot**：
+描述绑定 bot 的流程状态。
 
-- 渲染时：从 config snapshot 读取当前值
-- 打开 choice editor 时：用该值初始化 editor 的选中位置
-- 提交时：再写回 config snapshot
+当前主要包含：
 
-这样可以避免 UI 层额外维护一份“当前值”副本。
+- 当前步骤
+- 当前列表选中项
+- 当前平台
+- 已保存 bot 列表
+- 新 bot 输入草稿
 
----
+### `WorkspaceState`
 
-## Section 设计
+描述工作区内的导航和编辑状态。
 
-### Agent & Model
+当前主要包含：
+
+- 当前激活的 section
+- 每个 section 的 `SectionState`
+- 当前 choice editor 状态
+- 当前 input editor 状态
+
+### `SectionState`
+
+每个 section 一份。
+
+当前包含：
+
+- `selected_index`
+- `scroll`
+- `subview`
+
+这里的 `subview` 是 `Workspace` 内部的右侧替换视图，不是顶层 screen。
+
+### `InputState`
+
+用于底部输入框编辑。
+
+当前不是一个简单字符串，而是一个完整编辑会话，包含：
+
+- 当前字段 key
+- 当前 label
+- placeholder
+- 是否是 secret
+- 当前 buffer/value
+- 多步骤输入时的 `steps`
+- 当前步骤索引
+- draft
+
+这样可以支撑：
+
+- 普通单字段输入
+- `New Claude Backend` 这类多步骤输入
+
+### `ChoiceState`
+
+用于 choice editor。
 
 包含：
 
-- `codex`
-- `claude code`
-- model choices
-- provider / backend choices
-- approval / sandbox 相关字段
+- 当前字段 key
+- 标签
+- 候选项
+- 当前选中项
+
+### `RuntimeState`
+
+用于左侧摘要栏。
+
+当前主要反映：
+
+- relay 是否运行
+- relay 上次错误
+
+---
+
+## 4. section 设计
+
+section schema 定义在 [poco/tui/sections.py](/root/project/pocket_go/poco/tui/sections.py)。
+
+当前共有四个 section。
+
+### Agent
+
+当前分成两组：
+
+- `Codex`
+- `Claude`
+
+#### Codex 组
+
+包含：
+
+- `Bin`
+- `App Server Args`
+- `Model`
+- `Reasoning`
+- `Approval Policy`
+- `Sandbox`
+
+#### Claude 组
+
+包含：
+
+- `Bin`
+- `App Server Args`
+- `Approval Policy`
+- `Sandbox`
+- `Manage Backends`
+- `Backend Settings`
+
+这里特别注意：
+
+- `Manage Backends`
+  - 是入口，用来切换 / 新增 backend
+- `Backend Settings`
+  - 是当前 backend 的配置入口
+
+而像：
+
+- `Base URL`
+- `Auth Token`
+- `Model`
+- `Extra Env`
+
+这些并不直接混在主列表中，而是在 `Backend Settings` 子视图里编辑。
 
 ### Bot
 
-包含：
+当前优先展示核心字段：
 
-- `alias`
-- `app_name`（只读）
-- `app_id`
-- `app_secret`
-- Feishu 相关配置
+- `APP ID`
+- `APP Secret`
+- `App Name`
+- `Alias`
+- `Allow All Users`
+
+如果 `Allow All Users = false`，才显示：
+
+- `Allowed Open IDs`
+
+高级字段放进：
+
+- `Advanced`
+
+当前高级项包括：
+
+- `Encrypt Key`
+- `Verification Token`
+- `Card Template ID`
 
 ### PoCo
 
-包含：
+包含本地运行时相关设置：
 
-- relay / runtime 参数
-- `show config`
-- 本地高级设置
+- `Message Limit`
+- `Initial Update Seconds`
+- `Max Update Seconds`
+- `Max Message Edits`
+- `Show Config`
+- `Restart Relay`
 
-这里的 `show config` 不应该被当作普通可编辑字段，它更像一个特殊子视图。
+其中：
 
-建议明确区分：
-
-- `field`
-  - 普通可编辑项
-- `subview`
-  - 像 `show config` 这种只读滚动视图
-
-也就是说，`show config` 属于 `PoCo` section，但不是一个普通 field 的同类物。
-
-### 子视图渲染策略
-
-这里建议明确采用：
-
-- **不 push 新的顶层 screen**
-- **只在右侧面板内部替换内容**
-
-也就是说：
-
-- 顶层 screen 永远只有：
-  - `Bind Bot`
-  - `Workspace`
-- `show config`
-- choice editor
-- 某些只读详情页
-
-这些都属于 `Workspace` 内部的 `subview`，只替换右侧主体，不改变整个应用级 screen。
-
-这样可以避免重新回到老的“嵌套菜单/嵌套 screen”模型。
+- `Show Config`
+  - 是只读子视图
+- `Restart Relay`
+  - 是动作，不是配置值
 
 ### Language
 
-包含：
+当前只有：
 
-- UI 语言切换
-
----
-
-## 渲染原则
-
-renderer 不应该拥有业务逻辑。
-
-它只负责把：
-
-- `AppState`
-- 当前 config snapshot
-
-转换成：
-
-- 左侧面板文本
-- 右侧主体文本
-- 底部提示文本
-
-这些决策不应该放在 renderer 里：
-
-- `Enter` 按下后发生什么
-- 某个字段能不能编辑
-- 某个跳转是否允许
-
-这些都应该放到 reducer / screen 层里。
+- `Language`
 
 ---
 
-## 错误语义
+## 5. 字段交互模型
 
-失败行为必须统一，不要在不同 section 各搞一套。
+字段并不是简单地靠“类型名字”区分，而是靠交互语义区分。
 
-最少先统一这些规则：
+当前字段模型是：
 
-- bot 绑定失败
-  - 保留当前输入 draft
-  - 显示 error notification
-- 凭据校验失败
-  - 不落盘
-  - 不改变当前 binding
-- relay restart 失败
-  - config 仍视为已提交
-  - runtime 状态改成失败态
-- subview 打开失败
-  - 回到当前 section 主视图
+```python
+FieldDef(
+    key: str,
+    label: str,
+    interaction: FieldInteraction,
+)
+```
 
-这里只定义语义，不要求一开始就做复杂的错误恢复系统。
+`FieldInteraction` 当前有 5 种：
 
----
+- `TextInput`
+- `ChoiceSelect`
+- `ActionTrigger`
+- `SubviewOpen`
+- `ReadOnly`
 
-## 为什么这会更好
+### `TextInput`
 
-相比当前结构，这套设计会：
+表示按 Enter 后进入底部输入框编辑。
 
-- 去掉“根菜单”这个没有产品价值的中间层
-- 降低导航深度
-- 让 bind-bot 流程成为一等公民
-- 把状态集中起来
-- 降低单类复杂度
-- 更容易测试
-- 更适合以后支持 Slack 和 Discord
+支持：
 
----
+- `secret`
+- `validator`
+- `placeholder`
 
-## 迁移顺序
+### `ChoiceSelect`
 
-建议分阶段做，但 Stage 1 和 Stage 2 不应该切得太碎。
+表示按 Enter 后进入 choice editor。
 
-### Stage 1
+用于：
 
-一起做两件事：
+- model
+- language
+- allow_all_users
+- reasoning_effort
 
-- 引入新的 `AppState`
-- 去掉 root menu
+### `ActionTrigger`
 
-结果是：
+表示按 Enter 后立刻触发动作。
 
-- `menu` 消失
-- `workspace.active_section` 成为主导航模型
+用于：
 
-如果把这两件事硬拆开，Stage 1 引入的中间状态反而可能成为负担。
+- `Restart Relay`
+- `Delete Current Backend`
 
-这一阶段完成后，不要立刻继续大拆。  
-应该先实际使用一段时间，验证：
+### `SubviewOpen`
 
-- section 切换是否真的比 root menu 更顺
-- 用户是否能自然理解新的导航方式
-- 左右布局是否真的更清晰
+表示按 Enter 后打开右侧子视图。
 
-确认体验正确后，再继续后面的模块拆分。
+用于：
 
-### Stage 1.5
+- `Show Config`
+- `Manage Backends`
+- `Backend Settings`
+- `Advanced`
 
-在旧代码完全删除之前，保留一个兼容开关。
+### `ReadOnly`
 
-建议做法：
+表示该字段可见但不可编辑。
 
-- 新旧路径同时存在
-- 用一个内部 feature flag 控制：
-  - `legacy_tui`
-  - `new_tui`
-- 验证稳定后，再删旧路径
+用于：
 
-否则会遇到一个典型问题：
+- 分组标题
+- `App Name`
+- 某些摘要字段
 
-- 旧的 `_config_stack / _view` 还在
-- 新的 `AppState` 也在
-- 但谁才是 source of truth 不明确
+当前实现里，**只读字段默认不参与焦点**。
 
-兼容期必须保证：
-
-- 旧路径用旧状态
-- 新路径用新状态
-- 不允许两套状态互相写入
-
-这一阶段不要求复杂的 action trace / 产品监控。  
-但至少要有最小可观测性：
-
-- screen transition log
-- config commit log
-- relay restart result
-
-### Stage 2
-
-把每个 section 拆成独立模块：
-
-- `agent.py`
-- `bot.py`
-- `poco.py`
-- `language.py`
-
-### Stage 3
-
-删除旧的 `menus/config/*` 栈式导航逻辑，并把剩余 screen 完全迁移到：
-
-- `screens/`
-- `reducers/`
-- `sections/`
-
-到这一步，新架构就成为唯一实现。
+这是重要的交互约束：  
+用户不会再落到一个“看起来可操作，实际上不能输入”的字段上。
 
 ---
 
-## 最终建议
+## 6. 子视图模型
 
-不要继续在当前嵌套菜单模型上堆功能。
+当前所有子视图都在 `Workspace` 内部完成，不会创建新的顶层 screen。
 
-更合理的长期结构是：
+也就是说：
+
+- 顶层仍然只有 `Bind Bot` 和 `Workspace`
+- 子视图只是右侧面板内容替换
+
+当前使用的子视图包括：
+
+- `SHOW_CONFIG`
+- `CLAUDE_BACKENDS`
+- `CLAUDE_BACKEND_SETTINGS`
+- `BOT_ADVANCED`
+
+这个约束很重要，因为它保证：
+
+- 顶层模型稳定
+- 导航深度不会再次失控
+- `Esc / q` 的语义始终可控
+
+---
+
+## 7. 左侧面板设计
+
+左侧面板当前已经统一成同一套渲染入口，而不是 `Bind Bot` 和 `Workspace` 各自硬编码一份。
+
+左侧内容由三部分组成：
+
+1. 品牌区
+2. 状态区
+3. 装饰区
+
+对应 helper：
+
+- `_left_panel_brand_lines()`
+- `_left_panel_status_lines(...)`
+- `_left_panel_decor_lines()`
+
+这样做的目的是：
+
+- 避免改左栏 UI 时只改了一半
+- `Bind Bot` 和 `Workspace` 保持一致风格
+- 让装饰和真实状态分离
+
+### 品牌区
+
+当前包含：
+
+- 大 logo
+- 版本号
+
+### 状态区
+
+当前固定显示：
+
+- `Bot`
+- `Section`
+- `Relay`
+- `PoCo`
+
+其中 bot 显示规则是：
+
+- `alias`
+- 否则 `app_name`
+- 否则截断后的 `app_id`
+
+### 装饰区
+
+当前使用一个低对比度字符画：
+
+```text
+/̴/̴_̴p̴o̴c̴o̴_̴/̴/̴
+  ░▒▓ · · ▓▒░
+  [̲̅$̲̅] relay on/off
+```
+
+并且最后一行颜色跟 relay 状态联动。
+
+这块的定位是：
+
+- 填充左栏空白
+- 提供轻量品牌感
+- 但不承担配置信息本身
+
+---
+
+## 8. 右侧面板设计
+
+右侧面板由三层组成：
+
+1. 标题
+2. section tabs
+3. 当前 section 或子视图内容
+
+### section tabs
+
+当前 tab 是平级切换：
+
+- `Agent`
+- `Bot`
+- `PoCo`
+- `Language`
+
+不再经过根菜单中转。
+
+### 分组显示
+
+`Agent` section 当前会显示：
+
+- `CODEX`
+- `CLAUDE`
+
+作为轻量分组标题。
+
+分组标题本身是只读、不可选中的。
+
+### action / subview 的视觉语言
+
+当前区分原则是：
+
+- 普通字段：
+  - `Label: value`
+- action / subview：
+  - `Label →`
+  - 或 `Label: summary →`
+
+例如：
+
+- `Manage Backends: minimax →`
+- `Backend Settings: minimax · MiniMax-M2.7 →`
+
+这样可以把“入口”与“配置值”分开。
+
+---
+
+## 9. 底部输入区与 footer
+
+底部不是一个混合区，而是两块：
+
+1. 输入区
+2. footer
+
+### 输入区
+
+底部输入框只在以下场景启用：
+
+- `Bind Bot` 输入 `APP ID`
+- `Bind Bot` 输入 `APP Secret`
+- `Workspace` 中的 `TextInput`
+
+否则输入框是 disabled 状态。
+
+### footer
+
+footer 当前是上下文感知的，不再是一条静态提示。
+
+例如：
+
+- Bind Bot 平台页
+- Bind Bot 账户页
+- 输入态
+- choice editor
+- subview
+- show config
+- Workspace 顶层可编辑字段
+- Workspace 顶层只读字段
+
+显示的 hint 都不同。
+
+这解决了两个问题：
+
+- `Esc / q to back` 不会在顶层 workspace 误导用户
+- `Enter to open` 不会在只读字段上出现
+
+---
+
+## 10. 键盘模型
+
+### Bind Bot
+
+- `↑ / ↓`
+  - 切换选项
+- `Enter`
+  - 继续
+- `Esc / q`
+  - 返回或退出
+
+### Workspace
+
+- `← / →`
+  - 切换 section
+- `↑ / ↓`
+  - 移动当前字段焦点
+- `Enter`
+  - 打开 / 编辑 / 执行动作
+- `Esc / q`
+  - 关闭输入态、choice editor、subview，或退出 workspace
+- `Ctrl+R`
+  - 重启 relay
+
+---
+
+## 11. 配置与 service 的关系
+
+TUI 自己不直接管理配置文件路径，而是通过 service 访问配置。
+
+当前关键对象链是：
+
+- `ConfigStore`
+- `PoCoService`
+- `PoCoTui`
+
+其中：
+
+- store 负责具体配置落盘
+- service 提供统一接口
+- TUI 只通过 service 读写
+
+当用户在 `Bind Bot` 里：
+
+- 选择已有 bot
+- 或输入新的 `APP ID / APP Secret`
+
+TUI 不会重启整个进程，而是：
+
+1. 绑定当前 workspace 到新 bot
+2. 重新创建对应的 service/store
+3. 原地进入 `Workspace`
+
+所以当前设计已经不是“绑定 bot 后强制重启 PoCo”的模型。
+
+---
+
+## 12. 当前的重要约束
+
+这些约束是当前实现里必须保持的。
+
+### 顶层 screen 约束
+
+顶层永远只有：
 
 - `Bind Bot`
 - `Workspace`
 
-并且配套：
+不要再引入第三个顶层 screen 去解决局部问题。
 
-- 明确 lifetime 的状态树
-- 强类型 action
-- 分层 reducer
-- Textual 仅做渲染壳
-- section 级导航
+### 只读字段约束
 
-这比“终端菜单系统”更符合 PoCo 现在真实的产品形态，也更适合作为长期架构继续演进。
+只读字段默认不参与焦点。
+
+否则用户会遇到：
+
+- 能选中
+- 但按 Enter 没反应
+- 打字也无效
+
+这种假交互。
+
+### section 约束
+
+section 是平级切换，不是菜单钻入。
+
+不要重新引入：
+
+- 根菜单
+- 二级菜单
+- 根菜单里的 section launcher
+
+### 子视图约束
+
+子视图只替换右侧内容，不改变顶层 screen。
+
+### 左栏统一入口约束
+
+左栏 UI 必须通过统一 helper 生成。
+
+不要让：
+
+- `Bind Bot`
+- `Workspace`
+
+各自单独拼左栏，否则很容易改一边忘一边。
+
+---
+
+## 13. 当前设计的取舍
+
+这套 TUI 不是最“理论完美”的架构，但它是当前项目规模下比较合适的折中。
+
+### 它优先解决的事情
+
+- 去掉旧菜单系统
+- 降低导航深度
+- 统一 bot 绑定流
+- 让 section 成为一等概念
+- 让 UI 改动集中在少量入口
+
+### 它没有追求的事情
+
+- 通用 UI DSL
+- 插件式 section 系统
+- 纯 reducer / effect 框架
+- 任意平台动态扩展
+
+所以这份设计的核心不是“抽象最多”，而是：
+
+**把 TUI 变成一套结构清晰、足够稳定、便于继续迭代的工作界面。**
