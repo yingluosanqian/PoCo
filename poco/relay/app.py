@@ -286,7 +286,7 @@ class RelayApp:
             self._config.feishu_app_id,
             self._config.feishu_app_secret,
             event_handler=event_handler,
-            log_level=lark.LogLevel.INFO,
+            log_level=lark.LogLevel.ERROR,
         )
         LOG.info("Relay runtime is running.")
         ws_client.start()

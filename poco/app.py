@@ -27,35 +27,43 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    logging.basicConfig(
-        level=getattr(logging, str(getattr(args, "log_level", "INFO")).upper(), logging.INFO),
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
     workspace = Path.cwd()
     binding = workspace_binding(workspace)
-    paths = build_paths(binding or "default")
-    ensure_dirs(paths)
     root_logger = logging.getLogger()
+    root_logger.setLevel(getattr(logging, str(getattr(args, "log_level", "INFO")).upper(), logging.INFO))
+    for handler in list(root_logger.handlers):
+        if isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler):
+            root_logger.removeHandler(handler)
     ring = RingLogHandler()
     ring.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
     root_logger.addHandler(ring)
-    file_handler = RotatingFileHandler(
-        paths.log_path,
-        maxBytes=2_000_000,
-        backupCount=3,
-        encoding="utf-8",
-        mode="w",
-    )
-    file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
-    root_logger.addHandler(file_handler)
-    logging.getLogger("poco").info(
-        "Persistent log file enabled at %s (instance=%s)",
-        paths.log_path,
-        binding or "default",
-    )
+    file_handler: RotatingFileHandler | None = None
 
-    store = ConfigStore(paths.config_path, paths)
-    service = PoCoService(store, ring, paths)
+    def build_service_for(app_id: str | None) -> PoCoService:
+        nonlocal file_handler
+        paths = build_paths(app_id or "default")
+        ensure_dirs(paths)
+        if file_handler is not None:
+            root_logger.removeHandler(file_handler)
+            file_handler.close()
+        file_handler = RotatingFileHandler(
+            paths.log_path,
+            maxBytes=2_000_000,
+            backupCount=3,
+            encoding="utf-8",
+            mode="w",
+        )
+        file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+        root_logger.addHandler(file_handler)
+        logging.getLogger("poco").info(
+            "Persistent log file enabled at %s (instance=%s)",
+            paths.log_path,
+            app_id or "default",
+        )
+        store = ConfigStore(paths.config_path, paths)
+        return PoCoService(store, ring, paths)
+
+    service = build_service_for(binding)
 
     if args.command == "config" and args.show:
         print(json.dumps(service.masked_config(), ensure_ascii=False, indent=2))
@@ -67,12 +75,8 @@ def main() -> None:
         current = get_nested(service.masked_config(), path)
         print(json.dumps({path: current}, ensure_ascii=False, indent=2))
         return
-    skip_bind_once = os.environ.pop("POCO_SKIP_BIND_ONCE", "") == "1"
-    app = PoCoTui(service, focus_config=args.command == "config", skip_bind_once=skip_bind_once)
+    app = PoCoTui(service, service_factory=build_service_for, focus_config=args.command == "config")
     result = app.run()
-    if result == "restart-bound":
-        os.environ["POCO_SKIP_BIND_ONCE"] = "1"
-        os.execv(sys.executable, [sys.executable, *sys.argv])
     if result == "restart":
         os.execv(sys.executable, [sys.executable, *sys.argv])
 

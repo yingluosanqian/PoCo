@@ -1,5 +1,6 @@
 from .store import (
     PoCoPaths,
+    SavedFeishuBot,
     WORKSPACE_BINDINGS_PATH,
     CONFIG_KEY_ALIASES,
     CONFIG_PATH,
@@ -22,12 +23,14 @@ from .store import (
     normalize_config_key,
     parse_config_value,
     saved_feishu_bot_ids,
+    saved_feishu_bots,
     set_nested,
     workspace_binding,
 )
 
 __all__ = [
     "PoCoPaths",
+    "SavedFeishuBot",
     "WORKSPACE_BINDINGS_PATH",
     "CONFIG_KEY_ALIASES",
     "CONFIG_PATH",
@@ -50,6 +53,7 @@ __all__ = [
     "normalize_config_key",
     "parse_config_value",
     "saved_feishu_bot_ids",
+    "saved_feishu_bots",
     "set_nested",
     "workspace_binding",
 ]

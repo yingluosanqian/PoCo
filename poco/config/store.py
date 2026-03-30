@@ -27,6 +27,13 @@ class PoCoPaths:
     relay_lock_path: Path
 
 
+@dataclass(frozen=True)
+class SavedFeishuBot:
+    app_id: str
+    app_name: str = ""
+    alias: str = ""
+
+
 def normalize_instance_name(instance: str) -> str:
     value = (instance or "").strip()
     if not value:
@@ -65,6 +72,8 @@ LOG_PATH = _DEFAULT_PATHS.log_path
 
 DEFAULT_CONFIG: Dict[str, Any] = {
     "feishu": {
+        "alias": "",
+        "app_name": "",
         "app_id": "",
         "app_secret": "",
         "encrypt_key": "",
@@ -129,6 +138,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 }
 
 INPUT_IDS = {
+    "feishu.alias": "feishu_alias",
     "feishu.app_id": "feishu_app_id",
     "feishu.app_secret": "feishu_app_secret",
     "feishu.encrypt_key": "feishu_encrypt_key",
@@ -162,6 +172,7 @@ INPUT_IDS = {
 }
 
 CONFIG_KEY_ALIASES = {
+    "alias": "feishu.alias",
     "app_id": "feishu.app_id",
     "app_secret": "feishu.app_secret",
     "encrypt_key": "feishu.encrypt_key",
@@ -210,6 +221,10 @@ def normalize_config(config: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         The normalized config dictionary.
     """
+    feishu = config.setdefault("feishu", {})
+    feishu.setdefault("alias", "")
+    feishu.setdefault("app_name", "")
+
     codex = config.setdefault("codex", {})
     if not str(codex.get("model", "")).strip():
         codex["model"] = DEFAULT_CONFIG["codex"]["model"]
@@ -335,6 +350,40 @@ def saved_feishu_bot_ids() -> list[str]:
             collect_from_config(config_path, build_paths(instance))
 
     return sorted(bot_ids)
+
+
+def saved_feishu_bots() -> list[SavedFeishuBot]:
+    """Returns saved Feishu bots with local alias and app name when available."""
+    bots: dict[str, SavedFeishuBot] = {}
+
+    def collect_from_config(path: Path, paths: PoCoPaths) -> None:
+        try:
+            config = ConfigStore(path, paths).load()
+        except Exception:
+            LOG.exception("Failed to load saved bot config from %s", path)
+            return
+        if not config_ready(config):
+            return
+        feishu = config.get("feishu", {})
+        app_id = str(feishu.get("app_id", "")).strip()
+        if not app_id:
+            return
+        bots[app_id] = SavedFeishuBot(
+            app_id=app_id,
+            app_name=str(feishu.get("app_name", "")).strip(),
+            alias=str(feishu.get("alias", "")).strip(),
+        )
+
+    if CONFIG_PATH.exists():
+        collect_from_config(CONFIG_PATH, _DEFAULT_PATHS)
+
+    bindings_root = CONFIG_ROOT / "bindings"
+    if bindings_root.exists():
+        for config_path in bindings_root.glob("*/config.json"):
+            instance = config_path.parent.name
+            collect_from_config(config_path, build_paths(instance))
+
+    return sorted(bots.values(), key=lambda item: (item.alias or item.app_name or item.app_id).lower())
 
 
 def set_nested(config: Dict[str, Any], path: str, value: Any) -> Dict[str, Any]:

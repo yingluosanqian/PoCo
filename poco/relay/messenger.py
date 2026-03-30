@@ -45,7 +45,7 @@ class FeishuMessenger:
             lark.Client.builder()
             .app_id(config.feishu_app_id)
             .app_secret(config.feishu_app_secret)
-            .log_level(lark.LogLevel.INFO)
+            .log_level(lark.LogLevel.ERROR)
             .build()
         )
 
