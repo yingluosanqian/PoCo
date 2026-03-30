@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 
+import lark_oapi as lark
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal
@@ -582,8 +583,35 @@ class PoCoTui(App[None]):
         config.setdefault("feishu", {})
         config["feishu"]["app_id"] = app_id
         config["feishu"]["app_secret"] = secret
+        app_name = self._fetch_feishu_app_name(app_id, secret)
+        if app_name:
+            config["feishu"]["app_name"] = app_name
         store.save(config)
         self.exit("restart-bound")
+
+    @staticmethod
+    def _fetch_feishu_app_name(app_id: str, app_secret: str) -> str:
+        """Best-effort fetch for the official Feishu app name."""
+        try:
+            client = (
+                lark.Client.builder()
+                .app_id(app_id)
+                .app_secret(app_secret)
+                .log_level(lark.LogLevel.INFO)
+                .build()
+            )
+            request = (
+                lark.api.application.v6.GetApplicationRequest.builder()
+                .app_id(app_id)
+                .lang("en_us")
+                .build()
+            )
+            response = client.application.v6.application.get(request)
+            if response.code != 0 or response.data is None or response.data.app is None:
+                return ""
+            return str(getattr(response.data.app, "app_name", "") or "").strip()
+        except Exception:
+            return ""
 
     def _bind_existing_login_bot(self, app_id: str) -> None:
         """Binds this workspace to an already saved Feishu bot and restarts."""

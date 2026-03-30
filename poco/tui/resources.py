@@ -139,8 +139,8 @@ STRINGS = {
     "current_secret": {"en": "current secret", "zh": "当前密钥"},
     "empty": {"en": "empty", "zh": "空"},
     "config_required": {
-        "en": "This workspace is not ready. Run `poco feishu-bootstrap` here, then finish Bot (feishu).",
-        "zh": "当前工作区尚未就绪。请先在这里运行 `poco feishu-bootstrap`，再完成 Bot (feishu) 配置。",
+        "en": "This workspace is not ready. Finish Bot (feishu) first.",
+        "zh": "当前工作区尚未就绪。请先完成 Bot (feishu) 配置。",
     },
     "config_missing": {
         "en": "Missing in this workspace binding (Bot (feishu)): {fields}",

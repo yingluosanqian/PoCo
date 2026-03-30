@@ -6,7 +6,6 @@ import os
 import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from .bootstrap import run_feishu_bootstrap_cli
 from .runtime import (
     PoCoService,
     RingLogHandler,
@@ -23,7 +22,6 @@ def parse_args() -> argparse.Namespace:
     config_cmd.add_argument("--show", action="store_true", help="show masked config and exit")
     config_cmd.add_argument("key", nargs="?", help="config key, e.g. app_id or feishu.app_id")
     config_cmd.add_argument("value", nargs="?", help="config value")
-    sub.add_parser("feishu-bootstrap", help="configure a Feishu self-built app for PoCo")
     return parser.parse_args()
 
 
@@ -69,9 +67,6 @@ def main() -> None:
         current = get_nested(service.masked_config(), path)
         print(json.dumps({path: current}, ensure_ascii=False, indent=2))
         return
-    if args.command == "feishu-bootstrap":
-        raise SystemExit(run_feishu_bootstrap_cli(workspace))
-
     skip_bind_once = os.environ.pop("POCO_SKIP_BIND_ONCE", "") == "1"
     app = PoCoTui(service, focus_config=args.command == "config", skip_bind_once=skip_bind_once)
     result = app.run()
