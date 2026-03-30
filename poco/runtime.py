@@ -4,7 +4,7 @@ import time
 from collections import deque
 from typing import Any, Dict, Optional
 
-from .bridge import AppConfig, BridgeApp
+from .relay import AppConfig, ProviderConfig, RelayApp
 from .config import (
     INPUT_IDS,
     THREAD_STATE_PATH,
@@ -42,7 +42,7 @@ class RingLogHandler(logging.Handler):
             return list(self._records)[-limit:]
 
 
-class BridgeRunner:
+class RelayRunner:
     def __init__(self) -> None:
         self._thread: Optional[threading.Thread] = None
         self._last_error: str = ""
@@ -64,40 +64,57 @@ class BridgeRunner:
             self._last_error = ""
             app_config = build_app_config(config)
             thread = threading.Thread(
-                target=self._run_bridge,
+                target=self._run_relay,
                 args=(app_config,),
                 daemon=True,
-                name="poco-bridge",
+                name="poco-relay",
             )
             self._thread = thread
             self._started_at = time.time()
             thread.start()
             return True
 
-    def _run_bridge(self, config: AppConfig) -> None:
+    def _run_relay(self, config: AppConfig) -> None:
         try:
-            bridge = BridgeApp(config)
-            bridge.run()
+            relay = RelayApp(config)
+            relay.run()
         except Exception as exc:
             with self._lock:
                 self._last_error = str(exc)
-            LOG.exception("Bridge runtime crashed")
+            LOG.exception("Relay runtime crashed")
 
 
 def build_app_config(config: Dict[str, Any]) -> AppConfig:
     feishu = config["feishu"]
     codex = config["codex"]
+    claude = config.get("claude", {})
     bridge = config["bridge"]
     return AppConfig(
         feishu_app_id=feishu["app_id"],
         feishu_app_secret=feishu["app_secret"],
         feishu_encrypt_key=feishu["encrypt_key"],
         feishu_verification_token=feishu["verification_token"],
-        codex_bin=codex["bin"],
-        codex_app_server_args=codex["app_server_args"],
-        codex_model=codex["model"],
-        codex_approval_policy=codex["approval_policy"],
-        codex_sandbox=codex["sandbox"],
+        feishu_card_test_template_id=str(feishu.get("card_test_template_id", "")),
+        codex=ProviderConfig(
+            name="codex",
+            bin=codex["bin"],
+            app_server_args=codex["app_server_args"],
+            model=codex["model"],
+            approval_policy=codex["approval_policy"],
+            sandbox=codex["sandbox"],
+            reasoning_effort=str(codex.get("reasoning_effort", "")),
+        ),
+        claude=ProviderConfig(
+            name="claude",
+            bin=str(claude.get("bin", "claude")),
+            app_server_args=str(claude.get("app_server_args", "")),
+            model="",
+            approval_policy=str(claude.get("approval_policy", "")),
+            sandbox=str(claude.get("sandbox", "")),
+            reasoning_effort="",
+        ),
+        claude_default_backend=str(claude.get("default_backend", "anthropic")),
+        claude_backends=dict(claude.get("backends", {})),
         message_limit=int(bridge["message_limit"]),
         live_update_initial_seconds=int(bridge["live_update_initial_seconds"]),
         live_update_max_seconds=int(bridge["live_update_max_seconds"]),
@@ -113,7 +130,7 @@ class PoCoService:
     def __init__(self, store: ConfigStore, logs: RingLogHandler) -> None:
         self.store = store
         self.logs = logs
-        self.bridge = BridgeRunner()
+        self.relay = RelayRunner()
 
     def load_config(self) -> Dict[str, Any]:
         return self.store.load()
@@ -124,12 +141,17 @@ class PoCoService:
     def masked_config(self) -> Dict[str, Any]:
         return self.store.masked()
 
-    def bridge_status(self) -> Dict[str, Any]:
-        return self.bridge.status()
+    def relay_status(self) -> Dict[str, Any]:
+        return self.relay.status()
 
     def set_config_value(self, key: str, raw_value: str) -> tuple[str, Any]:
         path = normalize_config_key(key)
-        if path not in INPUT_IDS and path not in {"feishu.allow_all_users"}:
+        allowed_dynamic = (
+            path == "feishu.allow_all_users"
+            or path == "claude.default_backend"
+            or path.startswith("claude.backends.")
+        )
+        if path not in INPUT_IDS and not allowed_dynamic:
             raise ValueError(f"未知配置项：{key}")
         config = self.load_config()
         value = parse_config_value(path, raw_value)
@@ -137,8 +159,8 @@ class PoCoService:
         self.save_config(config)
         return path, value
 
-    def start_bridge(self) -> bool:
+    def start_relay(self) -> bool:
         config = self.load_config()
         if not config_ready(config):
             raise ValueError("配置还不完整，至少需要 Feishu App ID 和 App Secret。")
-        return self.bridge.start(config)
+        return self.relay.start(config)

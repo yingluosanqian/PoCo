@@ -1,7 +1,6 @@
+"""Main Textual application shell for the PoCo TUI."""
+
 import json
-import shlex
-import time
-from pathlib import Path
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -10,298 +9,281 @@ from textual.widgets import Input, Static
 
 from .. import __version__
 from ..config import config_ready
-
-POCO_ICON = """
- .-.
-(###)
- '-'
-""".strip("\n")
-
-TUI_COMMANDS = [
-    "/help",
-    "/config",
-    "/log",
-    "/restart",
-    "/quit",
-]
-
-CONFIG_SUBCOMMANDS = [
-    "/config",
-    "/config show",
-]
-
-COMMAND_ALIASES = {
-    "/config": "/c",
-    "/help": "/h",
-    "/log": "/l",
-    "/restart": "/r",
-    "/quit": "/q",
-}
-
-CONFIG_MENU_OPTIONS = ["language", "feishu", "codex", "bridge"]
-FEISHU_WIZARD_STEPS = [
-    ("feishu.app_id", "Enter Feishu Bot App ID", "请输入 Feishu Bot App ID"),
-    ("feishu.app_secret", "Enter Feishu Bot App Secret", "请输入 Feishu Bot App Secret"),
-]
-LANGUAGE_CHOICES = [("English", "en"), ("中文", "zh")]
-
-STRINGS = {
-    "app_title": {"en": "Pocket Coding for Feishu", "zh": "Feishu 口袋编程"},
-    "dashboard": {"en": "Dashboard", "zh": "仪表盘"},
-    "settings": {"en": "Config", "zh": "配置"},
-    "language": {"en": "Language", "zh": "语言"},
-    "logs": {"en": "Logs", "zh": "日志"},
-    "help": {"en": "Help", "zh": "帮助"},
-    "bridge": {"en": "Bridge", "zh": "桥接"},
-    "running": {"en": "RUNNING", "zh": "运行中"},
-    "stopped": {"en": "STOPPED", "zh": "已停止"},
-    "ready": {"en": "READY", "zh": "已就绪"},
-    "needs_config": {"en": "NEEDS CONFIG", "zh": "需要配置"},
-    "current_dir": {"en": "Current dir", "zh": "当前目录"},
-    "tips": {"en": "Tips for getting started", "zh": "开始使用提示"},
-    "recent_activity": {"en": "Recent activity", "zh": "最近活动"},
-    "runtime": {"en": "Runtime", "zh": "运行时"},
-    "started_at": {"en": "started_at", "zh": "启动时间"},
-    "last_error": {"en": "last_error", "zh": "最近错误"},
-    "no_recent_activity": {"en": "No recent activity", "zh": "暂无最近活动"},
-    "latest_logs": {"en": "Latest logs", "zh": "最新日志"},
-    "no_logs": {"en": "No logs yet", "zh": "暂无日志"},
-    "current_config": {"en": "Current config", "zh": "当前配置"},
-    "commands": {"en": "Commands", "zh": "命令"},
-    "help_body": {
-        "en": "/help  (/h for short)\n/config  (/c for short)\n/log  (/l for short)\n/restart  (/r for short)\n/quit  (/q for short)",
-        "zh": "/help  （/h 为缩写）\n/config  （/c 为缩写）\n/log  （/l 为缩写）\n/restart  （/r 为缩写）\n/quit  （/q 为缩写）",
-    },
-    "tip_help": {
-        "en": "Use /help to show help. /h is the short form.",
-        "zh": "使用 /help 查看帮助，/h 是缩写。",
-    },
-    "tip_config": {
-        "en": "Use /config to enter config mode. /c is the short form.",
-        "zh": "使用 /config 进入配置模式，/c 是缩写。",
-    },
-    "tip_quit": {
-        "en": "Use /quit to exit. /q is the short form.",
-        "zh": "使用 /quit 退出，/q 是缩写。",
-    },
-    "tip_restart": {
-        "en": "Use /restart to restart. /r is the short form.",
-        "zh": "使用 /restart 重启，/r 是缩写。",
-    },
-    "tip_logs": {
-        "en": "Use /log to inspect recent runtime logs. /l is the short form.",
-        "zh": "使用 /log 查看最近运行日志，/l 是缩写。",
-    },
-    "tip_config_show": {
-        "en": "After typing /config, slash suggestions will show /config show.",
-        "zh": "输入 /config 后，命令提示里会出现 /config show。",
-    },
-    "config_mode": {"en": "Config mode", "zh": "配置模式"},
-    "pick_section": {"en": "Select a config section", "zh": "选择配置分类"},
-    "pick_section_help": {
-        "en": "Use ↑/↓ to move. Press Enter to continue. Type /quit (/q) to leave config mode.",
-        "zh": "使用 ↑/↓ 选择，按回车继续；输入 /quit（或 /q）退出配置模式。",
-    },
-    "section": {"en": "Section", "zh": "当前分类"},
-    "select_action": {"en": "Select an action", "zh": "选择动作"},
-    "type_value": {
-        "en": "Type the new value in the command line and press Enter.",
-        "zh": "请在命令行输入新值并按回车。",
-    },
-    "collected_values": {"en": "Collected values", "zh": "已收集的值"},
-    "new": {"en": "New", "zh": "新值"},
-    "do_not_change": {"en": "Do not change ({current})", "zh": "不修改（{current}）"},
-    "current_secret": {"en": "current secret", "zh": "当前密钥"},
-    "empty": {"en": "empty", "zh": "空"},
-    "unknown_interactive": {
-        "en": "{section} interactive setup is not implemented yet. Select language or feishu, or type /quit.",
-        "zh": "{section} 的交互式设置还没实现。请先选择 language 或 feishu，或输入 /quit。",
-    },
-    "config_placeholder": {
-        "en": "",
-        "zh": "",
-    },
-    "config_mode_placeholder": {
-        "en": "Press Enter to select current section, or type /quit (/q)",
-        "zh": "按回车进入当前分类，或输入 /quit（/q）",
-    },
-    "choice_placeholder": {
-        "en": "Press Enter to confirm selection, or type /quit (/q)",
-        "zh": "按回车确认选项，或输入 /quit（/q）",
-    },
-    "input_placeholder": {
-        "en": "Enter new value and press Enter, or type /quit (/q)",
-        "zh": "输入新值后按回车，或输入 /quit（/q）",
-    },
-    "config_required": {
-        "en": "Config is incomplete. Enter /quit (/q) to leave config mode, then use /config to finish the setup.",
-        "zh": "配置还不完整。先输入 /quit（或 /q）退出配置模式，再用 /config 完成配置。",
-    },
-    "bridge_started": {"en": "PoCo bridge is running.", "zh": "PoCo bridge 已启动。"},
-    "bridge_already_running": {"en": "PoCo bridge is already running.", "zh": "PoCo bridge 已经在运行。"},
-    "left_config": {"en": "Left config mode.", "zh": "已退出配置模式。"},
-    "config_only_quit": {
-        "en": "Config mode only accepts /quit (/q) here, or Enter to continue.",
-        "zh": "当前处于配置模式，这里只接受 /quit（或 /q），或者直接按回车继续。",
-    },
-    "press_enter_choice": {
-        "en": "Press Enter to confirm the current choice, or type /quit (/q) to leave.",
-        "zh": "请直接按回车确认当前选项，或输入 /quit（或 /q）退出。",
-    },
-    "enter_value_or_quit": {
-        "en": "Enter a value for the current field, or type /quit (/q) to leave config mode.",
-        "zh": "请输入当前字段的值，或输入 /quit（或 /q）退出配置模式。",
-    },
-    "start_feishu": {
-        "en": "Starting Feishu setup. First choose how to handle App ID.",
-        "zh": "开始配置 Feishu。先选择 App ID 的处理方式。",
-    },
-    "start_language": {
-        "en": "Starting language setup. Choose a language.",
-        "zh": "开始配置语言。请选择一种语言。",
-    },
-    "language_done": {
-        "en": "Language updated. It takes effect immediately.",
-        "zh": "语言已更新，立即生效。",
-    },
-    "feishu_done": {
-        "en": "Feishu config saved. Restart is required before it takes effect.",
-        "zh": "Feishu 配置完成，但需要重启后才能生效。",
-    },
-    "next_choose": {
-        "en": "{prompt}. Choose New or Do not change first.",
-        "zh": "{prompt}。先选择 New 或 Do not change。",
-    },
-    "show_refreshed": {"en": "Current config refreshed.", "zh": "当前配置已刷新。"},
-    "show_scroll": {"en": "Use ↑ / ↓ to scroll.", "zh": "使用 ↑ / ↓ 滚动。"},
-    "commands_list": {
-        "en": "Available commands: /help (/h) /config (/c) /log (/l) /restart (/r) /quit (/q)",
-        "zh": "可用命令：/help（/h） /config（/c） /log（/l） /restart（/r） /quit（/q）",
-    },
-    "help_message": {
-        "en": "Use /help (/h) /config (/c) /log (/l) /restart (/r) /quit (/q)",
-        "zh": "输入 /help（/h） /config（/c） /log（/l） /restart（/r） /quit（/q）",
-    },
-    "unknown_command": {
-        "en": "Unknown command. Use /help to see available commands.",
-        "zh": "未知命令。输入 /help 查看可用命令。",
-    },
-    "slash_required": {
-        "en": "TUI commands must start with /. Use /help to see available commands.",
-        "zh": "TUI 命令需要以 / 开头。输入 /help 查看可用命令。",
-    },
-    "config_pick": {
-        "en": "Choose a section with ↑/↓, press Enter to enter, type /quit (/q) to leave config mode.",
-        "zh": "请用 ↑/↓ 选择分类，按回车进入；输入 /quit（或 /q）退出配置模式。",
-    },
-    "scroll_status": {
-        "en": "lines {start}-{end} / {total}",
-        "zh": "行 {start}-{end} / {total}",
-    },
-    "back_dashboard": {
-        "en": "Back to dashboard.",
-        "zh": "已回到 dashboard。",
-    },
-}
+from ..providers import model_choices
+from .resources import POCO_ICON, STRINGS, TUI_CSS
+from .menus.config import (
+    LANGUAGE_CHOICES,
+    ConfigMenuController,
+    ConfigPanelRenderer,
+    ConfigScreenState,
+    OptionMenuState,
+)
+from .menus import ROOT_MENU_OPTIONS, RootMenuController
 
 
 class PoCoTui(App[None]):
-    CSS = """
-    Screen {
-        layout: vertical;
-        background: #0f1117;
-        color: #e6edf3;
-    }
-
-    #main_panel {
-        height: 1fr;
-        padding: 1 1 0 1;
-    }
-
-    .card {
-        border: round #f97316;
-        background: #161b22;
-        color: #e6edf3;
-        padding: 1 2;
-    }
-
-    #left_card {
-        width: 30;
-        margin-right: 1;
-    }
-
-    #right_card {
-        width: 1fr;
-    }
-
-    #left_text, #right_text {
-        width: 100%;
-        height: 100%;
-    }
-
-    #command_panel {
-        height: auto;
-        padding: 1;
-    }
-
-    #command_input {
-        border: round #f97316;
-        background: #0d1117;
-        color: #e6edf3;
-    }
-
-    #command_suggestions {
-        height: auto;
-        padding: 0 1 1 1;
-        color: #fdba74;
-        border: round #fb923c;
-        background: #161b22;
-        margin-top: 1;
-    }
-
-    #command_suggestions.hidden {
-        display: none;
-    }
-
-    #message_line {
-        height: auto;
-        padding: 0 1 1 1;
-        color: #fb923c;
-    }
-    """
+    """Terminal UI shell for PoCo."""
+    CSS = TUI_CSS
 
     BINDINGS = [
-        Binding("q", "quit", "Quit"),
+        Binding("q", "config_back", "Back"),
         Binding("up", "cursor_up", "Up"),
         Binding("down", "cursor_down", "Down"),
-        Binding("tab", "complete_command", "Complete"),
+        Binding("enter", "activate", "Open"),
+        Binding("escape", "config_back", "Back"),
         Binding("ctrl+r", "save_and_restart", "Save & Restart"),
     ]
 
     def __init__(self, service, *, focus_config: bool = False) -> None:
+        """Initializes the TUI shell.
+
+        Args:
+            service: Runtime service facade used by the UI.
+            focus_config: Whether to enter config mode immediately on startup.
+        """
         super().__init__()
         self._service = service
         self._focus_config = focus_config
-        self._view = "dashboard"
-        self._current_suggestions: list[str] = []
-        self._selected_suggestion = 0
-        self._config_menu_active = False
-        self._config_selected = 0
-        self._config_flow: dict | None = None
+        self._view = "menu"
+        self._root_selected = 0
+        self._config_stack: list[ConfigScreenState] = []
         self._show_scroll = 0
+        self._message_override = ""
+        self._root_menu = RootMenuController(self)
+        self._config_menu = ConfigMenuController(self)
+        self._config_renderer = ConfigPanelRenderer(self)
 
     def _lang(self) -> str:
+        """Returns the current UI language code."""
         config = self._service.load_config()
         lang = config.get("ui", {}).get("language", "en")
         return "zh" if lang == "zh" else "en"
 
     def _t(self, key: str, **kwargs) -> str:
+        """Looks up and formats a translated UI string."""
         lang = self._lang()
         template = STRINGS[key][lang]
         return template.format(**kwargs)
 
+    @property
+    def _config_menu_active(self) -> bool:
+        """Returns whether the config navigation stack is active."""
+        return bool(self._config_stack)
+
+    def _config_state(self) -> ConfigScreenState | None:
+        """Returns the active config stack frame, if any."""
+        return self._config_stack[-1] if self._config_stack else None
+
+    def _push_config_state(self, state: ConfigScreenState) -> None:
+        """Pushes a config screen state onto the navigation stack."""
+        self._config_stack.append(state)
+
+    def _pop_config_state(self) -> ConfigScreenState | None:
+        """Pops one config screen state from the navigation stack."""
+        return self._config_stack.pop() if self._config_stack else None
+
+    def _current_config_section_name(self) -> str | None:
+        """Returns the nearest selected config section in the stack."""
+        for state in reversed(self._config_stack):
+            if state.section:
+                return state.section
+        return None
+
+    def _current_config_group_name(self) -> str | None:
+        """Returns the nearest selected config group in the stack."""
+        for state in reversed(self._config_stack):
+            if state.group:
+                return state.group
+        return None
+
+    def _current_claude_backend_name(self) -> str | None:
+        """Returns the currently selected Claude backend name, if any."""
+        for state in reversed(self._config_stack):
+            if state.backend:
+                return state.backend
+        return None
+
+    def _current_custom_draft(self) -> dict | None:
+        """Returns the active in-memory draft for a custom backend."""
+        for state in reversed(self._config_stack):
+            if state.draft is not None:
+                return state.draft
+        return None
+
+    def _claude_backend_entries(self, config: dict) -> list[tuple[str, str]]:
+        """Returns visible Claude backend entries for the current config."""
+        return self._config_menu.claude.backend_entries(config)
+
+    def _claude_backend_field_defs(self, backend_name: str) -> list[tuple[str, str]]:
+        """Returns editable field definitions for one Claude backend."""
+        return self._config_menu.claude.backend_field_defs(backend_name)
+
+    @property
+    def _config_level(self) -> str:
+        """Returns the active config screen kind."""
+        state = self._config_state()
+        return state.kind if state else "sections"
+
+    @_config_level.setter
+    def _config_level(self, value: str) -> None:
+        """Sets the active config screen kind on the current stack frame."""
+        state = self._config_state()
+        if state is None:
+            self._config_stack = [ConfigScreenState(kind=value)]
+        else:
+            state.kind = value
+
+    @property
+    def _config_selected(self) -> int:
+        """Returns the active selection index for the current config screen."""
+        state = self._config_state()
+        return state.selected if state else 0
+
+    @_config_selected.setter
+    def _config_selected(self, value: int) -> None:
+        """Updates the selection index for the current config screen."""
+        state = self._config_state()
+        if state is None:
+            self._config_stack = [ConfigScreenState(kind="sections", selected=value)]
+        else:
+            state.selected = value
+
+    _config_field_selected = _config_selected
+    _config_choice_selected = _config_selected
+    _claude_backend_selected = _config_selected
+    _claude_backend_field_selected = _config_selected
+    _claude_backend_model_selected = _config_selected
+    _claude_backend_model_action_selected = _config_selected
+    _extra_env_selected = _config_selected
+    _extra_env_action_selected = _config_selected
+
+    @property
+    def _config_section(self) -> str | None:
+        """Returns the selected config section name."""
+        return self._current_config_section_name()
+
+    @_config_section.setter
+    def _config_section(self, value: str | None) -> None:
+        """Stores the selected config section on the current stack frame."""
+        state = self._config_state()
+        if state is None:
+            self._config_stack = [ConfigScreenState(kind="sections", section=value)]
+        else:
+            state.section = value
+
+    @property
+    def _config_group(self) -> str | None:
+        """Returns the selected config group name."""
+        return self._current_config_group_name()
+
+    @_config_group.setter
+    def _config_group(self, value: str | None) -> None:
+        """Stores the selected config group on the current stack frame."""
+        state = self._config_state()
+        if state is None:
+            self._config_stack = [ConfigScreenState(kind="sections", group=value)]
+        else:
+            state.group = value
+
+    @property
+    def _config_editing_path(self) -> str | None:
+        """Returns the config path currently being edited."""
+        state = self._config_state()
+        return state.path if state else None
+
+    @_config_editing_path.setter
+    def _config_editing_path(self, value: str | None) -> None:
+        """Stores the config path currently being edited."""
+        state = self._config_state()
+        if state is None:
+            self._config_stack = [ConfigScreenState(kind="input", path=value)]
+        else:
+            state.path = value
+
+    @property
+    def _claude_backend_name(self) -> str | None:
+        """Returns the selected Claude backend name."""
+        return self._current_claude_backend_name()
+
+    @_claude_backend_name.setter
+    def _claude_backend_name(self, value: str | None) -> None:
+        """Stores the selected Claude backend on the current stack frame."""
+        state = self._config_state()
+        if state is None:
+            self._config_stack = [ConfigScreenState(kind="claude_backends", backend=value)]
+        else:
+            state.backend = value
+
+    @property
+    def _claude_backend_model_name(self) -> str | None:
+        """Returns the selected Claude backend model name, if any."""
+        for state in reversed(self._config_stack):
+            if state.model:
+                return state.model
+        return None
+
+    @_claude_backend_model_name.setter
+    def _claude_backend_model_name(self, value: str | None) -> None:
+        """Stores the selected Claude backend model on the current stack frame."""
+        state = self._config_state()
+        if state is None:
+            self._config_stack = [ConfigScreenState(kind="claude_backend_models", model=value)]
+        else:
+            state.model = value
+
+    @property
+    def _extra_env_key(self) -> str | None:
+        """Returns the selected extra-env key, if any."""
+        for state in reversed(self._config_stack):
+            if state.env_key:
+                return state.env_key
+        return None
+
+    @_extra_env_key.setter
+    def _extra_env_key(self, value: str | None) -> None:
+        """Stores the selected extra-env key on the current stack frame."""
+        state = self._config_state()
+        if state is None:
+            self._config_stack = [ConfigScreenState(kind="extra_env_list", env_key=value)]
+        else:
+            state.env_key = value
+
+    @property
+    def _input_mode(self) -> str | None:
+        """Returns the active config input sub-mode, if any."""
+        state = self._config_state()
+        return state.input_mode if state else None
+
+    @_input_mode.setter
+    def _input_mode(self, value: str | None) -> None:
+        """Stores the active config input sub-mode."""
+        state = self._config_state()
+        if state is None:
+            self._config_stack = [ConfigScreenState(kind="input", input_mode=value)]
+        else:
+            state.input_mode = value
+
+    def _current_option_menu(self) -> OptionMenuState | None:
+        """Returns the option menu currently driven by arrow-key navigation."""
+        state = self._config_state()
+        if state is not None:
+            return self._config_menu.current_option_menu()
+        if self._view == "menu":
+            return OptionMenuState("root", self._root_selected, len(ROOT_MENU_OPTIONS))
+        return None
+
+    def _set_current_option_selected(self, index: int) -> None:
+        """Updates the highlighted option index for the active menu."""
+        state = self._config_state()
+        if state is not None:
+            state.selected = index
+            return
+        if self._view == "menu":
+            self._root_selected = index
+
     @staticmethod
     def _lookup_nested(config: dict, path: str) -> str:
+        """Looks up a dotted config path and returns a display-safe string."""
         value = config
         for part in path.split("."):
             if not isinstance(value, dict):
@@ -310,17 +292,18 @@ class PoCoTui(App[None]):
         return str(value or "")
 
     def compose(self) -> ComposeResult:
+        """Builds the Textual widget tree."""
         with Horizontal(id="main_panel"):
             with Container(id="left_card", classes="card"):
                 yield Static("", id="left_text")
             with Container(id="right_card", classes="card"):
                 yield Static("", id="right_text")
         with Container(id="command_panel"):
-            yield Input(id="command_input", placeholder=self._t("config_placeholder"))
-            yield Static("", id="command_suggestions", classes="hidden")
+            yield Input(id="command_input", placeholder="")
         yield Static("", id="message_line")
 
     def on_mount(self) -> None:
+        """Bootstraps the initial TUI state after mount."""
         self.title = "PoCo"
         self.sub_title = self._t("app_title")
         self._refresh_runtime()
@@ -328,158 +311,226 @@ class PoCoTui(App[None]):
         self.call_after_refresh(self._boot)
 
     def _boot(self) -> None:
+        """Starts the initial view and launches the relay when ready."""
         config = self._service.load_config()
-        self.query_one("#command_input", Input).placeholder = self._t("config_placeholder")
         if self._focus_config or not config_ready(config):
             self._enter_config_mode()
             self._set_message(self._t("config_required"))
-            self.query_one("#command_input", Input).focus()
             return
-        self._service.start_bridge()
-        self._set_message(self._t("bridge_started"))
-        self.query_one("#command_input", Input).focus()
+        self._service.start_relay()
+        self._set_message(self._t("relay_started"), transient=True)
+        self._sync_input_state()
 
     def _refresh_runtime(self) -> None:
+        """Refreshes both panels from current runtime state."""
         config = self._service.load_config()
-        bridge = self._service.bridge_status()
+        relay = self._service.relay_status()
         self.sub_title = self._t("app_title")
-        self.query_one("#left_text", Static).update(self._left_panel_text(config, bridge))
-        self.query_one("#right_text", Static).update(self._right_panel_text(config, bridge))
+        self.query_one("#left_text", Static).update(self._left_panel_text(config, relay))
+        self.query_one("#right_text", Static).update(self._right_panel_text(config, relay))
+        self._refresh_message_line()
+        self._sync_input_state()
 
-    def _left_panel_text(self, config: dict, bridge: dict) -> str:
-        bridge_status = self._t("running") if bridge["running"] else self._t("stopped")
-        bridge_style = "#3fb950" if bridge["running"] else "#f85149"
+    def _left_panel_text(self, config: dict, relay: dict) -> str:
+        """Builds the left summary panel text."""
+        relay_status = self._t("running") if relay["running"] else self._t("stopped")
+        relay_style = "#3fb950" if relay["running"] else "#f85149"
         config_status = self._t("ready") if config_ready(config) else self._t("needs_config")
         config_style = "#3fb950" if config_ready(config) else "#f2cc60"
-        view_name = self._current_view_name()
         return (
             f"[bold #fb923c]{POCO_ICON}[/]\n"
             f"[bold #fb923c]PoCo v{__version__}[/]\n"
-            f"{view_name}\n\n"
-            f"{self._t('bridge')}: [bold {bridge_style}]{bridge_status}[/]\n"
-            f"{self._t('settings')}: [bold {config_style}]{config_status}[/]\n"
-            f"[#8b949e]{self._t('current_dir')}[/]\n"
-            f"[#8b949e]{Path.cwd()}[/]"
+            "\n"
+            f"{self._t('relay')}: [bold {relay_style}]{relay_status}[/]\n"
+            f"{self._t('settings')}: [bold {config_style}]{config_status}[/]"
         )
 
-    def _right_panel_text(self, config: dict, bridge: dict) -> str:
+    def _right_panel_text(self, config: dict, relay: dict) -> str:
+        """Builds the right panel text for the current view."""
         if self._config_menu_active:
-            if self._config_flow is not None:
-                return self._config_flow_text(config)
-            return self._config_menu_text(config)
-        if self._view == "logs":
-            return self._logs_text()
-        if self._view == "show":
-            return self._show_text()
-        if self._view == "help":
-            return f"[bold #fb923c]{self._t('commands')}[/]\n\n{self._t('help_body')}"
-        recent = self._recent_activity_text()
-        started_at = bridge["started_at"]
-        started_display = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(started_at)) if started_at else "-"
-        return (
-            f"[bold #fb923c]{self._t('tips')}[/]\n"
-            f"[#8b949e]{self._t('tip_help')}[/]\n"
-            f"[#8b949e]{self._t('tip_config')}[/]\n"
-            f"[#8b949e]{self._t('tip_logs')}[/]\n"
-            f"[#8b949e]{self._t('tip_restart')}[/]\n"
-            f"[#8b949e]{self._t('tip_config_show')}[/]\n"
-            f"[#8b949e]{self._t('tip_quit')}[/]\n\n"
-            f"[bold #fb923c]{self._t('recent_activity')}[/]\n"
-            f"{recent}\n\n"
-            f"[bold #fb923c]{self._t('runtime')}[/]\n"
-            f"{self._t('started_at')}: {started_display}\n"
-            f"{self._t('last_error')}: {bridge['last_error'] or '-'}"
+            return self._config_panel_text(config)
+        return self._menu_text(relay)
+
+    def _panel_prefix(
+        self,
+        title: str,
+        *,
+        breadcrumb_parts: list[str] | None = None,
+        help_text: str | None = None,
+        heading: str | None = None,
+        extra_lines: list[str] | None = None,
+    ) -> list[str]:
+        """Builds a shared header block for right-panel screens."""
+        lines = [f"[bold #fb923c]{title}[/]"]
+        if breadcrumb_parts:
+            lines.append(f"[#8b949e]{self._t('path')}: {' / '.join(breadcrumb_parts)}[/]")
+        if help_text:
+            lines.append(f"[#8b949e]{help_text}[/]")
+        if heading:
+            lines.append(f"[bold #fb923c]{heading}[/]")
+        if extra_lines:
+            lines.extend(extra_lines)
+        return lines
+
+    def _config_breadcrumb_parts(self) -> list[str]:
+        """Returns breadcrumb parts for the active config view."""
+        return self._config_renderer.breadcrumb_parts()
+
+    def _menu_text(self, relay: dict) -> str:
+        """Renders the root menu panel."""
+        selected = ROOT_MENU_OPTIONS[self._root_selected]
+        descriptions = {
+            "agent": self._t("menu_agent_desc"),
+            "bot": self._t("menu_bot_desc"),
+            "poco": self._t("menu_poco_desc"),
+            "language": self._t("menu_language_desc"),
+            "quit": self._t("menu_quit_desc"),
+        }
+        prefix = self._panel_prefix(
+            self._t("menu"),
+            breadcrumb_parts=[self._t("menu"), self._menu_label(selected)],
         )
+        entry_lines = []
+        for index, option in enumerate(ROOT_MENU_OPTIONS):
+            label = self._menu_label(option)
+            if index == self._root_selected:
+                entry_lines.append(f"[bold #0f1117 on #fb923c]  {label}  [/]")
+            else:
+                entry_lines.append(f"  {label}")
+        suffix = [f"[#8b949e]{descriptions[selected]}[/]"]
+        return self._render_windowed_options(entry_lines, self._root_selected, prefix_lines=prefix, suffix_lines=suffix)
+
+    def _footer_hint_text(self) -> str:
+        """Builds the footer hint text for the current navigation state."""
+        hint_key = "nav_hint_config" if self._config_menu_active else "nav_hint_menu"
+        return self._t(hint_key)
+
+    def _config_panel_text(self, config: dict) -> str:
+        """Delegates config rendering to the config menu renderer."""
+        return self._config_menu.render(config)
 
     def _config_menu_text(self, config: dict) -> str:
-        section = CONFIG_MENU_OPTIONS[self._config_selected]
-        if section == "language":
-            current_body = json.dumps(
-                {"language": self._language_label(config.get("ui", {}).get("language", "en"))},
-                ensure_ascii=False,
-                indent=2,
-            )
-        else:
-            current_body = json.dumps(config.get(section, {}), ensure_ascii=False, indent=2)
-        lines = [
-            f"[bold #fb923c]{self._t('config_mode')}[/]",
-            f"[#8b949e]{self._t('pick_section_help')}[/]",
-            "",
-            f"[bold #fb923c]{self._t('pick_section')}[/]",
-        ]
-        for index, option in enumerate(CONFIG_MENU_OPTIONS):
-            label = self._setting_option_label(option)
-            if index == self._config_selected:
-                lines.append(f"[bold #0f1117 on #fb923c]  {label}  [/]")
-            else:
-                lines.append(f"  {label}")
-        lines.extend(["", f"[bold #fb923c]{self._t('section')}: {self._setting_option_label(section)}[/]", current_body])
-        return "\n".join(lines)
+        """Renders the top-level config section list."""
+        return self._config_renderer.render_menu(config)
 
-    def _config_flow_text(self, config: dict) -> str:
-        assert self._config_flow is not None
-        section = self._config_flow["section"]
-        step_index = self._config_flow["step_index"]
-        step_key, prompt_en, prompt_zh = self._config_flow["steps"][step_index]
-        prompt = prompt_zh if self._lang() == "zh" else prompt_en
-        collected = self._config_flow["values"]
-        phase = self._config_flow["phase"]
-        masked = {}
-        for key, value in collected.items():
-            masked[key] = "*" * max(8, len(value)) if "secret" in key else value
-        lines = [
-            f"[bold #fb923c]{self._t('config_mode')}[/]",
-            f"[#8b949e]{self._t('section')}: {self._setting_option_label(section)}. /quit[/]",
-            "",
-            f"[bold #fb923c]{prompt}[/]",
-            f"[#8b949e]{step_key}[/]",
-        ]
-        if phase == "choice":
-            lines.extend(["", f"[bold #fb923c]{self._t('select_action')}[/]"])
-            for index, choice in enumerate(self._flow_choices_for_step(config)):
-                if index == self._config_flow["selected_choice"]:
-                    lines.append(f"[bold #0f1117 on #fb923c]  {choice}  [/]")
-                else:
-                    lines.append(f"  {choice}")
-        else:
-            lines.extend(["", f"[#8b949e]{self._t('type_value')}[/]"])
-        if masked:
-            lines.extend(["", f"[bold #fb923c]{self._t('collected_values')}[/]", json.dumps(masked, ensure_ascii=False, indent=2)])
-        return "\n".join(lines)
+    def _config_group_text(self, config: dict) -> str:
+        """Renders the active config group list."""
+        return self._config_renderer.render_group(config)
 
-    def _logs_text(self) -> str:
-        items = self._service.logs.snapshot(limit=12)
-        if not items:
-            return f"[bold #fb923c]{self._t('logs')}[/]\n\n[#8b949e]{self._t('no_logs')}[/]"
-        lines = [f"[bold #fb923c]{self._t('latest_logs')}[/]", ""]
-        for item in items:
-            lines.append(item["message"])
-        return "\n".join(lines)
+    def _config_fields_text(self, config: dict) -> str:
+        """Renders fields for the currently selected config section."""
+        return self._config_renderer.render_fields(config)
 
-    def _recent_activity_text(self) -> str:
-        items = self._service.logs.snapshot(limit=3)
-        if not items:
-            return f"[#8b949e]{self._t('no_recent_activity')}[/]"
-        return "\n".join(f"[#8b949e]- {item['message'][-90:]}[/]" for item in items[-3:])
+    def _claude_backends_text(self, config: dict) -> str:
+        """Renders the Claude backend list."""
+        return self._config_renderer.render_claude_backends(config)
 
-    def _show_lines(self) -> list[str]:
-        config_text = json.dumps(self._service.masked_config(), ensure_ascii=False, indent=2)
+    def _claude_custom_fields_text(self) -> str:
+        """Renders fields for the in-progress custom Claude backend draft."""
+        return self._config_renderer.render_claude_custom_fields()
+
+    def _claude_backend_fields_text(self, config: dict) -> str:
+        """Renders editable fields for the selected Claude backend."""
+        return self._config_renderer.render_claude_backend_fields(config)
+
+    def _claude_backend_models_text(self, config: dict) -> str:
+        """Renders selectable models for the selected Claude backend."""
+        return self._config_renderer.render_claude_backend_models(config)
+
+    def _claude_backend_model_actions_text(self, config: dict) -> str:
+        """Renders actions for the currently selected Claude model."""
+        return self._config_renderer.render_claude_backend_model_actions(config)
+
+    def _extra_env_payload(self, config: dict) -> dict[str, str]:
+        """Returns the normalized extra-env mapping for the active backend."""
+        return self._config_renderer.extra_env_payload(config)
+
+    def _extra_env_entries(self, config: dict) -> list[tuple[str, str]]:
+        """Returns visible extra-env menu entries for the active backend."""
+        return self._config_renderer.extra_env_entries(config)
+
+    def _extra_env_list_text(self, config: dict) -> str:
+        """Renders the extra-env key list."""
+        return self._config_renderer.render_extra_env_list(config)
+
+    def _extra_env_actions_text(self, config: dict) -> str:
+        """Renders actions for the selected extra-env item."""
+        return self._config_renderer.render_extra_env_actions(config)
+
+    def _config_choices_text(self, config: dict) -> str:
+        """Renders a generic config choice list."""
+        return self._config_renderer.render_choices(config)
+
+    def _config_input_text(self, config: dict) -> str:
+        """Renders the generic config text-input screen."""
+        return self._config_renderer.render_input(config)
+
+    def _menu_label(self, option: str) -> str:
+        """Returns the user-facing label for a root menu option."""
+        if option == "language":
+            config = self._service.load_config()
+            current = config.get("ui", {}).get("language", "en")
+            return f"{self._t('language')} ({current})"
+        labels = {
+            "agent": self._t("agent"),
+            "bot": self._t("bot"),
+            "poco": self._t("poco"),
+            "quit": "Quit",
+            "show": "show",
+            "menu": self._t("dashboard"),
+        }
+        return labels.get(option, option)
+
+    def _show_lines(self, config: dict | None = None) -> list[str]:
+        """Returns formatted lines for the scrollable config view."""
+        try:
+            payload = config if config is not None else self._service.masked_config()
+            config_text = json.dumps(payload, ensure_ascii=False, indent=2)
+        except Exception as exc:
+            return [self._t("current_config"), "", f"Failed to render config: {exc}"]
         return [self._t("current_config"), ""] + config_text.splitlines()
 
     def _show_window_height(self) -> int:
+        """Estimates the available line budget for right-panel scrolling."""
         try:
-            height = self.query_one("#right_card", Container).size.height
+            height = self.query_one("#right_text", Static).size.height or self.query_one("#right_card", Container).size.height
         except Exception:
             height = 0
-        return max(8, height - 4 if height else 18)
+        return max(10, height - 2 if height else 24)
 
-    def _show_max_scroll(self) -> int:
-        lines = self._show_lines()
+    def _render_windowed_options(
+        self,
+        entries: list[str],
+        selected: int,
+        *,
+        prefix_lines: list[str],
+        suffix_lines: list[str] | None = None,
+    ) -> str:
+        """Renders a scrollable option list around the selected row."""
+        suffix = suffix_lines or []
+        window_height = self._show_window_height()
+        available = max(1, window_height - len(prefix_lines) - len(suffix))
+        start = max(0, min(selected - (available // 2), max(0, len(entries) - available)))
+        end = min(len(entries), start + available)
+        visible = entries[start:end]
+        lines = list(prefix_lines)
+        if start > 0:
+            lines.append("[#8b949e]  ...[/]")
+        lines.extend(visible)
+        if end < len(entries):
+            lines.append("[#8b949e]  ...[/]")
+        lines.extend(suffix)
+        return "\n".join(lines)
+
+    def _show_max_scroll(self, config: dict | None = None) -> int:
+        """Returns the maximum scroll offset for the config-file view."""
+        lines = self._show_lines(config)
         return max(0, len(lines) - self._show_window_height())
 
-    def _show_text(self) -> str:
-        lines = self._show_lines()
-        max_scroll = self._show_max_scroll()
+    def _show_text(self, config: dict | None = None) -> str:
+        """Renders the scrollable config file view."""
+        lines = self._show_lines(config)
+        max_scroll = self._show_max_scroll(config)
         self._show_scroll = max(0, min(self._show_scroll, max_scroll))
         start = self._show_scroll
         end = min(len(lines), start + self._show_window_height())
@@ -494,355 +545,217 @@ class PoCoTui(App[None]):
         rendered.extend(["", f"[#8b949e]{self._t('show_scroll')}[/]", f"[#8b949e]{status}[/]"])
         return "\n".join(rendered)
 
-    def _current_view_name(self) -> str:
-        if self._config_menu_active:
-            return self._t("settings")
-        if self._view == "logs":
-            return self._t("logs")
-        if self._view == "help":
-            return self._t("help")
-        if self._view == "show":
-            return self._t("current_config")
-        return self._t("dashboard")
-
     def _setting_option_label(self, option: str) -> str:
-        labels = {
-            "language": self._t("language"),
-            "feishu": "feishu",
-            "codex": "codex",
-            "bridge": "bridge",
-        }
-        return labels.get(option, option)
+        """Returns the display label for a config setting option."""
+        return self._config_renderer.setting_option_label(option)
+
+    def _config_menu_option_label(self, config: dict, option: str) -> str:
+        """Returns the display label for one top-level config menu option."""
+        return self._config_renderer.menu_option_label(config, option)
 
     def _language_label(self, code: str) -> str:
-        return "中文" if code == "zh" else "English"
+        """Returns the display label for a language code."""
+        return self._config_renderer.language_label(code)
+
+    def _display_config_value(self, config: dict, path: str) -> str:
+        """Formats one config value for display in menus and forms."""
+        return self._config_renderer.display_config_value(config, path)
+
+    def _display_claude_backend_value(self, backend_payload: dict, field_key: str) -> str:
+        """Formats one Claude backend field for display."""
+        return self._config_renderer.display_claude_backend_value(backend_payload, field_key)
+
+    @staticmethod
+    def _model_choices(provider_name: str, backend_name: str | None = None) -> list[str]:
+        """Returns predefined model choices for one provider/backend pair."""
+        return model_choices(provider_name, backend_name)
+
+    def _choices_for_path(self, path: str) -> list[tuple[str, str]]:
+        """Returns predefined menu choices for a config path."""
+        if path == "ui.language":
+            return LANGUAGE_CHOICES
+        if path == "codex.model":
+            return [(item, item) for item in self._model_choices("codex")]
+        if path == "codex.reasoning_effort":
+            return [
+                ("none", "none"),
+                ("minimal", "minimal"),
+                ("low", "low"),
+                ("medium", "medium"),
+                ("high", "high"),
+                ("xhigh", "xhigh"),
+            ]
+        if path == "feishu.allow_all_users":
+            return [("true", "true"), ("false", "false")]
+        return []
+
+    def _save_extra_env_payload(self, payload: dict[str, str]) -> None:
+        """Saves extra environment variables for the active Claude backend."""
+        assert self._claude_backend_name is not None
+        self._service.set_config_value(
+            f"claude.backends.{self._claude_backend_name}.extra_env",
+            json.dumps(payload, ensure_ascii=False),
+        )
+
+    def _is_sensitive_input(self) -> bool:
+        """Returns whether the active input field should be masked."""
+        path = self._config_editing_path or ""
+        lowered_path = path.lower()
+        if "secret" in lowered_path or "token" in lowered_path:
+            return True
+        if self._input_mode == "extra_env_value" and self._extra_env_key:
+            key = self._extra_env_key.lower()
+            sensitive_markers = ("token", "secret", "key", "password", "auth")
+            return any(marker in key for marker in sensitive_markers)
+        return False
 
     def action_save_and_restart(self) -> None:
+        """Restarts the application process."""
         self.exit("restart")
 
-    def action_cursor_up(self) -> None:
+    def action_quit(self) -> None:
+        """Routes the ``q`` key to one-level-back navigation."""
+        self.action_config_back()
+
+    def action_activate(self) -> None:
+        """Activates the currently selected menu entry."""
+        self._clear_message()
         if self._config_menu_active:
-            if self._config_flow is not None and self._config_flow["phase"] == "choice":
-                choices = self._flow_choices_for_step(self._service.load_config())
-                self._config_flow["selected_choice"] = (self._config_flow["selected_choice"] - 1) % len(choices)
-                self._refresh_runtime()
-                return
-            self._config_selected = (self._config_selected - 1) % len(CONFIG_MENU_OPTIONS)
-            self._refresh_runtime()
+            self._config_menu.activate()
             return
-        if self._view == "show" and not self._current_suggestions:
+        if self._view == "menu":
+            self._root_menu.activate()
+
+    def action_config_back(self) -> None:
+        """Moves back one level in the current navigation flow."""
+        if not self._config_menu_active:
+            return
+        self._clear_message()
+        self._config_menu.back()
+
+    def action_cursor_up(self) -> None:
+        """Moves the active selection up."""
+        self._clear_message()
+        menu = self._current_option_menu()
+        if menu is not None:
+            if menu.count > 0:
+                self._set_current_option_selected((menu.selected - 1) % menu.count)
+                self._refresh_runtime()
+            return
+        if self._config_menu_active and self._config_level == "show":
             self._show_scroll = max(0, self._show_scroll - 1)
             self._refresh_runtime()
             return
-        input_widget = self.query_one("#command_input", Input)
-        if not input_widget.has_focus or not self._current_suggestions:
-            return
-        self._selected_suggestion = (self._selected_suggestion - 1) % len(self._current_suggestions)
-        self._render_suggestions()
 
     def action_cursor_down(self) -> None:
-        if self._config_menu_active:
-            if self._config_flow is not None and self._config_flow["phase"] == "choice":
-                choices = self._flow_choices_for_step(self._service.load_config())
-                self._config_flow["selected_choice"] = (self._config_flow["selected_choice"] + 1) % len(choices)
+        """Moves the active selection down."""
+        self._clear_message()
+        menu = self._current_option_menu()
+        if menu is not None:
+            if menu.count > 0:
+                self._set_current_option_selected((menu.selected + 1) % menu.count)
                 self._refresh_runtime()
-                return
-            self._config_selected = (self._config_selected + 1) % len(CONFIG_MENU_OPTIONS)
-            self._refresh_runtime()
             return
-        if self._view == "show" and not self._current_suggestions:
+        if self._config_menu_active and self._config_level == "show":
             self._show_scroll = min(self._show_max_scroll(), self._show_scroll + 1)
             self._refresh_runtime()
             return
-        input_widget = self.query_one("#command_input", Input)
-        if not input_widget.has_focus or not self._current_suggestions:
-            return
-        self._selected_suggestion = (self._selected_suggestion + 1) % len(self._current_suggestions)
-        self._render_suggestions()
-
-    def action_complete_command(self) -> None:
-        if self._config_menu_active:
-            return
-        input_widget = self.query_one("#command_input", Input)
-        if not input_widget.has_focus or not self._current_suggestions:
-            return
-        current = input_widget.value.strip()
-        selected = self._current_suggestions[self._selected_suggestion]
-        if not selected.startswith(current):
-            return
-        input_widget.value = selected + " "
-        input_widget.cursor_position = len(input_widget.value)
-        self._update_suggestions(input_widget.value.strip())
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Processes text submitted through the bottom input field."""
         if event.input.id != "command_input":
             return
-        raw_command = event.value
-        command = raw_command.strip()
-        direct_aliases = {"/c", "/h", "/l", "/q", "/r"}
+        command = event.value.strip()
         if self._config_menu_active:
             event.input.value = ""
-            self._hide_suggestions()
-            if command in {"/q", "/quit", "/exit"}:
-                self._exit_config_mode()
-                self._set_message(self._t("left_config"))
-                self._refresh_runtime()
-                return
-            if self._config_flow is None:
-                if command:
-                    self._set_message(self._t("config_only_quit"))
+            if self._config_level == "input":
+                if not command:
+                    self._set_message(self._t("enter_value_or_quit"))
                 else:
-                    self._start_config_flow()
+                    if self._input_mode == "extra_env_key":
+                        config = self._service.load_config()
+                        payload = self._extra_env_payload(config)
+                        key = command.strip()
+                        if not key:
+                            self._set_message(self._t("enter_value_or_quit"))
+                            return
+                        if key in payload:
+                            self._set_message(self._t("env_key_exists"))
+                            return
+                        self._extra_env_key = key
+                        self._config_editing_path = f"claude.backends.{self._claude_backend_name}.extra_env.{key}"
+                        self._input_mode = "extra_env_value"
+                        self._refresh_runtime()
+                        self._set_message(self._t("env_key_saved", key=key))
+                        return
+                    if self._input_mode == "extra_env_value":
+                        config = self._service.load_config()
+                        payload = self._extra_env_payload(config)
+                        assert self._extra_env_key is not None
+                        payload[self._extra_env_key] = command
+                        self._save_extra_env_payload(payload)
+                        key = self._extra_env_key
+                        self._pop_config_state()
+                        if self._config_level == "input":
+                            self._pop_config_state()
+                        self._refresh_runtime()
+                        self._set_message(self._t("env_saved", key=key))
+                        return
+                    if self._input_mode == "claude_custom_field":
+                        draft = self._current_custom_draft()
+                        field = (self._config_editing_path or "").split(".")[-1]
+                        if draft is not None and field:
+                            draft[field] = command.strip()
+                        self._pop_config_state()
+                        self._refresh_runtime()
+                        self._set_message(self._t("value_saved", field=field))
+                        return
+                    assert self._config_editing_path is not None
+                    field = self._config_editing_path
+                    self._service.set_config_value(field, command)
+                    self._pop_config_state()
+                    self._refresh_runtime()
+                    self._set_message(f"{self._t('value_saved', field=field)} {self._t('restart_required')}")
                 return
-            if self._config_flow["phase"] == "choice":
-                if command:
-                    self._set_message(self._t("press_enter_choice"))
-                else:
-                    self._accept_config_choice()
-                return
-            if not command:
-                self._set_message(self._t("enter_value_or_quit"))
-            else:
-                self._advance_config_flow(command)
-            return
-        if (
-            self._current_suggestions
-            and command.startswith("/")
-            and command not in direct_aliases
-            and not raw_command.endswith(" ")
-            and self._current_suggestions[self._selected_suggestion].startswith(command)
-        ):
-            selected = self._current_suggestions[self._selected_suggestion]
-            event.input.value = selected + " "
-            event.input.cursor_position = len(event.input.value)
-            self._update_suggestions(event.input.value.strip())
+            self._set_message(self._t("input_disabled"))
             return
         event.input.value = ""
-        self._hide_suggestions()
-        if not command:
-            return
-        try:
-            self._run_command(command)
-        except ValueError as exc:
-            self._set_message(str(exc))
-
-    def on_input_changed(self, event: Input.Changed) -> None:
-        if event.input.id != "command_input":
-            return
-        self._update_suggestions(event.value.strip())
-
-    def _matching_commands(self, value: str) -> list[str]:
-        if self._config_menu_active:
-            if value.startswith("/q") or value == "/":
-                return ["/quit"]
-            return []
-        if not value.startswith("/"):
-            return []
-        if value == "/":
-            return TUI_COMMANDS
-        if value.startswith("/c"):
-            return ["/config"]
-        if value.startswith("/h"):
-            return ["/help"]
-        if value.startswith("/l"):
-            return ["/log"]
-        if value.startswith("/q"):
-            return ["/quit"]
-        if value.startswith("/r"):
-            return ["/restart"]
-        if value == "/config" or value.startswith("/config "):
-            return [command for command in CONFIG_SUBCOMMANDS if command.startswith(value)]
-        prefix = value.split(" ", 1)[0]
-        return [command for command in TUI_COMMANDS if command.startswith(prefix)]
-
-    def _update_suggestions(self, value: str) -> None:
-        suggestions = self._matching_commands(value)
-        current_selected = None
-        if self._current_suggestions and 0 <= self._selected_suggestion < len(self._current_suggestions):
-            current_selected = self._current_suggestions[self._selected_suggestion]
-        self._current_suggestions = suggestions
-        if not suggestions:
-            self._hide_suggestions()
-            return
-        self._selected_suggestion = suggestions.index(current_selected) if current_selected in suggestions else 0
-        self._render_suggestions()
-
-    def _render_suggestions(self) -> None:
-        widget = self.query_one("#command_suggestions", Static)
-        visible = self._current_suggestions[:6]
-        selected = min(self._selected_suggestion, len(visible) - 1)
-        lines = []
-        for index, command in enumerate(visible):
-            alias = COMMAND_ALIASES.get(command)
-            display = f"{command}    ({alias})" if alias else command
-            if index == selected:
-                lines.append(f"[bold #0f1117 on #fb923c]  {display}  [/]")
-            else:
-                lines.append(f"  {display}")
-        widget.update("\n".join(lines))
-        widget.remove_class("hidden")
-
-    def _hide_suggestions(self) -> None:
-        self._current_suggestions = []
-        self._selected_suggestion = 0
-        widget = self.query_one("#command_suggestions", Static)
-        widget.update("")
-        widget.add_class("hidden")
+        self._set_message(self._t("input_disabled"))
 
     def _enter_config_mode(self) -> None:
-        self._config_menu_active = True
-        self._config_selected = 0
-        self._config_flow = None
-        self.query_one("#command_input", Input).placeholder = self._t("config_mode_placeholder")
-        self._hide_suggestions()
-        self._refresh_runtime()
+        """Enters config mode programmatically."""
+        self._root_selected = 0
+        self._root_menu.activate()
 
     def _exit_config_mode(self) -> None:
-        self._config_menu_active = False
-        self._config_flow = None
-        self._view = "dashboard"
-        self.query_one("#command_input", Input).placeholder = self._t("config_placeholder")
-        self._hide_suggestions()
+        """Leaves config mode programmatically."""
+        self._config_menu.exit()
 
-    def _start_config_flow(self) -> None:
-        section = CONFIG_MENU_OPTIONS[self._config_selected]
-        if section == "language":
-            self._config_flow = {
-                "section": "language",
-                "step_index": 0,
-                "steps": [("ui.language", "Choose a language", "请选择一种语言")],
-                "values": {},
-                "phase": "choice",
-                "selected_choice": 0,
-            }
-            self.query_one("#command_input", Input).placeholder = self._t("choice_placeholder")
-            self._refresh_runtime()
-            self._set_message(self._t("start_language"))
-            return
-        if section == "feishu":
-            self._config_flow = {
-                "section": "feishu",
-                "step_index": 0,
-                "steps": FEISHU_WIZARD_STEPS,
-                "values": {},
-                "phase": "choice",
-                "selected_choice": 0,
-            }
-            self.query_one("#command_input", Input).placeholder = self._t("choice_placeholder")
-            self._refresh_runtime()
-            self._set_message(self._t("start_feishu"))
-            return
-        self._set_message(self._t("unknown_interactive", section=section))
-
-    def _flow_choices_for_step(self, config: dict) -> list[str]:
-        assert self._config_flow is not None
-        section = self._config_flow["section"]
-        if section == "language":
-            return [label for label, _code in LANGUAGE_CHOICES]
-        step_index = self._config_flow["step_index"]
-        step_key, _prompt_en, _prompt_zh = self._config_flow["steps"][step_index]
-        current = self._lookup_nested(config, step_key)
-        if step_key == "feishu.app_secret":
-            current_label = self._t("current_secret") if current else self._t("empty")
+    def _sync_input_state(self) -> None:
+        """Synchronizes input state, masking, and focus with the active screen."""
+        input_widget = self.query_one("#command_input", Input)
+        editable = self._config_menu_active and self._config_level == "input"
+        input_widget.disabled = not editable
+        input_widget.placeholder = ""
+        input_widget.password = editable and self._is_sensitive_input()
+        if editable:
+            input_widget.focus()
         else:
-            current_label = current or self._t("empty")
-        return [
-            self._t("new"),
-            self._t("do_not_change", current=current_label),
-        ]
+            input_widget.value = ""
 
-    def _accept_config_choice(self) -> None:
-        assert self._config_flow is not None
-        section = self._config_flow["section"]
-        selected = self._config_flow["selected_choice"]
-        if section == "language":
-            _label, code = LANGUAGE_CHOICES[selected]
-            self._service.set_config_value("ui.language", code)
-            self._config_flow = None
-            self.query_one("#command_input", Input).placeholder = self._t("config_mode_placeholder")
-            self._refresh_runtime()
-            self._set_message(self._t("language_done"))
-            return
-        if selected == 0:
-            self._config_flow["phase"] = "input"
-            self.query_one("#command_input", Input).placeholder = self._t("input_placeholder")
-            self._refresh_runtime()
-            step_index = self._config_flow["step_index"]
-            _step_key, prompt_en, prompt_zh = self._config_flow["steps"][step_index]
-            self._set_message(prompt_zh if self._lang() == "zh" else prompt_en)
-            return
-        self._advance_config_flow(None)
+    def _set_message(self, message: str, *, transient: bool = False) -> None:
+        """Updates the footer status line."""
+        self._message_override = message
+        self._refresh_message_line()
+        if transient:
+            self.set_timer(2.0, self._clear_message)
 
-    def _advance_config_flow(self, value: str | None) -> None:
-        assert self._config_flow is not None
-        step_index = self._config_flow["step_index"]
-        steps = self._config_flow["steps"]
-        key, _prompt_en, _prompt_zh = steps[step_index]
-        if value is not None:
-            self._config_flow["values"][key] = value
-        next_index = step_index + 1
-        if next_index >= len(steps):
-            for config_key, config_value in self._config_flow["values"].items():
-                self._service.set_config_value(config_key, config_value)
-            self._config_flow = None
-            self.query_one("#command_input", Input).placeholder = self._t("config_mode_placeholder")
-            self._refresh_runtime()
-            self._set_message(self._t("feishu_done"))
-            return
-        self._config_flow["step_index"] = next_index
-        self._config_flow["phase"] = "choice"
-        self._config_flow["selected_choice"] = 0
-        self.query_one("#command_input", Input).placeholder = self._t("choice_placeholder")
-        self._refresh_runtime()
-        _next_key, next_prompt_en, next_prompt_zh = steps[next_index]
-        prompt = next_prompt_zh if self._lang() == "zh" else next_prompt_en
-        self._set_message(self._t("next_choose", prompt=prompt))
+    def _clear_message(self) -> None:
+        """Clears any temporary footer message and restores hints."""
+        self._message_override = ""
+        self._refresh_message_line()
 
-    def _run_command(self, command: str) -> None:
-        if not command.startswith("/"):
-            raise ValueError(self._t("slash_required"))
-        try:
-            parts = shlex.split(command[1:])
-        except ValueError as exc:
-            raise ValueError(str(exc)) from exc
-        if not parts:
-            self._set_message(self._t("commands_list"))
-            return
-        name = parts[0].lower()
-        args = parts[1:]
-        if name in {"help", "h", "?"}:
-            self._view = "help"
-            self._refresh_runtime()
-            self._set_message(self._t("help_message"))
-            return
-        if name in {"config", "c"}:
-            if args and args[0].lower() == "show":
-                self._view = "show"
-                self._show_scroll = 0
-                self._refresh_runtime()
-                self._set_message(self._t("show_refreshed"))
-                return
-            self._enter_config_mode()
-            self._set_message(self._t("config_pick"))
-            return
-        if name in {"log", "l"}:
-            self._view = "logs"
-            self._show_scroll = 0
-            self._refresh_runtime()
-            return
-        if name in {"r", "restart"}:
-            self.exit("restart")
-            return
-        if name in {"q", "quit", "exit"}:
-            if self._view != "dashboard":
-                self._view = "dashboard"
-                self._show_scroll = 0
-                self._refresh_runtime()
-                self._set_message(self._t("back_dashboard"))
-                return
-            self.exit()
-            return
-        raise ValueError(self._t("unknown_command"))
-
-    def _set_message(self, message: str) -> None:
-        self.query_one("#message_line", Static).update(message)
+    def _refresh_message_line(self) -> None:
+        """Refreshes the footer line with either status or contextual hints."""
+        text = self._message_override or self._footer_hint_text()
+        self.query_one("#message_line", Static).update(text)
