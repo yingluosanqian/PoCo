@@ -185,7 +185,10 @@ class ClaudeProviderClient:
             cmd.extend(["--session-id", thread_id])
         if self._provider.model:
             cmd.extend(["--model", self._provider.model])
-        if self._provider.approval_policy:
+        approval_policy = self._provider.approval_policy.strip()
+        if approval_policy in {"bypassPermissions", "dangerously-skip-permissions"}:
+            cmd.append("--dangerously-skip-permissions")
+        elif approval_policy:
             cmd.extend(["--permission-mode", self._provider.approval_policy])
         image_paths = [path for path in (local_image_paths or []) if path]
         for parent in sorted({str(Path(path).expanduser().resolve().parent) for path in image_paths}):
@@ -203,6 +206,8 @@ class ClaudeProviderClient:
         cmd.append(text)
         env = os.environ.copy()
         env.update(self._provider.env)
+        if str(self._provider.sandbox).strip() in {"1", "true", "True", "sandbox", "is_sandbox"}:
+            env["IS_SANDBOX"] = "1"
         process = subprocess.Popen(
             cmd,
             stdin=subprocess.DEVNULL,

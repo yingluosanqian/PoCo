@@ -103,9 +103,14 @@ STRINGS = {
     "current_secret": {"en": "current secret", "zh": "当前密钥"},
     "empty": {"en": "empty", "zh": "空"},
     "config_required": {
-        "en": "Config is incomplete. Open Config in the menu and finish the required fields.",
-        "zh": "配置还不完整。请在菜单中打开 Config 并完成必填项。",
+        "en": "Config is incomplete. Open Bot (feishu) and finish the required fields.",
+        "zh": "配置还不完整。请打开 Bot (feishu) 并完成必填项。",
     },
+    "config_missing": {
+        "en": "Missing in Bot (feishu): {fields}",
+        "zh": "Bot (feishu) 缺少：{fields}",
+    },
+    "missing_label": {"en": "Missing", "zh": "缺少"},
     "relay_started": {"en": "PoCo relay is running.", "zh": "PoCo relay 已启动。"},
     "relay_already_running": {"en": "PoCo relay is already running.", "zh": "PoCo relay 已经在运行。"},
     "left_config": {"en": "Left config mode.", "zh": "已退出配置模式。"},

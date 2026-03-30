@@ -197,6 +197,24 @@ def config_ready(config: Dict[str, Any]) -> bool:
     return bool(feishu["app_id"] and feishu["app_secret"])
 
 
+def missing_required_config_paths(config: Dict[str, Any]) -> list[str]:
+    """Returns the required config paths that are still missing.
+
+    Args:
+        config: Current merged config payload.
+
+    Returns:
+        A list of dotted config paths that must be filled before PoCo can run.
+    """
+    missing: list[str] = []
+    feishu = config.get("feishu", {})
+    if not str(feishu.get("app_id", "")).strip():
+        missing.append("feishu.app_id")
+    if not str(feishu.get("app_secret", "")).strip():
+        missing.append("feishu.app_secret")
+    return missing
+
+
 def ensure_dirs() -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     STATE_DIR.mkdir(parents=True, exist_ok=True)

@@ -11,6 +11,7 @@ from .config import (
     WORKER_STATE_PATH,
     ConfigStore,
     config_ready,
+    missing_required_config_paths,
     normalize_config_key,
     parse_config_value,
     set_nested,
@@ -162,5 +163,6 @@ class PoCoService:
     def start_relay(self) -> bool:
         config = self.load_config()
         if not config_ready(config):
-            raise ValueError("配置还不完整，至少需要 Feishu App ID 和 App Secret。")
+            missing = ", ".join(missing_required_config_paths(config))
+            raise ValueError(f"配置还不完整，缺少：{missing}")
         return self.relay.start(config)

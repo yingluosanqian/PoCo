@@ -8,7 +8,7 @@ from textual.containers import Container, Horizontal
 from textual.widgets import Input, Static
 
 from .. import __version__
-from ..config import config_ready
+from ..config import config_ready, missing_required_config_paths
 from ..providers import model_choices
 from .resources import POCO_ICON, STRINGS, TUI_CSS
 from .menus.config import (
@@ -291,6 +291,22 @@ class PoCoTui(App[None]):
             value = value.get(part, "")
         return str(value or "")
 
+    @staticmethod
+    def _missing_config_field_name(path: str) -> str:
+        """Returns a short human-readable field name for one required path."""
+        mapping = {
+            "feishu.app_id": "app_id",
+            "feishu.app_secret": "app_secret",
+        }
+        return mapping.get(path, path)
+
+    def _missing_config_fields_text(self, config: dict) -> str:
+        """Returns a compact comma-separated summary of missing required fields."""
+        return ", ".join(
+            self._missing_config_field_name(path)
+            for path in missing_required_config_paths(config)
+        )
+
     def compose(self) -> ComposeResult:
         """Builds the Textual widget tree."""
         with Horizontal(id="main_panel"):
@@ -315,7 +331,11 @@ class PoCoTui(App[None]):
         config = self._service.load_config()
         if self._focus_config or not config_ready(config):
             self._enter_config_mode()
-            self._set_message(self._t("config_required"))
+            missing = self._missing_config_fields_text(config)
+            if missing:
+                self._set_message(self._t("config_missing", fields=missing))
+            else:
+                self._set_message(self._t("config_required"))
             return
         self._service.start_relay()
         self._set_message(self._t("relay_started"), transient=True)
@@ -337,13 +357,19 @@ class PoCoTui(App[None]):
         relay_style = "#3fb950" if relay["running"] else "#f85149"
         config_status = self._t("ready") if config_ready(config) else self._t("needs_config")
         config_style = "#3fb950" if config_ready(config) else "#f2cc60"
-        return (
+        lines = [
             f"[bold #fb923c]{POCO_ICON}[/]\n"
             f"[bold #fb923c]PoCo v{__version__}[/]\n"
             "\n"
             f"{self._t('relay')}: [bold {relay_style}]{relay_status}[/]\n"
             f"{self._t('settings')}: [bold {config_style}]{config_status}[/]"
-        )
+        ]
+        if not config_ready(config):
+            missing = self._missing_config_fields_text(config)
+            if missing:
+                lines.append("")
+                lines.append(f"[bold #f2cc60]{self._t('missing_label')}[/]: [#f2cc60]{missing}[/]")
+        return "\n".join(lines)
 
     def _right_panel_text(self, config: dict, relay: dict) -> str:
         """Builds the right panel text for the current view."""
