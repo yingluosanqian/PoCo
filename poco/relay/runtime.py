@@ -175,6 +175,19 @@ class TurnController:
                     )
                     live.stream_sequence += 1
                     live.streaming_mode = False
+                    self.app._messenger.update_card_entity(
+                        live.card_id,
+                        self.answer_card(
+                            self.app._provider_name_for_worker(session.worker_id),
+                            rendered,
+                            state="completed",
+                            stop_enabled=False,
+                            streaming=False,
+                            element_id=live.element_id or "answer_stream",
+                        ),
+                        live.stream_sequence + 1,
+                    )
+                    live.stream_sequence += 1
                 except Exception:
                     LOG.exception("Failed to close streaming mode for card_id=%s", live.card_id)
             return
@@ -301,38 +314,111 @@ class TurnController:
             streaming_mode=True,
         )
 
-    def create_streaming_answer_card(self, provider_name: str) -> Tuple[str, str]:
-        """Create a reusable streaming card entity for one answer."""
-        element_id = "answer_stream"
-        card = {
+    def answer_card(
+        self,
+        provider_name: str,
+        text: str,
+        *,
+        state: str,
+        stop_enabled: bool,
+        streaming: bool,
+        element_id: str = "answer_stream",
+    ) -> dict:
+        """Build one reply card for streaming, completed, or stopped states."""
+        normalized = state.strip().lower()
+        if normalized == "stopped":
+            template = "orange"
+            tag_text = "Stopped"
+            tag_color = "orange"
+        elif normalized == "completed":
+            template = "green"
+            tag_text = "Completed"
+            tag_color = "green"
+        else:
+            template = "orange"
+            tag_text = "Running"
+            tag_color = "blue"
+        elements = [
+            {
+                "tag": "markdown",
+                "element_id": element_id,
+                "content": text,
+            }
+        ]
+        if stop_enabled:
+            elements.append(
+                {
+                    "tag": "column_set",
+                    "horizontal_spacing": "8px",
+                    "columns": [
+                        {
+                            "tag": "column",
+                            "width": "auto",
+                            "elements": [
+                                self.app._card_button("Stop", "stop_turn", "default")
+                            ],
+                        }
+                    ],
+                }
+            )
+        elif normalized == "stopped":
+            elements.append(
+                {
+                    "tag": "column_set",
+                    "horizontal_spacing": "8px",
+                    "columns": [
+                        {
+                            "tag": "column",
+                            "width": "auto",
+                            "elements": [
+                                self.app._card_button("Stopped", "stopped", "default", enable_callback=False)
+                            ],
+                        }
+                    ],
+                }
+            )
+        return {
             "schema": "2.0",
             "config": {
                 "update_multi": True,
                 "enable_forward": True,
-                "streaming_mode": True,
-                "summary": {"content": "Generating..."},
+                "streaming_mode": streaming,
+                "summary": {"content": "Generating..." if streaming else shorten(text, 80)},
                 "streaming_config": {
                     "print_frequency_ms": {"default": 70},
                     "print_step": {"default": 1},
                     "print_strategy": "fast",
-                },
+                } if streaming else {},
             },
             "header": {
-                "template": "orange",
+                "template": template,
                 "title": {"tag": "plain_text", "content": f"{provider_name.capitalize()} Reply"},
+                "text_tag_list": [
+                    {
+                        "tag": "text_tag",
+                        "text": {"tag": "plain_text", "content": tag_text},
+                        "color": tag_color,
+                    }
+                ],
             },
             "body": {
                 "padding": "14px",
                 "vertical_spacing": "8px",
-                "elements": [
-                    {
-                        "tag": "markdown",
-                        "element_id": element_id,
-                        "content": f"PoCo is thinking with {provider_name}...",
-                    }
-                ],
+                "elements": elements,
             },
         }
+
+    def create_streaming_answer_card(self, provider_name: str) -> Tuple[str, str]:
+        """Create a reusable streaming card entity for one answer."""
+        element_id = "answer_stream"
+        card = self.answer_card(
+            provider_name,
+            f"PoCo is thinking with {provider_name}...",
+            state="running",
+            stop_enabled=True,
+            streaming=True,
+            element_id=element_id,
+        )
         return self.app._messenger.create_card_entity(card), element_id
 
     def cleanup_session(self, session: TurnSession) -> None:

@@ -1,17 +1,45 @@
 #!/usr/bin/env python3
 import argparse
+import fcntl
 import json
 import logging
 import os
 import sys
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from .bootstrap import run_feishu_bootstrap_cli
 from .runtime import (
     PoCoService,
     RingLogHandler,
 )
-from .config import CONFIG_PATH, LOG_PATH, ConfigStore, ensure_dirs, get_nested
+from .config import CONFIG_PATH, LOG_PATH, STATE_DIR, ConfigStore, ensure_dirs, get_nested
 from .tui import PoCoTui
+
+
+_APP_LOCK = None
+
+
+def _acquire_app_lock() -> bool:
+    """Acquires a process-wide PoCo instance lock.
+
+    Returns:
+        True when this process successfully acquired the lock, or False when
+        another PoCo process is already holding it.
+    """
+    global _APP_LOCK
+    lock_path = Path(STATE_DIR) / "poco.lock"
+    handle = lock_path.open("w", encoding="utf-8")
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        handle.close()
+        return False
+    handle.seek(0)
+    handle.truncate()
+    handle.write(str(os.getpid()))
+    handle.flush()
+    _APP_LOCK = handle
+    return True
 
 
 def parse_args() -> argparse.Namespace:
@@ -33,6 +61,8 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
     ensure_dirs()
+    if not _acquire_app_lock():
+        raise SystemExit("Another PoCo process is already running. Kill the existing process first.")
     root_logger = logging.getLogger()
     ring = RingLogHandler()
     ring.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))

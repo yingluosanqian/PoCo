@@ -11,10 +11,13 @@ from typing import Dict, Optional
 import lark_oapi as lark
 from lark_oapi.api.cardkit.v1.model.content_card_element_request import ContentCardElementRequest
 from lark_oapi.api.cardkit.v1.model.content_card_element_request_body import ContentCardElementRequestBody
+from lark_oapi.api.cardkit.v1.model.card import Card
 from lark_oapi.api.cardkit.v1.model.create_card_request import CreateCardRequest
 from lark_oapi.api.cardkit.v1.model.create_card_request_body import CreateCardRequestBody
 from lark_oapi.api.cardkit.v1.model.settings_card_request import SettingsCardRequest
 from lark_oapi.api.cardkit.v1.model.settings_card_request_body import SettingsCardRequestBody
+from lark_oapi.api.cardkit.v1.model.update_card_request import UpdateCardRequest
+from lark_oapi.api.cardkit.v1.model.update_card_request_body import UpdateCardRequestBody
 from lark_oapi.api.im.v1 import (
     CreateChatMembersRequest,
     CreateChatMembersRequestBody,
@@ -380,6 +383,31 @@ class FeishuMessenger:
         if response.code != 0:
             raise RuntimeError(
                 f"Feishu card settings failed: code={response.code}, msg={response.msg}, "
+                f"log_id={response.get_log_id()}"
+            )
+
+    def update_card_entity(self, card_id: str, card: dict, sequence: int) -> None:
+        request = (
+            UpdateCardRequest.builder()
+            .card_id(card_id)
+            .request_body(
+                UpdateCardRequestBody.builder()
+                .uuid(str(uuid.uuid4()))
+                .sequence(sequence)
+                .card(
+                    Card.builder()
+                    .type("card_json")
+                    .data(json.dumps(card, ensure_ascii=False, separators=(",", ":")))
+                    .build()
+                )
+                .build()
+            )
+            .build()
+        )
+        response = self._client.cardkit.v1.card.update(request)
+        if response.code != 0:
+            raise RuntimeError(
+                f"Feishu update card entity failed: code={response.code}, msg={response.msg}, "
                 f"log_id={response.get_log_id()}"
             )
 

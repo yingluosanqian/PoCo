@@ -435,14 +435,9 @@ class RelayApp:
             self._safe_send(chat_id, "[poco] 单聊是管理控制台，暂不处理图片。请在项目群里发送图片。")
             return
         worker_id = chat_id
-        self._worker_store.ensure_worker(worker_id)
-        if not self._worker_store.enabled_for(worker_id):
-            self._safe_send(
-                chat_id,
-                "[poco] This group is not active yet.\n"
-                "Create and manage project groups from the DM console instead of configuring them here.\n"
-                "DM the bot with `poco`.",
-            )
+        state_error = self._group_access_error_text(worker_id)
+        if state_error:
+            self._safe_send(chat_id, state_error)
             return
         self._safe_send(
             chat_id,
@@ -468,14 +463,9 @@ class RelayApp:
             return
 
         worker_id = chat_id
-        self._worker_store.ensure_worker(worker_id)
-        if not self._worker_store.enabled_for(worker_id):
-            self._safe_send(
-                chat_id,
-                "[poco] This group is not active yet.\n"
-                "Create and manage project groups from the DM console instead.\n"
-                "DM the bot with `poco`.",
-            )
+        state_error = self._group_access_error_text(worker_id)
+        if state_error:
+            self._safe_send(chat_id, state_error)
             return
 
         local_image_paths = [
@@ -510,7 +500,6 @@ class RelayApp:
         open_id: str,
     ) -> None:
         worker_id = chat_id
-        self._worker_store.ensure_worker(worker_id)
         command, arg = self._parse_poco_command(text)
         stripped = text.strip().lower()
         if command == "cardtest":
@@ -525,13 +514,9 @@ class RelayApp:
                 "请去单聊发送 `poco`，这个群里直接聊天即可。",
             )
             return
-        if not self._worker_store.enabled_for(worker_id):
-            self._safe_send(
-                chat_id,
-                "[poco] This group is not active yet.\n"
-                "Create and manage project groups from the DM console.\n"
-                "DM the bot with `poco`.",
-            )
+        state_error = self._group_access_error_text(worker_id)
+        if state_error:
+            self._safe_send(chat_id, state_error)
             return
 
         self._handle_group_turn_input(worker_id, chat_id, chat_type, text, mentions, open_id)
@@ -720,8 +705,31 @@ class RelayApp:
                 cleaned = cleaned.replace(f"@{name}", " ")
         return " ".join(cleaned.split())
 
+    def _group_access_error_text(self, worker_id: str) -> Optional[str]:
+        if not self._worker_store.has_worker(worker_id):
+            if self._store.get(worker_id):
+                return (
+                    "[poco] This group's local project state is missing or corrupted.\n"
+                    "Please go back to the DM console and recreate or repair this project group."
+                )
+            return (
+                "[poco] This group is not active yet.\n"
+                "Create and manage project groups from the DM console.\n"
+                "DM the bot with `poco`."
+            )
+        if not self._worker_store.enabled_for(worker_id):
+            return (
+                "[poco] This group is not active yet.\n"
+                "Create and manage project groups from the DM console.\n"
+                "DM the bot with `poco`."
+            )
+        return None
+
     def _ensure_worker(self, worker_id: str, chat_id: str, chat_type: str) -> WorkerRuntime:
-        self._worker_store.ensure_worker(worker_id)
+        if not self._worker_store.has_worker(worker_id):
+            raise RuntimeError(
+                "当前群的本地项目状态缺失或损坏。请回到 DM 控制台重新创建或修复这个项目群。"
+            )
         cwd = self._worker_store.cwd_for(worker_id)
         provider_name = self._provider_name_for_worker(worker_id)
         if not provider_name:

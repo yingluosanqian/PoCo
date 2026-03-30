@@ -1,12 +1,17 @@
 import logging
+import os
 import threading
 import time
 from collections import deque
+from pathlib import Path
 from typing import Any, Dict, Optional
+
+import fcntl
 
 from .relay import AppConfig, ProviderConfig, RelayApp
 from .config import (
     INPUT_IDS,
+    STATE_DIR,
     THREAD_STATE_PATH,
     WORKER_STATE_PATH,
     ConfigStore,
@@ -48,6 +53,7 @@ class RelayRunner:
         self._thread: Optional[threading.Thread] = None
         self._last_error: str = ""
         self._started_at: Optional[float] = None
+        self._lock_file = None
         self._lock = threading.Lock()
 
     def status(self) -> Dict[str, Any]:
@@ -62,6 +68,11 @@ class RelayRunner:
         with self._lock:
             if self._thread is not None and self._thread.is_alive():
                 return False
+            lock_file = self._acquire_single_instance_lock()
+            if lock_file is None:
+                raise RuntimeError(
+                    "Another PoCo relay process is already running. Stop the other `poco` process first."
+                )
             self._last_error = ""
             app_config = build_app_config(config)
             thread = threading.Thread(
@@ -72,6 +83,7 @@ class RelayRunner:
             )
             self._thread = thread
             self._started_at = time.time()
+            self._lock_file = lock_file
             thread.start()
             return True
 
@@ -83,6 +95,36 @@ class RelayRunner:
             with self._lock:
                 self._last_error = str(exc)
             LOG.exception("Relay runtime crashed")
+        finally:
+            self._release_single_instance_lock()
+
+    def _acquire_single_instance_lock(self):
+        lock_path = Path(STATE_DIR) / "relay.lock"
+        handle = lock_path.open("w", encoding="utf-8")
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            handle.close()
+            return None
+        handle.seek(0)
+        handle.truncate()
+        handle.write(str(os.getpid()))
+        handle.flush()
+        return handle
+
+    def _release_single_instance_lock(self) -> None:
+        with self._lock:
+            handle = self._lock_file
+            self._lock_file = None
+            self._thread = None
+            self._started_at = None
+        if handle is None:
+            return
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        except OSError:
+            pass
+        handle.close()
 
 
 def build_app_config(config: Dict[str, Any]) -> AppConfig:

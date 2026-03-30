@@ -862,6 +862,17 @@ class SetupCardController:
         return P2CardActionTriggerResponse(payload)
 
     @staticmethod
+    def response_toast(notice: str, toast_type: str = "info") -> P2CardActionTriggerResponse:
+        return P2CardActionTriggerResponse(
+            {
+                "toast": {
+                    "type": toast_type,
+                    "content": notice,
+                }
+            }
+        )
+
+    @staticmethod
     def coerce_form_value(value: object) -> str:
         if value is None:
             return ""
@@ -1085,6 +1096,33 @@ class SetupCardController:
                         "Removed.",
                         "success",
                     )
+
+            if action_name == "stop_turn":
+                with self.app._lock:
+                    session = self.app._active_by_worker.get(worker_id)
+                    worker = self.app._workers.get(worker_id)
+                if session is None or worker is None:
+                    return self.response_toast("Nothing to stop.", "info")
+                try:
+                    worker.client.interrupt_turn(session.thread_id, session.turn_id)
+                except Exception as exc:
+                    return self.response_toast(f"Stop failed: {exc}", "error")
+                with session.lock:
+                    rendered = (session.final_text or session.accumulated_text).rstrip() or "_Stopped._"
+                    session.done = True
+                    session.final_text = rendered
+                    session.error_text = ""
+                    session.live.card_broken = True
+                session.notify()
+                return self.response_card(
+                    self.app._turns.answer_card(
+                        worker.provider_name,
+                        rendered,
+                        state="stopped",
+                        stop_enabled=False,
+                        streaming=False,
+                    ),
+                )
 
             if action_name in {"launch_project", "reset_project_launch"}:
                 def project_card_response(
