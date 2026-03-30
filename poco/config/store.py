@@ -3,17 +3,65 @@ import logging
 import os
 import threading
 from copy import deepcopy
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict
 
 
 LOG = logging.getLogger("poco")
-CONFIG_DIR = Path.home() / ".config" / "poco"
-CONFIG_PATH = CONFIG_DIR / "config.json"
-STATE_DIR = Path.home() / ".local" / "state" / "poco"
-THREAD_STATE_PATH = STATE_DIR / "threads.json"
-WORKER_STATE_PATH = STATE_DIR / "workers.json"
-LOG_PATH = STATE_DIR / "poco.log"
+CONFIG_ROOT = Path.home() / ".config" / "poco"
+STATE_ROOT = Path.home() / ".local" / "state" / "poco"
+WORKSPACE_BINDINGS_PATH = CONFIG_ROOT / "workspaces.json"
+
+
+@dataclass(frozen=True)
+class PoCoPaths:
+    instance: str
+    config_dir: Path
+    config_path: Path
+    state_dir: Path
+    thread_state_path: Path
+    worker_state_path: Path
+    log_path: Path
+    app_lock_path: Path
+    relay_lock_path: Path
+
+
+def normalize_instance_name(instance: str) -> str:
+    value = (instance or "").strip()
+    if not value:
+        return "default"
+    return "".join(ch if ch.isalnum() or ch in {"-", "_", "."} else "_" for ch in value)
+
+
+def build_paths(instance: str = "default") -> PoCoPaths:
+    name = normalize_instance_name(instance)
+    if name == "default":
+        config_dir = CONFIG_ROOT
+        state_dir = STATE_ROOT
+    else:
+        config_dir = CONFIG_ROOT / "bindings" / name
+        state_dir = STATE_ROOT / name
+    return PoCoPaths(
+        instance=name,
+        config_dir=config_dir,
+        config_path=config_dir / "config.json",
+        state_dir=state_dir,
+        thread_state_path=state_dir / "threads.json",
+        worker_state_path=state_dir / "workers.json",
+        log_path=state_dir / "poco.log",
+        app_lock_path=state_dir / "poco.lock",
+        relay_lock_path=state_dir / "relay.lock",
+    )
+
+
+_DEFAULT_PATHS = build_paths()
+CONFIG_DIR = _DEFAULT_PATHS.config_dir
+CONFIG_PATH = _DEFAULT_PATHS.config_path
+STATE_DIR = _DEFAULT_PATHS.state_dir
+THREAD_STATE_PATH = _DEFAULT_PATHS.thread_state_path
+WORKER_STATE_PATH = _DEFAULT_PATHS.worker_state_path
+LOG_PATH = _DEFAULT_PATHS.log_path
 
 DEFAULT_CONFIG: Dict[str, Any] = {
     "feishu": {
@@ -215,9 +263,78 @@ def missing_required_config_paths(config: Dict[str, Any]) -> list[str]:
     return missing
 
 
-def ensure_dirs() -> None:
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    STATE_DIR.mkdir(parents=True, exist_ok=True)
+def ensure_dirs(paths: PoCoPaths | None = None) -> None:
+    active = paths or _DEFAULT_PATHS
+    active.config_dir.mkdir(parents=True, exist_ok=True)
+    active.state_dir.mkdir(parents=True, exist_ok=True)
+    WORKSPACE_BINDINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+
+def _normalized_workspace_key(workspace: str | Path) -> str:
+    return str(Path(workspace).expanduser().resolve())
+
+
+def load_workspace_bindings() -> Dict[str, str]:
+    if not WORKSPACE_BINDINGS_PATH.exists():
+        return {}
+    try:
+        payload = json.loads(WORKSPACE_BINDINGS_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        LOG.exception("Failed to read workspace bindings")
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    return {str(k): str(v) for k, v in payload.items() if str(k).strip() and str(v).strip()}
+
+
+def save_workspace_bindings(bindings: Dict[str, str]) -> None:
+    WORKSPACE_BINDINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    WORKSPACE_BINDINGS_PATH.write_text(
+        json.dumps(bindings, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def bind_workspace(workspace: str | Path, app_id: str) -> None:
+    bindings = load_workspace_bindings()
+    bindings[_normalized_workspace_key(workspace)] = normalize_instance_name(app_id)
+    save_workspace_bindings(bindings)
+
+
+def workspace_binding(workspace: str | Path) -> str:
+    return load_workspace_bindings().get(_normalized_workspace_key(workspace), "")
+
+
+def saved_feishu_bot_ids() -> list[str]:
+    """Returns saved Feishu bot IDs that are fully configured on this machine.
+
+    Only bots with both ``app_id`` and ``app_secret`` are surfaced, so the TUI
+    login flow can safely offer them as reusable accounts.
+    """
+    bot_ids: set[str] = set()
+
+    def collect_from_config(path: Path, paths: PoCoPaths) -> None:
+        try:
+            config = ConfigStore(path, paths).load()
+        except Exception:
+            LOG.exception("Failed to load saved bot config from %s", path)
+            return
+        if not config_ready(config):
+            return
+        app_id = str(config.get("feishu", {}).get("app_id", "")).strip()
+        if app_id:
+            bot_ids.add(app_id)
+
+    if CONFIG_PATH.exists():
+        collect_from_config(CONFIG_PATH, _DEFAULT_PATHS)
+
+    bindings_root = CONFIG_ROOT / "bindings"
+    if bindings_root.exists():
+        for config_path in bindings_root.glob("*/config.json"):
+            instance = config_path.parent.name
+            collect_from_config(config_path, build_paths(instance))
+
+    return sorted(bot_ids)
 
 
 def set_nested(config: Dict[str, Any], path: str, value: Any) -> Dict[str, Any]:
@@ -273,8 +390,9 @@ def parse_config_value(path: str, raw: str) -> Any:
 
 
 class ConfigStore:
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, paths: PoCoPaths | None = None) -> None:
         self._path = path
+        self.paths = paths or _DEFAULT_PATHS
         self._lock = threading.Lock()
 
     def load(self) -> Dict[str, Any]:

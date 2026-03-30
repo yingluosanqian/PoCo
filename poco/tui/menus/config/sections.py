@@ -158,9 +158,11 @@ class SectionConfigRenderer(BaseConfigRenderer):
         """Renders the list of sections within the current config group."""
         assert self.app._config_group is not None
         options = CONFIG_GROUP_SECTIONS[self.app._config_group]
+        extra_lines = self.app._workspace_binding_lines(config) if self.app._config_group == "bot" else None
         prefix = self.app._panel_prefix(
             self.app._t("config_mode"),
             breadcrumb_parts=self.breadcrumb_parts(),
+            extra_lines=extra_lines,
             heading=self.app._t("pick_section"),
         )
         entry_lines = []
@@ -177,10 +179,13 @@ class SectionConfigRenderer(BaseConfigRenderer):
         assert self.app._config_section is not None
         section = self.app._config_section
         fields = CONFIG_FIELDS[section]
+        extra_lines = [f"[#8b949e]{self.app._t('section')}: {self.setting_option_label(section)}[/]"]
+        if section == "feishu":
+            extra_lines.extend(self.app._workspace_binding_lines(config))
         prefix = self.app._panel_prefix(
             self.app._t("config_mode"),
             breadcrumb_parts=self.breadcrumb_parts(),
-            extra_lines=[f"[#8b949e]{self.app._t('section')}: {self.setting_option_label(section)}[/]"],
+            extra_lines=extra_lines,
             heading=self.app._t("field"),
         )
         entry_lines = []

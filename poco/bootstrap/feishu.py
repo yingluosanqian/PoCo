@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import getpass
-import re
 from dataclasses import dataclass, field
-from typing import Callable, List, Optional, Set, Tuple
+from pathlib import Path
+from typing import Callable, List, Set
 
 import lark_oapi as lark
 import requests
@@ -15,13 +15,12 @@ from lark_oapi.api.application.v6 import (
     Application,
     Callback,
     GetApplicationRequest,
-    ListApplicationAppVersionRequest,
     ListScopeRequest,
     PatchApplicationRequest,
     SubscribedEvent,
 )
 
-from ..config import ConfigStore, get_nested, normalize_config_key, set_nested
+from ..config import ConfigStore, bind_workspace, build_paths, ensure_dirs, get_nested, normalize_config_key, set_nested, workspace_binding
 
 BASE_URL = "https://open.feishu.cn/open-apis"
 REQUIRED_SCOPES = [
@@ -52,20 +51,8 @@ class CurrentAppState:
     callbacks: Set[str] = field(default_factory=set)
 
 
-@dataclass(slots=True)
-class PublishResult:
-    """Best-effort publish result."""
-
-    created_version: bool = False
-    published: bool = False
-    version_tag: str = ""
-    warnings: List[str] = field(default_factory=list)
-
-
 class FeishuBootstrapper:
     """Applies PoCo's desired configuration to one Feishu app."""
-
-    _SEMVER_RE = re.compile(r"^\s*(\d+)\.(\d+)\.(\d+)\s*$")
 
     def __init__(self, app_id: str, app_secret: str, store: ConfigStore) -> None:
         self.app_id = app_id.strip()
@@ -241,87 +228,6 @@ class FeishuBootstrapper:
                 f"log_id={response.get_log_id()}"
             )
 
-    @classmethod
-    def _parse_semver(cls, value: str) -> Optional[Tuple[int, int, int]]:
-        """Parses a semantic version string."""
-        match = cls._SEMVER_RE.match(value or "")
-        if not match:
-            return None
-        return tuple(int(part) for part in match.groups())
-
-    @staticmethod
-    def _format_semver(version: Tuple[int, int, int]) -> str:
-        """Formats a semantic version tuple."""
-        return ".".join(str(part) for part in version)
-
-    def _next_version_tag(self) -> Tuple[str, List[str]]:
-        """Computes the next app version tag.
-
-        Returns:
-            A tuple of (next_version, warnings).
-        """
-        warnings: List[str] = []
-        request = (
-            ListApplicationAppVersionRequest.builder()
-            .app_id(self.app_id)
-            .lang("en_us")
-            .page_size(50)
-            .build()
-        )
-        response = self._client.application.v6.application_app_version.list(request)
-        if response.code != 0:
-            raise RuntimeError(
-                f"Feishu app version list failed: code={response.code}, msg={response.msg}, "
-                f"log_id={response.get_log_id()}"
-            )
-        items = response.data.items if response.data is not None and response.data.items is not None else []
-        if not items:
-            return "0.1.0", warnings
-        parsed_versions: List[Tuple[int, int, int]] = []
-        ignored_versions: List[str] = []
-        for item in items:
-            version = str(getattr(item, "version", "") or "").strip()
-            if not version:
-                continue
-            parsed = self._parse_semver(version)
-            if parsed is None:
-                ignored_versions.append(version)
-                continue
-            parsed_versions.append(parsed)
-        if not parsed_versions:
-            if ignored_versions:
-                warnings.append(
-                    "Existing app versions are not semantic versions and were ignored: "
-                    + ", ".join(sorted(set(ignored_versions))[:5])
-                )
-            return "0.1.0", warnings
-        major, minor, patch = max(parsed_versions)
-        next_version = (major, minor, patch + 1)
-        return self._format_semver(next_version), warnings
-
-    def create_and_publish_version(self, tenant_access_token: str) -> PublishResult:
-        """Best-effort version guidance.
-
-        Feishu's application patch and scope flows are scriptable, but version
-        creation / publish is still unreliable through the current API path
-        used by PoCo. Instead of failing bootstrap, PoCo computes the next
-        semantic version and tells the user what to publish manually.
-        """
-        result = PublishResult()
-        try:
-            version_tag, version_warnings = self._next_version_tag()
-            result.version_tag = version_tag
-            result.warnings.extend(version_warnings)
-        except Exception as exc:
-            result.warnings.append(f"Version lookup failed, fallback to 0.1.0: {exc}")
-            version_tag = "0.1.0"
-            result.version_tag = version_tag
-        result.warnings.append(
-            "App config is ready, but Feishu version creation / publish still needs to be done "
-            f"manually in Open Platform. Suggested next version: {version_tag}."
-        )
-        return result
-
 
 def _prompt_with_default(prompt: str, default: str, *, secret: bool = False) -> str:
     """Prompts for one value, keeping the existing default on empty input."""
@@ -332,9 +238,11 @@ def _prompt_with_default(prompt: str, default: str, *, secret: bool = False) -> 
     return value or default
 
 
-def run_feishu_bootstrap_cli(store: ConfigStore) -> int:
+def run_feishu_bootstrap_cli(workspace: Path) -> int:
     """Runs Feishu bootstrap as a simple two-step CLI wizard."""
-    config = store.load()
+    bound_app_id = workspace_binding(workspace)
+    draft_store = ConfigStore(build_paths(bound_app_id or "default").config_path, build_paths(bound_app_id or "default"))
+    config = draft_store.load()
     draft_app_id = str(get_nested(config, "feishu.app_id") or "").strip()
     draft_app_secret = str(get_nested(config, "feishu.app_secret") or "").strip()
 
@@ -353,16 +261,21 @@ def run_feishu_bootstrap_cli(store: ConfigStore) -> int:
         print("ERROR  APP Secret is required.")
         return 1
 
+    bound_paths = build_paths(app_id)
+    ensure_dirs(bound_paths)
+    store = ConfigStore(bound_paths.config_path, bound_paths)
     bootstrapper = FeishuBootstrapper(app_id, app_secret, store)
     try:
         print("INFO   Starting Feishu bootstrap.")
         print("INFO   Validating APP ID / APP Secret.")
-        tenant_token = bootstrapper.validate_credentials()
+        bootstrapper.validate_credentials()
         print("OK     Credentials are valid.")
 
         print("INFO   Saving local PoCo config.")
         bootstrapper.save_local_credentials()
-        print("OK     Saved APP ID / APP Secret into ~/.config/poco/config.json.")
+        bind_workspace(workspace, app_id)
+        print(f"OK     Bound workspace `{workspace}` to `{app_id}`.")
+        print(f"OK     Saved APP ID / APP Secret into {bound_paths.config_path}.")
 
         print("INFO   Reading current Feishu app state.")
         current = bootstrapper.fetch_current_state()
@@ -381,10 +294,7 @@ def run_feishu_bootstrap_cli(store: ConfigStore) -> int:
         bootstrapper.apply_scopes()
         print("OK     Scope application submitted.")
 
-        print("INFO   Checking the next app version.")
-        publish_result = bootstrapper.create_and_publish_version(tenant_token)
-        for warning in publish_result.warnings:
-            print(f"INFO   {warning}")
+        print("INFO   Bootstrap completed. Create and publish the new app version manually in Feishu Open Platform.")
 
         print("FINISH PoCo bootstrap finished.")
         return 0

@@ -1,6 +1,7 @@
 """Main Textual application shell for the PoCo TUI."""
 
 import json
+from pathlib import Path
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -8,7 +9,15 @@ from textual.containers import Container, Horizontal
 from textual.widgets import Input, Static
 
 from .. import __version__
-from ..config import config_ready, missing_required_config_paths
+from ..config import (
+    ConfigStore,
+    bind_workspace,
+    build_paths,
+    config_ready,
+    ensure_dirs,
+    missing_required_config_paths,
+    saved_feishu_bot_ids,
+)
 from ..providers import model_choices
 from .resources import POCO_ICON, STRINGS, TUI_CSS
 from .menus.config import (
@@ -34,21 +43,29 @@ class PoCoTui(App[None]):
         Binding("ctrl+r", "save_and_restart", "Save & Restart"),
     ]
 
-    def __init__(self, service, *, focus_config: bool = False) -> None:
+    def __init__(self, service, *, focus_config: bool = False, skip_bind_once: bool = False) -> None:
         """Initializes the TUI shell.
 
         Args:
             service: Runtime service facade used by the UI.
             focus_config: Whether to enter config mode immediately on startup.
+            skip_bind_once: Whether to skip the startup bind-bot flow once.
         """
         super().__init__()
         self._service = service
         self._focus_config = focus_config
+        self._skip_bind_once = skip_bind_once
         self._view = "menu"
         self._root_selected = 0
         self._config_stack: list[ConfigScreenState] = []
         self._show_scroll = 0
         self._message_override = ""
+        self._login_selected = 0
+        self._login_step = "provider"
+        self._login_notice = ""
+        self._login_app_id = ""
+        self._login_provider_options = ["feishu", "slack", "discord"]
+        self._login_saved_bots: list[str] = []
         self._root_menu = RootMenuController(self)
         self._config_menu = ConfigMenuController(self)
         self._config_renderer = ConfigPanelRenderer(self)
@@ -265,6 +282,11 @@ class PoCoTui(App[None]):
 
     def _current_option_menu(self) -> OptionMenuState | None:
         """Returns the option menu currently driven by arrow-key navigation."""
+        if self._view == "login":
+            if self._login_step == "provider":
+                return OptionMenuState("login_provider", self._login_selected, len(self._login_provider_options))
+            if self._login_step == "account":
+                return OptionMenuState("login_account", self._login_selected, len(self._login_account_options()))
         state = self._config_state()
         if state is not None:
             return self._config_menu.current_option_menu()
@@ -274,6 +296,10 @@ class PoCoTui(App[None]):
 
     def _set_current_option_selected(self, index: int) -> None:
         """Updates the highlighted option index for the active menu."""
+        if self._view == "login":
+            if self._login_step in {"provider", "account"}:
+                self._login_selected = index
+                return
         state = self._config_state()
         if state is not None:
             state.selected = index
@@ -329,6 +355,9 @@ class PoCoTui(App[None]):
     def _boot(self) -> None:
         """Starts the initial view and launches the relay when ready."""
         config = self._service.load_config()
+        if not self._focus_config and not self._skip_bind_once:
+            self._enter_login_flow(config)
+            return
         if self._focus_config or not config_ready(config):
             self._enter_config_mode()
             missing = self._missing_config_fields_text(config)
@@ -357,10 +386,16 @@ class PoCoTui(App[None]):
         relay_style = "#3fb950" if relay["running"] else "#f85149"
         config_status = self._t("ready") if config_ready(config) else self._t("needs_config")
         config_style = "#3fb950" if config_ready(config) else "#f2cc60"
+        feishu = config.get("feishu", {})
+        configured_app_id = str(feishu.get("app_id", "")).strip()
+        bound_bot = self._service.paths.instance if self._service.paths.instance != "default" else configured_app_id
+        if not bound_bot:
+            bound_bot = self._t("unbound")
         lines = [
             f"[bold #fb923c]{POCO_ICON}[/]\n"
             f"[bold #fb923c]PoCo v{__version__}[/]\n"
             "\n"
+            f"{self._t('bot_binding')}: [bold #fb923c]{bound_bot}[/]\n"
             f"{self._t('relay')}: [bold {relay_style}]{relay_status}[/]\n"
             f"{self._t('settings')}: [bold {config_style}]{config_status}[/]"
         ]
@@ -371,8 +406,27 @@ class PoCoTui(App[None]):
                 lines.append(f"[bold #f2cc60]{self._t('missing_label')}[/]: [#f2cc60]{missing}[/]")
         return "\n".join(lines)
 
+    def _active_bot_binding(self, config: dict | None = None) -> str:
+        """Returns the Feishu bot binding active for this workspace."""
+        payload = config if config is not None else self._service.load_config()
+        feishu = payload.get("feishu", {})
+        configured_app_id = str(feishu.get("app_id", "")).strip()
+        bound_bot = self._service.paths.instance if self._service.paths.instance != "default" else configured_app_id
+        return bound_bot or self._t("unbound")
+
+    def _workspace_binding_lines(self, config: dict | None = None) -> list[str]:
+        """Returns short lines describing the current workspace-to-bot binding."""
+        bound_bot = self._active_bot_binding(config)
+        return [
+            f"[#8b949e]{self._t('workspace_bound_bot')}: {bound_bot}[/]",
+            f"[#8b949e]{self._t('workspace_config_file')}: {self._service.paths.config_path}[/]",
+            f"[#8b949e]{self._t('workspace_state_dir')}: {self._service.paths.state_dir}[/]",
+        ]
+
     def _right_panel_text(self, config: dict, relay: dict) -> str:
         """Builds the right panel text for the current view."""
+        if self._view == "login":
+            return self._login_text()
         if self._config_menu_active:
             return self._config_panel_text(config)
         return self._menu_text(relay)
@@ -424,12 +478,120 @@ class PoCoTui(App[None]):
             else:
                 entry_lines.append(f"  {label}")
         suffix = [f"[#8b949e]{descriptions[selected]}[/]"]
+        if selected == "bot":
+            suffix.extend([""] + self._workspace_binding_lines())
         return self._render_windowed_options(entry_lines, self._root_selected, prefix_lines=prefix, suffix_lines=suffix)
 
     def _footer_hint_text(self) -> str:
         """Builds the footer hint text for the current navigation state."""
-        hint_key = "nav_hint_config" if self._config_menu_active else "nav_hint_menu"
-        return self._t(hint_key)
+        if self._view == "login":
+            return self._t("nav_hint_login")
+        return self._t("nav_hint_config")
+
+    def _login_platform_label(self, option: str) -> str:
+        """Returns the user-facing label for a login platform option."""
+        return self._t(f"login_{option}")
+
+    def _login_account_options(self) -> list[str]:
+        """Returns saved bot options plus the new-bot action."""
+        return [*self._login_saved_bots, "__new__"]
+
+    def _login_account_label(self, option: str) -> str:
+        """Returns the user-facing label for one saved-bot login option."""
+        if option == "__new__":
+            return self._t("login_new_bot")
+        current = self._active_bot_binding()
+        if option == current:
+            return f"{option} ({self._t('login_current_bot')})"
+        return option
+
+    def _login_text(self) -> str:
+        """Renders the startup login/connect flow."""
+        prefix = self._panel_prefix(self._t("login_title"))
+        if self._login_step == "provider":
+            entry_lines = []
+            for index, option in enumerate(self._login_provider_options):
+                label = self._login_platform_label(option)
+                if index == self._login_selected:
+                    entry_lines.append(f"[bold #0f1117 on #fb923c]  {label}  [/]")
+                else:
+                    entry_lines.append(f"  {label}")
+            suffix = ["", f"[#8b949e]{self._t('login_platform_desc')}[/]"]
+            if self._login_notice:
+                suffix.extend(["", f"[#f2cc60]{self._login_notice}[/]"])
+            return self._render_windowed_options(
+                entry_lines,
+                self._login_selected,
+                prefix_lines=prefix + [f"[bold #fb923c]{self._t('login_platform')}[/]"],
+                suffix_lines=suffix,
+            )
+        if self._login_step == "account":
+            options = self._login_account_options()
+            entry_lines = []
+            for index, option in enumerate(options):
+                label = self._login_account_label(option)
+                if index == self._login_selected:
+                    entry_lines.append(f"[bold #0f1117 on #fb923c]  {label}  [/]")
+                else:
+                    entry_lines.append(f"  {label}")
+            suffix = ["", f"[#8b949e]{self._t('login_saved_bots_desc')}[/]"]
+            if self._login_notice:
+                suffix.extend(["", f"[#f2cc60]{self._login_notice}[/]"])
+            return self._render_windowed_options(
+                entry_lines,
+                self._login_selected,
+                prefix_lines=prefix + [f"[bold #fb923c]{self._t('login_saved_bots')}[/]"],
+                suffix_lines=suffix,
+            )
+        field_label = self._t("login_app_id") if self._login_step == "app_id" else self._t("login_app_secret")
+        help_text = self._t("login_enter_app_id") if self._login_step == "app_id" else self._t("login_enter_app_secret")
+        extra_lines = [f"[#8b949e]{help_text}[/]"]
+        if self._login_app_id:
+            extra_lines.append(f"[#8b949e]{self._t('login_app_id')}: {self._login_app_id}[/]")
+        return "\n".join(
+            prefix
+            + [f"[bold #fb923c]{field_label}[/]"]
+            + extra_lines
+        )
+
+    def _enter_login_flow(self, config: dict) -> None:
+        """Starts the startup bot-connect flow."""
+        self._view = "login"
+        self._config_stack = []
+        self._login_step = "provider"
+        self._login_selected = 0
+        self._login_notice = ""
+        self._login_app_id = str(config.get("feishu", {}).get("app_id", "")).strip()
+        self._login_saved_bots = saved_feishu_bot_ids()
+        if self._login_provider_options:
+            self._login_selected = self._login_provider_options.index("feishu") if "feishu" in self._login_provider_options else 0
+        self._refresh_runtime()
+
+    def _finish_login(self, app_secret: str) -> None:
+        """Binds this workspace to the entered Feishu bot and restarts."""
+        app_id = self._login_app_id.strip()
+        secret = app_secret.strip()
+        if not app_id or not secret:
+            return
+        workspace = Path.cwd()
+        bind_workspace(workspace, app_id)
+        paths = build_paths(app_id)
+        ensure_dirs(paths)
+        store = ConfigStore(paths.config_path, paths)
+        config = store.load()
+        config.setdefault("feishu", {})
+        config["feishu"]["app_id"] = app_id
+        config["feishu"]["app_secret"] = secret
+        store.save(config)
+        self.exit("restart-bound")
+
+    def _bind_existing_login_bot(self, app_id: str) -> None:
+        """Binds this workspace to an already saved Feishu bot and restarts."""
+        app_id = app_id.strip()
+        if not app_id:
+            return
+        bind_workspace(Path.cwd(), app_id)
+        self.exit("restart-bound")
 
     def _config_panel_text(self, config: dict) -> str:
         """Delegates config rendering to the config menu renderer."""
@@ -646,6 +808,32 @@ class PoCoTui(App[None]):
     def action_activate(self) -> None:
         """Activates the currently selected menu entry."""
         self._clear_message()
+        if self._view == "login":
+            if self._login_step == "provider":
+                choice = self._login_provider_options[self._login_selected]
+                if choice != "feishu":
+                    self._login_notice = self._t("login_not_implemented", platform=self._login_platform_label(choice))
+                    self._refresh_runtime()
+                    return
+                self._login_notice = ""
+                self._login_saved_bots = saved_feishu_bot_ids()
+                current = self._active_bot_binding()
+                options = self._login_account_options()
+                self._login_selected = options.index(current) if current in options else 0
+                self._login_step = "account"
+                self._refresh_runtime()
+                return
+            if self._login_step == "account":
+                choice = self._login_account_options()[self._login_selected]
+                self._login_notice = ""
+                if choice == "__new__":
+                    self._login_step = "app_id"
+                    self._refresh_runtime()
+                    return
+                self._bind_existing_login_bot(choice)
+                self._refresh_runtime()
+                return
+            return
         if self._config_menu_active:
             self._config_menu.activate()
             return
@@ -654,6 +842,17 @@ class PoCoTui(App[None]):
 
     def action_config_back(self) -> None:
         """Moves back one level in the current navigation flow."""
+        if self._view == "login":
+            if self._login_step == "provider":
+                return
+            if self._login_step == "app_secret":
+                self._login_step = "app_id"
+            elif self._login_step == "app_id":
+                self._login_step = "account"
+            else:
+                self._login_step = "provider"
+            self._refresh_runtime()
+            return
         if not self._config_menu_active:
             return
         self._clear_message()
@@ -692,6 +891,21 @@ class PoCoTui(App[None]):
         if event.input.id != "command_input":
             return
         command = event.value.strip()
+        if self._view == "login":
+            event.input.value = ""
+            if self._login_step == "app_id":
+                if not command:
+                    return
+                self._login_app_id = command
+                self._login_step = "app_secret"
+                self._refresh_runtime()
+                return
+            if self._login_step == "app_secret":
+                if not command:
+                    return
+                self._finish_login(command)
+                return
+            return
         if self._config_menu_active:
             event.input.value = ""
             if self._config_level == "input":
@@ -760,28 +974,29 @@ class PoCoTui(App[None]):
     def _sync_input_state(self) -> None:
         """Synchronizes input state, masking, and focus with the active screen."""
         input_widget = self.query_one("#command_input", Input)
-        editable = self._config_menu_active and self._config_level == "input"
+        editable = (self._view == "login" and self._login_step in {"app_id", "app_secret"}) or (
+            self._config_menu_active and self._config_level == "input"
+        )
         input_widget.disabled = not editable
         input_widget.placeholder = ""
-        input_widget.password = editable and self._is_sensitive_input()
+        if self._view == "login":
+            input_widget.placeholder = self._t("login_app_id") if self._login_step == "app_id" else self._t("login_app_secret")
+            input_widget.password = self._login_step == "app_secret"
+        else:
+            input_widget.password = editable and self._is_sensitive_input()
         if editable:
             input_widget.focus()
         else:
             input_widget.value = ""
 
     def _set_message(self, message: str, *, transient: bool = False) -> None:
-        """Updates the footer status line."""
-        self._message_override = message
-        self._refresh_message_line()
-        if transient:
-            self.set_timer(2.0, self._clear_message)
+        """Keeps the footer reserved for navigation hints only."""
+        return
 
     def _clear_message(self) -> None:
-        """Clears any temporary footer message and restores hints."""
-        self._message_override = ""
-        self._refresh_message_line()
+        """No-ops because the footer no longer shows transient status text."""
+        return
 
     def _refresh_message_line(self) -> None:
-        """Refreshes the footer line with either status or contextual hints."""
-        text = self._message_override or self._footer_hint_text()
-        self.query_one("#message_line", Static).update(text)
+        """Refreshes the footer line with contextual navigation hints only."""
+        self.query_one("#message_line", Static).update(self._footer_hint_text())

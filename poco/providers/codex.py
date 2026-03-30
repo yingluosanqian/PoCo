@@ -216,7 +216,7 @@ class CodexProviderClient:
         self._request(
             "initialize",
             {
-                "clientInfo": {"name": "poco-provider-bridge", "version": "0.2.1"},
+                "clientInfo": {"name": "poco-provider-bridge", "version": "0.2.2"},
                 "capabilities": {"experimentalApi": True},
             },
         )

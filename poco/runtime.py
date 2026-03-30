@@ -3,7 +3,6 @@ import os
 import threading
 import time
 from collections import deque
-from pathlib import Path
 from typing import Any, Dict, Optional
 
 import fcntl
@@ -11,9 +10,7 @@ import fcntl
 from .relay import AppConfig, ProviderConfig, RelayApp
 from .config import (
     INPUT_IDS,
-    STATE_DIR,
-    THREAD_STATE_PATH,
-    WORKER_STATE_PATH,
+    PoCoPaths,
     ConfigStore,
     config_ready,
     missing_required_config_paths,
@@ -49,12 +46,14 @@ class RingLogHandler(logging.Handler):
 
 
 class RelayRunner:
-    def __init__(self) -> None:
+    def __init__(self, lock_path, paths: PoCoPaths) -> None:
         self._thread: Optional[threading.Thread] = None
         self._last_error: str = ""
         self._started_at: Optional[float] = None
         self._lock_file = None
         self._lock = threading.Lock()
+        self._lock_path = lock_path
+        self._paths = paths
 
     def status(self) -> Dict[str, Any]:
         with self._lock:
@@ -74,7 +73,7 @@ class RelayRunner:
                     "Another PoCo relay process is already running. Stop the other `poco` process first."
                 )
             self._last_error = ""
-            app_config = build_app_config(config)
+            app_config = build_app_config(config, self._paths)
             thread = threading.Thread(
                 target=self._run_relay,
                 args=(app_config,),
@@ -99,8 +98,7 @@ class RelayRunner:
             self._release_single_instance_lock()
 
     def _acquire_single_instance_lock(self):
-        lock_path = Path(STATE_DIR) / "relay.lock"
-        handle = lock_path.open("w", encoding="utf-8")
+        handle = self._lock_path.open("w", encoding="utf-8")
         try:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
@@ -127,7 +125,7 @@ class RelayRunner:
         handle.close()
 
 
-def build_app_config(config: Dict[str, Any]) -> AppConfig:
+def build_app_config(config: Dict[str, Any], paths: PoCoPaths) -> AppConfig:
     feishu = config["feishu"]
     codex = config["codex"]
     claude = config.get("claude", {})
@@ -164,16 +162,17 @@ def build_app_config(config: Dict[str, Any]) -> AppConfig:
         max_message_edits=int(bridge["max_message_edits"]),
         allowed_open_ids=set(feishu["allowed_open_ids"]),
         allow_all_users=bool(feishu["allow_all_users"]),
-        thread_state_path=str(THREAD_STATE_PATH),
-        worker_state_path=str(WORKER_STATE_PATH),
+        thread_state_path=str(paths.thread_state_path),
+        worker_state_path=str(paths.worker_state_path),
     )
 
 
 class PoCoService:
-    def __init__(self, store: ConfigStore, logs: RingLogHandler) -> None:
+    def __init__(self, store: ConfigStore, logs: RingLogHandler, paths: PoCoPaths) -> None:
         self.store = store
         self.logs = logs
-        self.relay = RelayRunner()
+        self.paths = paths
+        self.relay = RelayRunner(paths.relay_lock_path, paths)
 
     def load_config(self) -> Dict[str, Any]:
         return self.store.load()

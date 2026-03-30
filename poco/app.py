@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import argparse
-import fcntl
 import json
 import logging
 import os
@@ -12,34 +11,8 @@ from .runtime import (
     PoCoService,
     RingLogHandler,
 )
-from .config import CONFIG_PATH, LOG_PATH, STATE_DIR, ConfigStore, ensure_dirs, get_nested
+from .config import ConfigStore, build_paths, ensure_dirs, get_nested, workspace_binding
 from .tui import PoCoTui
-
-
-_APP_LOCK = None
-
-
-def _acquire_app_lock() -> bool:
-    """Acquires a process-wide PoCo instance lock.
-
-    Returns:
-        True when this process successfully acquired the lock, or False when
-        another PoCo process is already holding it.
-    """
-    global _APP_LOCK
-    lock_path = Path(STATE_DIR) / "poco.lock"
-    handle = lock_path.open("w", encoding="utf-8")
-    try:
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        handle.close()
-        return False
-    handle.seek(0)
-    handle.truncate()
-    handle.write(str(os.getpid()))
-    handle.flush()
-    _APP_LOCK = handle
-    return True
 
 
 def parse_args() -> argparse.Namespace:
@@ -60,15 +33,16 @@ def main() -> None:
         level=getattr(logging, str(getattr(args, "log_level", "INFO")).upper(), logging.INFO),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
-    ensure_dirs()
-    if not _acquire_app_lock():
-        raise SystemExit("Another PoCo process is already running. Kill the existing process first.")
+    workspace = Path.cwd()
+    binding = workspace_binding(workspace)
+    paths = build_paths(binding or "default")
+    ensure_dirs(paths)
     root_logger = logging.getLogger()
     ring = RingLogHandler()
     ring.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
     root_logger.addHandler(ring)
     file_handler = RotatingFileHandler(
-        LOG_PATH,
+        paths.log_path,
         maxBytes=2_000_000,
         backupCount=3,
         encoding="utf-8",
@@ -76,10 +50,14 @@ def main() -> None:
     )
     file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
     root_logger.addHandler(file_handler)
-    logging.getLogger("poco").info("Persistent log file enabled at %s", LOG_PATH)
+    logging.getLogger("poco").info(
+        "Persistent log file enabled at %s (instance=%s)",
+        paths.log_path,
+        binding or "default",
+    )
 
-    store = ConfigStore(CONFIG_PATH)
-    service = PoCoService(store, ring)
+    store = ConfigStore(paths.config_path, paths)
+    service = PoCoService(store, ring, paths)
 
     if args.command == "config" and args.show:
         print(json.dumps(service.masked_config(), ensure_ascii=False, indent=2))
@@ -92,10 +70,14 @@ def main() -> None:
         print(json.dumps({path: current}, ensure_ascii=False, indent=2))
         return
     if args.command == "feishu-bootstrap":
-        raise SystemExit(run_feishu_bootstrap_cli(store))
+        raise SystemExit(run_feishu_bootstrap_cli(workspace))
 
-    app = PoCoTui(service, focus_config=args.command == "config")
+    skip_bind_once = os.environ.pop("POCO_SKIP_BIND_ONCE", "") == "1"
+    app = PoCoTui(service, focus_config=args.command == "config", skip_bind_once=skip_bind_once)
     result = app.run()
+    if result == "restart-bound":
+        os.environ["POCO_SKIP_BIND_ONCE"] = "1"
+        os.execv(sys.executable, [sys.executable, *sys.argv])
     if result == "restart":
         os.execv(sys.executable, [sys.executable, *sys.argv])
 
