@@ -100,7 +100,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "claude": {
         "bin": "claude",
         "app_server_args": "",
-        "approval_policy": "",
+        "approval_policy": "dangerously-skip-permissions",
         "sandbox": "",
         "default_backend": "anthropic",
         "backends": {
