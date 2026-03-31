@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, Callable, List, Optional
 
 from lark_oapi.event.callback.model.p2_card_action_trigger import (
     P2CardActionTrigger,
     P2CardActionTriggerResponse,
 )
+
+CurrentCardResponseBuilder = Callable[..., P2CardActionTriggerResponse]
+ProjectCardResponseBuilder = Callable[..., P2CardActionTriggerResponse]
+DmConsoleResponseBuilder = Callable[..., P2CardActionTriggerResponse]
 
 if TYPE_CHECKING:
     from .app import RelayApp
@@ -1238,6 +1242,606 @@ class SetupCardController:
         self.app._worker_store.remove(worker_id)
         self.app._worker_store.ensure_worker(worker_id)
 
+    @staticmethod
+    def _project_launch_state_from_action_value(action_value: dict) -> tuple[str, str, str]:
+        return (
+            str(action_value.get("project_id", "")).strip(),
+            str(action_value.get("cwd", "")).strip(),
+            str(action_value.get("session_id", "")).strip(),
+        )
+
+    def _project_launch_state_from_payload(
+        self,
+        chat_id: str,
+        form_value: dict,
+        action_value: dict,
+    ) -> tuple[str, str, str]:
+        draft = self.app._project_draft(chat_id)
+        project_id = (
+            self.coerce_form_value(form_value.get("project_id"))
+            or str(action_value.get("project_id", "")).strip()
+            or str(draft.get("project_id", ""))
+        )
+        cwd = (
+            self.coerce_form_value(form_value.get("cwd"))
+            or str(action_value.get("cwd", "")).strip()
+            or str(draft.get("cwd", ""))
+        )
+        session_id = (
+            self.coerce_form_value(form_value.get("session_id"))
+            or str(action_value.get("session_id", "")).strip()
+            or str(draft.get("session_id", ""))
+        )
+        return project_id, cwd, session_id
+
+    def _setup_state_from_payload(
+        self,
+        worker_id: str,
+        form_value: dict,
+        action_value: dict,
+    ) -> tuple[str, str]:
+        alias = (
+            self.coerce_form_value(form_value.get("alias"))
+            or str(action_value.get("alias", "")).strip()
+            or self.app._worker_store.alias_for(worker_id)
+        )
+        cwd = (
+            self.coerce_form_value(form_value.get("cwd"))
+            or str(action_value.get("cwd", "")).strip()
+            or self.app._worker_store.cwd_for(worker_id)
+        )
+        return alias, cwd
+
+    def _handle_dm_card_action(
+        self,
+        *,
+        action_name: str,
+        action,
+        action_value: dict,
+        form_value: dict,
+        chat_id: str,
+        dm_console_response: DmConsoleResponseBuilder,
+    ) -> Optional[P2CardActionTriggerResponse]:
+        if action_name not in {
+            "dm_mode_root",
+            "dm_mode_project",
+            "dm_mode_status",
+            "dm_project_set_provider",
+            "dm_project_set_backend",
+            "dm_project_set_model",
+            "dm_project_set_mode",
+            "dm_project_set_session_id",
+            "dm_status_select_worker",
+            "dm_status_set_dissolve",
+            "dm_status_remove_confirm",
+        }:
+            return None
+        dm_mode_handlers = {
+            "dm_mode_root": lambda: dm_console_response(mode="root"),
+            "dm_mode_project": lambda: self.response_card(self.project_launch_card(chat_id), "", "info"),
+            "dm_mode_status": lambda: dm_console_response(mode="status"),
+        }
+        dm_mode_handler = dm_mode_handlers.get(action_name)
+        if dm_mode_handler is not None:
+            return dm_mode_handler()
+        if action_name == "dm_project_set_provider":
+            selected = self.action_selected_value(action)
+            project_id, cwd, session_id = self._project_launch_state_from_action_value(action_value)
+            if not selected:
+                return self.response_card(
+                    self.project_launch_card(
+                        chat_id,
+                        notice="Choose an agent first.",
+                        form_project_id=project_id,
+                        form_cwd=cwd,
+                        form_session_id=session_id,
+                    ),
+                    "Choose an agent first.",
+                    "error",
+                )
+            updates = {"provider": selected}
+            if selected == "codex":
+                updates["backend"] = "openai"
+                updates["model"] = "gpt-5.4"
+            elif selected == "cursor":
+                updates["backend"] = "cursor"
+                updates["model"] = "auto"
+            else:
+                backend = self.app._config.claude_default_backend.strip().lower() or "anthropic"
+                updates["backend"] = backend
+                payload = self.app._config.claude_backends.get(backend, {})
+                updates["model"] = str(payload.get("default_model", "")).strip() if isinstance(payload, dict) else ""
+            self.app._merge_project_draft(chat_id, project_id=project_id, cwd=cwd, session_id=session_id, **updates)
+            return self.response_card(
+                self.project_launch_card(
+                    chat_id,
+                    form_project_id=project_id,
+                    form_cwd=cwd,
+                    form_session_id=session_id,
+                ),
+                "",
+                "success",
+            )
+        if action_name == "dm_project_set_backend":
+            selected = self.action_selected_value(action)
+            project_id, cwd, session_id = self._project_launch_state_from_action_value(action_value)
+            if not selected:
+                return self.response_card(
+                    self.project_launch_card(
+                        chat_id,
+                        notice="Choose a provider first.",
+                        form_project_id=project_id,
+                        form_cwd=cwd,
+                        form_session_id=session_id,
+                    ),
+                    "Choose a provider first.",
+                    "error",
+                )
+            provider_name = str(self.app._project_draft(chat_id).get("provider", "")).strip().lower()
+            if provider_name == "cursor":
+                model = "auto"
+            else:
+                payload = self.app._config.claude_backends.get(selected, {})
+                model = str(payload.get("default_model", "")).strip() if isinstance(payload, dict) else ""
+            self.app._merge_project_draft(chat_id, project_id=project_id, cwd=cwd, session_id=session_id, backend=selected, model=model)
+            return self.response_card(
+                self.project_launch_card(
+                    chat_id,
+                    form_project_id=project_id,
+                    form_cwd=cwd,
+                    form_session_id=session_id,
+                ),
+                "",
+                "success",
+            )
+        if action_name == "dm_project_set_model":
+            selected = self.action_selected_value(action)
+            project_id, cwd, session_id = self._project_launch_state_from_action_value(action_value)
+            if not selected:
+                return self.response_card(
+                    self.project_launch_card(
+                        chat_id,
+                        notice="Choose a model first.",
+                        form_project_id=project_id,
+                        form_cwd=cwd,
+                        form_session_id=session_id,
+                    ),
+                    "Choose a model first.",
+                    "error",
+                )
+            self.app._merge_project_draft(chat_id, project_id=project_id, cwd=cwd, session_id=session_id, model=selected)
+            return self.response_card(
+                self.project_launch_card(
+                    chat_id,
+                    form_project_id=project_id,
+                    form_cwd=cwd,
+                    form_session_id=session_id,
+                ),
+                "",
+                "success",
+            )
+        if action_name == "dm_project_set_mode":
+            selected = self.action_selected_value(action)
+            project_id, cwd, session_id = self._project_launch_state_from_action_value(action_value)
+            if not selected:
+                return self.response_card(
+                    self.project_launch_card(
+                        chat_id,
+                        notice="Choose a reply mode first.",
+                        form_project_id=project_id,
+                        form_cwd=cwd,
+                        form_session_id=session_id,
+                    ),
+                    "Choose a reply mode first.",
+                    "error",
+                )
+            self.app._merge_project_draft(chat_id, project_id=project_id, cwd=cwd, session_id=session_id, mode=selected)
+            return self.response_card(
+                self.project_launch_card(
+                    chat_id,
+                    form_project_id=project_id,
+                    form_cwd=cwd,
+                    form_session_id=session_id,
+                ),
+                "",
+                "success",
+            )
+        if action_name == "dm_project_set_session_id":
+            selected = self.action_selected_value(action)
+            project_id, cwd, existing_session_id = self._project_launch_state_from_action_value(action_value)
+            if not selected:
+                return self.response_card(
+                    self.project_launch_card(
+                        chat_id,
+                        notice="Choose a session first.",
+                        form_project_id=project_id,
+                        form_cwd=cwd,
+                        form_session_id=existing_session_id,
+                    ),
+                    "Choose a session first.",
+                    "error",
+                )
+            self.app._merge_project_draft(chat_id, project_id=project_id, cwd=cwd, session_id=selected)
+            return self.response_card(
+                self.project_launch_card(
+                    chat_id,
+                    form_project_id=project_id,
+                    form_cwd=cwd,
+                    form_session_id=selected,
+                ),
+                "",
+                "success",
+            )
+        if action_name == "dm_status_select_worker":
+            selected = self.action_selected_value(action)
+            if not selected:
+                return dm_console_response(mode="status", notice="Choose a worker first.", toast_type="error")
+            return dm_console_response(mode="status", selected_worker_id=selected)
+        if action_name == "dm_status_set_dissolve":
+            selected = self.action_selected_value(action)
+            current_worker_id = str(action_value.get("selected_worker_id", "")).strip()
+            if not current_worker_id:
+                current_worker_id = str(action_value.get("worker_id", "")).strip()
+            return dm_console_response(
+                mode="status",
+                selected_worker_id=current_worker_id,
+                dissolve_group=selected or "no",
+            )
+        if action_name == "dm_status_remove_confirm":
+            worker_id = str(action_value.get("selected_worker_id", "")).strip() or self.action_selected_value(action) or str(action_value.get("selected", "")).strip()
+            if not worker_id:
+                return dm_console_response(mode="status", notice="Choose a worker first.", toast_type="error")
+            confirm_delete = self.coerce_form_value(form_value.get("confirm_delete")).lower()
+            if confirm_delete != "delete":
+                return dm_console_response(
+                    mode="status",
+                    selected_worker_id=worker_id,
+                    dissolve_group=str(action_value.get("dissolve_group", "no")).strip().lower(),
+                    notice="Type delete to confirm removal.",
+                    toast_type="error",
+                )
+            dissolve_group = str(action_value.get("dissolve_group", "no")).strip().lower()
+            if worker_id.startswith("oc_") and dissolve_group == "yes":
+                try:
+                    self.app._messenger.delete_chat(worker_id)
+                except Exception as exc:
+                    return dm_console_response(
+                        mode="status",
+                        selected_worker_id=worker_id,
+                        dissolve_group=dissolve_group,
+                        notice=f"Failed to dissolve group: {exc}",
+                        toast_type="error",
+                    )
+            try:
+                self.app._remove_worker(worker_id)
+            except Exception as exc:
+                return dm_console_response(
+                    mode="status",
+                    selected_worker_id=worker_id,
+                    dissolve_group=dissolve_group,
+                    notice=str(exc),
+                    toast_type="error",
+                )
+            return self.response_card(
+                self.success_continue_card(
+                    "Project Removed",
+                    [
+                        f"**Worker:** `{worker_id}`",
+                        "",
+                        "The project record has been removed.",
+                    ],
+                ),
+                "Removed.",
+                "success",
+            )
+        return None
+
+    def _handle_setup_selection_action(
+        self,
+        *,
+        action_name: str,
+        action,
+        worker_id: str,
+        current_card: CurrentCardResponseBuilder,
+    ) -> Optional[P2CardActionTriggerResponse]:
+        if action_name not in {"set_provider", "set_backend", "set_model", "set_mode"}:
+            return None
+        selected = self.action_selected_value(action)
+        if not selected:
+            self.app.LOG.warning("Card action %s missing selected value for worker_id=%s", action_name, worker_id)
+            return current_card("No selection received.", "error")
+        if action_name == "set_provider":
+            current_provider = self.app._provider_name_for_worker(worker_id)
+            if selected != current_provider:
+                recycle_error = self.app._recycle_worker_runtime(
+                    worker_id,
+                    reason="Stop the current reply before changing Agent.",
+                )
+                if recycle_error:
+                    return current_card(recycle_error, "error")
+            self.app._worker_store.set_provider(worker_id, selected)
+            if selected == "codex":
+                self.app._worker_store.set_backend(worker_id, "openai")
+            elif selected == "cursor":
+                self.app._worker_store.set_backend(worker_id, "cursor")
+                self.app._worker_store.set_model(worker_id, "auto")
+            elif selected == "claude":
+                self.app._worker_store.set_backend(worker_id, self.app._claude_backend_name(worker_id))
+            return current_card(f"Agent set to {selected}.")
+        if action_name == "set_backend":
+            current_backend = self.app._worker_store.backend_for(worker_id)
+            if selected != current_backend:
+                recycle_error = self.app._recycle_worker_runtime(
+                    worker_id,
+                    reason="Stop the current reply before changing Provider.",
+                )
+                if recycle_error:
+                    return current_card(recycle_error, "error")
+            self.app._worker_store.set_backend(worker_id, selected)
+            return current_card(f"Provider set to {selected}.")
+        if action_name == "set_model":
+            current_model = self.app._effective_model_for_worker(worker_id)
+            if selected != current_model:
+                recycle_error = self.app._recycle_worker_runtime(
+                    worker_id,
+                    reason="Stop the current reply before changing Model.",
+                )
+                if recycle_error:
+                    return current_card(recycle_error, "error")
+            self.app._worker_store.set_model(worker_id, selected)
+            return current_card(f"Model set to {selected}.")
+        self.app._worker_store.set_mode(worker_id, selected)
+        return current_card(f"Reply mode set to {self.app._reply_mode_label(selected)}.")
+
+    def _handle_project_launch_action(
+        self,
+        *,
+        action_name: str,
+        form_value: dict,
+        chat_id: str,
+        event,
+        project_card_response: ProjectCardResponseBuilder,
+    ) -> Optional[P2CardActionTriggerResponse]:
+        if action_name not in {"launch_project", "reset_project_launch"}:
+            return None
+        if action_name == "reset_project_launch":
+            self.app._reset_project_draft(chat_id)
+            return project_card_response("Reset.", "success")
+        project_id = self.coerce_form_value(form_value.get("project_id"))
+        cwd = self.coerce_form_value(form_value.get("cwd"))
+        session_id = self.coerce_form_value(form_value.get("session_id"))
+        draft = self.app._merge_project_draft(chat_id, project_id=project_id, cwd=cwd, session_id=session_id)
+        normalized_project_id = self.app._normalize_alias(project_id)
+        if normalized_project_id is None:
+            return project_card_response(
+                "Project ID is invalid. Use lowercase letters, digits, '-' and '_'.",
+                "error",
+                form_project_id=project_id,
+                form_cwd=cwd,
+                form_session_id=session_id,
+            )
+        if self.app._worker_store.alias_in_use(normalized_project_id):
+            return project_card_response(
+                f"Project ID `{normalized_project_id}` is already in use.",
+                "error",
+                form_project_id=project_id,
+                form_cwd=cwd,
+                form_session_id=session_id,
+            )
+        if not cwd:
+            return project_card_response(
+                "Please fill in Working Dir first.",
+                "error",
+                form_project_id=project_id,
+                form_cwd=cwd,
+                form_session_id=session_id,
+            )
+        validation_error = self.app._validate_cwd(cwd)
+        if validation_error:
+            return project_card_response(
+                f"Invalid Working Dir: {validation_error}",
+                "error",
+                form_project_id=project_id,
+                form_cwd=cwd,
+                form_session_id=session_id,
+            )
+        if session_id:
+            if str(draft.get("provider", "")).strip().lower() not in {"codex", "cursor"}:
+                return project_card_response(
+                    "Attach session is only available for Codex or Cursor.",
+                    "error",
+                    form_project_id=project_id,
+                    form_cwd=cwd,
+                    form_session_id=session_id,
+                )
+            try:
+                import uuid as _uuid
+
+                _uuid.UUID(session_id.strip())
+            except ValueError:
+                return project_card_response(
+                    "Existing Session ID must be a valid UUID.",
+                    "error",
+                    form_project_id=project_id,
+                    form_cwd=cwd,
+                    form_session_id=session_id,
+                )
+        requester_open_id = str(getattr(getattr(event, "operator", None), "open_id", "") or "").strip()
+        if not requester_open_id:
+            return project_card_response(
+                "Missing requester open_id from card callback.",
+                "error",
+                form_project_id=project_id,
+                form_cwd=cwd,
+                form_session_id=session_id,
+            )
+        group_chat_id = self.app._create_project_group_from_dm(
+            chat_id,
+            requester_open_id,
+            normalized_project_id,
+            cwd,
+            provider_name=str(draft.get("provider", "codex")),
+            backend=str(draft.get("backend", "openai")),
+            model=str(draft.get("model", "gpt-5.4")),
+            mode=str(draft.get("mode", "auto")),
+            attach_session_id=session_id.strip(),
+        )
+        return self.response_card(
+            self.project_created_card(normalized_project_id, group_chat_id),
+            "Project created.",
+            "success",
+        )
+
+    def _handle_cwd_browser_action(
+        self,
+        *,
+        action_name: str,
+        action,
+        action_value: dict,
+        form_value: dict,
+        chat_id: str,
+        worker_id: str,
+        project_card_response: ProjectCardResponseBuilder,
+        current_card: CurrentCardResponseBuilder,
+    ) -> Optional[P2CardActionTriggerResponse]:
+        if action_name == "set_project_cwd_browser":
+            project_id, cwd, session_id = self._project_launch_state_from_payload(chat_id, form_value, action_value)
+            current_path = str(action_value.get("current_path", "")).strip()
+            selected = self.action_selected_value(action)
+            self.app.LOG.warning(
+                "project cwd picker callback action.option=%r input_value=%r name=%r value=%r form_value=%r selected=%r current_path=%r cwd=%r",
+                getattr(action, "option", None),
+                getattr(action, "input_value", None),
+                getattr(action, "name", None),
+                getattr(action, "value", None),
+                form_value,
+                selected,
+                current_path,
+                cwd,
+            )
+            base_path = self._browse_start_path(cwd or current_path)
+            if selected == "__up__":
+                cwd = str(Path(base_path).expanduser().resolve().parent)
+            elif selected:
+                cwd = str((Path(base_path).expanduser() / selected).resolve())
+            self.app._merge_project_draft(chat_id, project_id=project_id, cwd=cwd, session_id=session_id)
+            return project_card_response(
+                form_project_id=project_id,
+                form_cwd=cwd,
+                form_session_id=session_id,
+            )
+        if action_name == "set_setup_cwd_browser":
+            alias, cwd = self._setup_state_from_payload(worker_id, form_value, action_value)
+            current_path = str(action_value.get("current_path", "")).strip()
+            selected = self.action_selected_value(action)
+            self.app.LOG.warning(
+                "setup cwd picker callback action.option=%r input_value=%r name=%r value=%r form_value=%r selected=%r current_path=%r cwd=%r",
+                getattr(action, "option", None),
+                getattr(action, "input_value", None),
+                getattr(action, "name", None),
+                getattr(action, "value", None),
+                form_value,
+                selected,
+                current_path,
+                cwd,
+            )
+            base_path = self._browse_start_path(cwd or current_path)
+            if selected == "__up__":
+                cwd = str(Path(base_path).expanduser().resolve().parent)
+            elif selected:
+                cwd = str((Path(base_path).expanduser() / selected).resolve())
+            return current_card(form_alias=alias, form_cwd=cwd)
+        return None
+
+    def _handle_setup_form_action(
+        self,
+        *,
+        action_name: str,
+        form_value: dict,
+        worker_id: str,
+        current_card: CurrentCardResponseBuilder,
+    ) -> Optional[P2CardActionTriggerResponse]:
+        if action_name == "save_setup":
+            alias = self.coerce_form_value(form_value.get("alias"))
+            cwd = self.coerce_form_value(form_value.get("cwd"))
+            if alias:
+                normalized_alias = self.app._normalize_alias(alias)
+                if normalized_alias is None:
+                    return current_card(
+                        "Project ID is invalid. Use lowercase letters, digits, '-' and '_'.",
+                        "error",
+                        form_alias=alias,
+                        form_cwd=cwd,
+                    )
+                try:
+                    self.app._worker_store.set_alias(worker_id, normalized_alias)
+                except ValueError as exc:
+                    return current_card(str(exc), "error", form_alias=alias, form_cwd=cwd)
+            if cwd:
+                validation_error = self.app._validate_cwd(cwd)
+                if validation_error:
+                    return current_card(
+                        f"Invalid cwd: {validation_error}",
+                        "error",
+                        form_alias=alias,
+                        form_cwd=cwd,
+                    )
+                self.app._worker_store.set_cwd(worker_id, cwd)
+            return current_card("Draft saved.")
+        if action_name == "enable_setup":
+            alias = self.coerce_form_value(form_value.get("alias"))
+            cwd = self.coerce_form_value(form_value.get("cwd"))
+            current_cwd = self.app._worker_store.cwd_for(worker_id)
+            if alias:
+                normalized_alias = self.app._normalize_alias(alias)
+                if normalized_alias is None:
+                    return current_card(
+                        "Project ID is invalid. Use lowercase letters, digits, '-' and '_'.",
+                        "error",
+                        form_alias=alias,
+                        form_cwd=cwd,
+                    )
+                try:
+                    self.app._worker_store.set_alias(worker_id, normalized_alias)
+                except ValueError as exc:
+                    return current_card(str(exc), "error", form_alias=alias, form_cwd=cwd)
+            if cwd:
+                validation_error = self.app._validate_cwd(cwd)
+                if validation_error:
+                    return current_card(
+                        f"Invalid cwd: {validation_error}",
+                        "error",
+                        form_alias=alias,
+                        form_cwd=cwd,
+                    )
+                if cwd != current_cwd:
+                    recycle_error = self.app._recycle_worker_runtime(
+                        worker_id,
+                        reason="Stop the current reply before changing Working Dir.",
+                    )
+                    if recycle_error:
+                        return current_card(
+                            recycle_error,
+                            "error",
+                            form_alias=alias,
+                            form_cwd=cwd,
+                        )
+                self.app._worker_store.set_cwd(worker_id, cwd)
+            enable_error = self.enable_worker(worker_id)
+            if enable_error:
+                self.app.LOG.warning("Card action enable_setup rejected for worker_id=%s: %s", worker_id, enable_error)
+                return current_card(enable_error, "error", form_alias=alias, form_cwd=cwd)
+            return current_card(read_only=True)
+        if action_name == "reset_session":
+            self.app._store.clear(worker_id)
+            return current_card("Started a fresh chat.")
+        if action_name == "reset_config":
+            self.reset_worker_config(worker_id)
+            return current_card("Reset.", "success")
+        if action_name == "test_ping":
+            return self.response_card(self.minimal_test_card("pong"), "pong", "success")
+        return None
+
     def on_card_action_trigger(self, data: P2CardActionTrigger) -> P2CardActionTriggerResponse:
         try:
             event = data.event
@@ -1329,245 +1933,57 @@ class SetupCardController:
                     toast_type,
                 )
 
-            if action_name in {
-                "dm_mode_root",
-                "dm_mode_project",
-                "dm_mode_status",
-                "dm_project_set_provider",
-                "dm_project_set_backend",
-                "dm_project_set_model",
-                "dm_project_set_mode",
-                "dm_project_set_session_id",
-                "dm_status_select_worker",
-                "dm_status_set_dissolve",
-                "dm_status_remove_confirm",
-            }:
-                if action_name == "dm_mode_root":
-                    return dm_console_response(mode="root")
-                if action_name == "dm_mode_project":
-                    return self.response_card(self.project_launch_card(chat_id), "", "info")
-                if action_name == "dm_mode_status":
-                    return dm_console_response(mode="status")
-                if action_name == "dm_project_set_provider":
-                    selected = self.action_selected_value(action)
-                    project_id = str(action_value.get("project_id", "")).strip()
-                    cwd = str(action_value.get("cwd", "")).strip()
-                    session_id = str(action_value.get("session_id", "")).strip()
-                    if not selected:
-                        return self.response_card(
-                            self.project_launch_card(
-                                chat_id,
-                                notice="Choose an agent first.",
-                                form_project_id=project_id,
-                                form_cwd=cwd,
-                                form_session_id=session_id,
-                            ),
-                            "Choose an agent first.",
-                            "error",
-                        )
-                    updates = {"provider": selected}
-                    if selected == "codex":
-                        updates["backend"] = "openai"
-                        updates["model"] = "gpt-5.4"
-                    elif selected == "cursor":
-                        updates["backend"] = "cursor"
-                        updates["model"] = "auto"
-                    else:
-                        backend = self.app._config.claude_default_backend.strip().lower() or "anthropic"
-                        updates["backend"] = backend
-                        payload = self.app._config.claude_backends.get(backend, {})
-                        updates["model"] = str(payload.get("default_model", "")).strip() if isinstance(payload, dict) else ""
-                    self.app._merge_project_draft(chat_id, project_id=project_id, cwd=cwd, session_id=session_id, **updates)
-                    return self.response_card(
-                        self.project_launch_card(
-                            chat_id,
-                            form_project_id=project_id,
-                            form_cwd=cwd,
-                            form_session_id=session_id,
-                        ),
-                        "",
-                        "success",
-                    )
-                if action_name == "dm_project_set_backend":
-                    selected = self.action_selected_value(action)
-                    project_id = str(action_value.get("project_id", "")).strip()
-                    cwd = str(action_value.get("cwd", "")).strip()
-                    session_id = str(action_value.get("session_id", "")).strip()
-                    if not selected:
-                        return self.response_card(
-                            self.project_launch_card(
-                                chat_id,
-                                notice="Choose a provider first.",
-                                form_project_id=project_id,
-                                form_cwd=cwd,
-                                form_session_id=session_id,
-                            ),
-                            "Choose a provider first.",
-                            "error",
-                        )
-                    provider_name = str(self.app._project_draft(chat_id).get("provider", "")).strip().lower()
-                    if provider_name == "cursor":
-                        model = "auto"
-                    else:
-                        payload = self.app._config.claude_backends.get(selected, {})
-                        model = str(payload.get("default_model", "")).strip() if isinstance(payload, dict) else ""
-                    self.app._merge_project_draft(chat_id, project_id=project_id, cwd=cwd, session_id=session_id, backend=selected, model=model)
-                    return self.response_card(
-                        self.project_launch_card(
-                            chat_id,
-                            form_project_id=project_id,
-                            form_cwd=cwd,
-                            form_session_id=session_id,
-                        ),
-                        "",
-                        "success",
-                    )
-                if action_name == "dm_project_set_model":
-                    selected = self.action_selected_value(action)
-                    project_id = str(action_value.get("project_id", "")).strip()
-                    cwd = str(action_value.get("cwd", "")).strip()
-                    session_id = str(action_value.get("session_id", "")).strip()
-                    if not selected:
-                        return self.response_card(
-                            self.project_launch_card(
-                                chat_id,
-                                notice="Choose a model first.",
-                                form_project_id=project_id,
-                                form_cwd=cwd,
-                                form_session_id=session_id,
-                            ),
-                            "Choose a model first.",
-                            "error",
-                        )
-                    self.app._merge_project_draft(chat_id, project_id=project_id, cwd=cwd, session_id=session_id, model=selected)
-                    return self.response_card(
-                        self.project_launch_card(
-                            chat_id,
-                            form_project_id=project_id,
-                            form_cwd=cwd,
-                            form_session_id=session_id,
-                        ),
-                        "",
-                        "success",
-                    )
-                if action_name == "dm_project_set_mode":
-                    selected = self.action_selected_value(action)
-                    project_id = str(action_value.get("project_id", "")).strip()
-                    cwd = str(action_value.get("cwd", "")).strip()
-                    session_id = str(action_value.get("session_id", "")).strip()
-                    if not selected:
-                        return self.response_card(
-                            self.project_launch_card(
-                                chat_id,
-                                notice="Choose a reply mode first.",
-                                form_project_id=project_id,
-                                form_cwd=cwd,
-                                form_session_id=session_id,
-                            ),
-                            "Choose a reply mode first.",
-                            "error",
-                        )
-                    self.app._merge_project_draft(chat_id, project_id=project_id, cwd=cwd, session_id=session_id, mode=selected)
-                    return self.response_card(
-                        self.project_launch_card(
-                            chat_id,
-                            form_project_id=project_id,
-                            form_cwd=cwd,
-                            form_session_id=session_id,
-                        ),
-                        "",
-                        "success",
-                    )
-                if action_name == "dm_project_set_session_id":
-                    selected = self.action_selected_value(action)
-                    project_id = str(action_value.get("project_id", "")).strip()
-                    cwd = str(action_value.get("cwd", "")).strip()
-                    existing_session_id = str(action_value.get("session_id", "")).strip()
-                    if not selected:
-                        return self.response_card(
-                            self.project_launch_card(
-                                chat_id,
-                                notice="Choose a session first.",
-                                form_project_id=project_id,
-                                form_cwd=cwd,
-                                form_session_id=existing_session_id,
-                            ),
-                            "Choose a session first.",
-                            "error",
-                        )
-                    self.app._merge_project_draft(chat_id, project_id=project_id, cwd=cwd, session_id=selected)
-                    return self.response_card(
-                        self.project_launch_card(
-                            chat_id,
-                            form_project_id=project_id,
-                            form_cwd=cwd,
-                            form_session_id=selected,
-                        ),
-                        "",
-                        "success",
-                    )
-                if action_name == "dm_status_select_worker":
-                    selected = self.action_selected_value(action)
-                    if not selected:
-                        return dm_console_response(mode="status", notice="Choose a worker first.", toast_type="error")
-                    return dm_console_response(mode="status", selected_worker_id=selected)
-                if action_name == "dm_status_set_dissolve":
-                    selected = self.action_selected_value(action)
-                    current_worker_id = str(action_value.get("selected_worker_id", "")).strip()
-                    if not current_worker_id:
-                        current_worker_id = str(action_value.get("worker_id", "")).strip()
-                    return dm_console_response(
-                        mode="status",
-                        selected_worker_id=current_worker_id,
-                        dissolve_group=selected or "no",
-                    )
-                if action_name == "dm_status_remove_confirm":
-                    worker_id = str(action_value.get("selected_worker_id", "")).strip() or self.action_selected_value(action) or str(action_value.get("selected", "")).strip()
-                    if not worker_id:
-                        return dm_console_response(mode="status", notice="Choose a worker first.", toast_type="error")
-                    confirm_delete = self.coerce_form_value(form_value.get("confirm_delete")).lower()
-                    if confirm_delete != "delete":
-                        return dm_console_response(
-                            mode="status",
-                            selected_worker_id=worker_id,
-                            dissolve_group=str(action_value.get("dissolve_group", "no")).strip().lower(),
-                            notice="Type delete to confirm removal.",
-                            toast_type="error",
-                        )
-                    dissolve_group = str(action_value.get("dissolve_group", "no")).strip().lower()
-                    if worker_id.startswith("oc_") and dissolve_group == "yes":
-                        try:
-                            self.app._messenger.delete_chat(worker_id)
-                        except Exception as exc:
-                            return dm_console_response(
-                                mode="status",
-                                selected_worker_id=worker_id,
-                                dissolve_group=dissolve_group,
-                                notice=f"Failed to dissolve group: {exc}",
-                                toast_type="error",
-                            )
-                    try:
-                        self.app._remove_worker(worker_id)
-                    except Exception as exc:
-                        return dm_console_response(
-                            mode="status",
-                            selected_worker_id=worker_id,
-                            dissolve_group=dissolve_group,
-                            notice=str(exc),
-                            toast_type="error",
-                        )
-                    return self.response_card(
-                        self.success_continue_card(
-                            "Project Removed",
-                            [
-                                f"**Worker:** `{worker_id}`",
-                                "",
-                                "The project record has been removed.",
-                            ],
-                        ),
-                        "Removed.",
-                        "success",
-                    )
+            dm_action_response = self._handle_dm_card_action(
+                action_name=action_name,
+                action=action,
+                action_value=action_value,
+                form_value=form_value,
+                chat_id=chat_id,
+                dm_console_response=dm_console_response,
+            )
+            if dm_action_response is not None:
+                return dm_action_response
+
+            setup_selection_response = self._handle_setup_selection_action(
+                action_name=action_name,
+                action=action,
+                worker_id=worker_id,
+                current_card=current_card,
+            )
+            if setup_selection_response is not None:
+                return setup_selection_response
+
+            project_launch_response = self._handle_project_launch_action(
+                action_name=action_name,
+                form_value=form_value,
+                chat_id=chat_id,
+                event=event,
+                project_card_response=project_card_response,
+            )
+            if project_launch_response is not None:
+                return project_launch_response
+
+            cwd_browser_response = self._handle_cwd_browser_action(
+                action_name=action_name,
+                action=action,
+                action_value=action_value,
+                form_value=form_value,
+                chat_id=chat_id,
+                worker_id=worker_id,
+                project_card_response=project_card_response,
+                current_card=current_card,
+            )
+            if cwd_browser_response is not None:
+                return cwd_browser_response
+
+            setup_form_response = self._handle_setup_form_action(
+                action_name=action_name,
+                form_value=form_value,
+                worker_id=worker_id,
+                current_card=current_card,
+            )
+            if setup_form_response is not None:
+                return setup_form_response
 
             if action_name == "stop_turn":
                 with self.app._lock:
@@ -1590,295 +2006,6 @@ class SetupCardController:
                 session.notify()
                 return P2CardActionTriggerResponse({})
 
-            if action_name in {"launch_project", "reset_project_launch"}:
-                if action_name == "reset_project_launch":
-                    self.app._reset_project_draft(chat_id)
-                    return project_card_response("Reset.", "success")
-
-                project_id = self.coerce_form_value(form_value.get("project_id"))
-                cwd = self.coerce_form_value(form_value.get("cwd"))
-                session_id = self.coerce_form_value(form_value.get("session_id"))
-                draft = self.app._merge_project_draft(chat_id, project_id=project_id, cwd=cwd, session_id=session_id)
-                normalized_project_id = self.app._normalize_alias(project_id)
-                if normalized_project_id is None:
-                    return project_card_response(
-                        "Project ID is invalid. Use lowercase letters, digits, '-' and '_'.",
-                        "error",
-                        form_project_id=project_id,
-                        form_cwd=cwd,
-                        form_session_id=session_id,
-                    )
-                if self.app._worker_store.alias_in_use(normalized_project_id):
-                    return project_card_response(
-                        f"Project ID `{normalized_project_id}` is already in use.",
-                        "error",
-                        form_project_id=project_id,
-                        form_cwd=cwd,
-                        form_session_id=session_id,
-                    )
-                if not cwd:
-                    return project_card_response(
-                        "Please fill in Working Dir first.",
-                        "error",
-                        form_project_id=project_id,
-                        form_cwd=cwd,
-                        form_session_id=session_id,
-                    )
-                validation_error = self.app._validate_cwd(cwd)
-                if validation_error:
-                    return project_card_response(
-                        f"Invalid Working Dir: {validation_error}",
-                        "error",
-                        form_project_id=project_id,
-                        form_cwd=cwd,
-                        form_session_id=session_id,
-                    )
-                if session_id:
-                    if str(draft.get("provider", "")).strip().lower() not in {"codex", "cursor"}:
-                        return project_card_response(
-                            "Attach session is only available for Codex or Cursor.",
-                            "error",
-                            form_project_id=project_id,
-                            form_cwd=cwd,
-                            form_session_id=session_id,
-                        )
-                    try:
-                        import uuid as _uuid
-
-                        _uuid.UUID(session_id.strip())
-                    except ValueError:
-                        return project_card_response(
-                            "Existing Session ID must be a valid UUID.",
-                            "error",
-                            form_project_id=project_id,
-                            form_cwd=cwd,
-                            form_session_id=session_id,
-                        )
-                requester_open_id = str(getattr(getattr(event, "operator", None), "open_id", "") or "").strip()
-                if not requester_open_id:
-                    return project_card_response(
-                        "Missing requester open_id from card callback.",
-                        "error",
-                        form_project_id=project_id,
-                        form_cwd=cwd,
-                        form_session_id=session_id,
-                    )
-                group_chat_id = self.app._create_project_group_from_dm(
-                    chat_id,
-                    requester_open_id,
-                    normalized_project_id,
-                    cwd,
-                    provider_name=str(draft.get("provider", "codex")),
-                    backend=str(draft.get("backend", "openai")),
-                    model=str(draft.get("model", "gpt-5.4")),
-                    mode=str(draft.get("mode", "auto")),
-                    attach_session_id=session_id.strip(),
-                )
-                return self.response_card(
-                    self.project_created_card(normalized_project_id, group_chat_id),
-                    "Project created.",
-                    "success",
-                )
-
-            if action_name == "set_project_cwd_browser":
-                draft = self.app._project_draft(chat_id)
-                project_id = (
-                    self.coerce_form_value(form_value.get("project_id"))
-                    or str(action_value.get("project_id", "")).strip()
-                    or str(draft.get("project_id", ""))
-                )
-                cwd = (
-                    self.coerce_form_value(form_value.get("cwd"))
-                    or str(action_value.get("cwd", "")).strip()
-                    or str(draft.get("cwd", ""))
-                )
-                session_id = (
-                    self.coerce_form_value(form_value.get("session_id"))
-                    or str(action_value.get("session_id", "")).strip()
-                    or str(draft.get("session_id", ""))
-                )
-                current_path = str(action_value.get("current_path", "")).strip()
-                selected = self.action_selected_value(action)
-                self.app.LOG.warning(
-                    "project cwd picker callback action.option=%r input_value=%r name=%r value=%r form_value=%r selected=%r current_path=%r cwd=%r",
-                    getattr(action, "option", None),
-                    getattr(action, "input_value", None),
-                    getattr(action, "name", None),
-                    getattr(action, "value", None),
-                    form_value,
-                    selected,
-                    current_path,
-                    cwd,
-                )
-                base_path = self._browse_start_path(cwd or current_path)
-                if selected == "__up__":
-                    cwd = str(Path(base_path).expanduser().resolve().parent)
-                elif selected:
-                    cwd = str((Path(base_path).expanduser() / selected).resolve())
-                self.app._merge_project_draft(chat_id, project_id=project_id, cwd=cwd, session_id=session_id)
-                return project_card_response(
-                    form_project_id=project_id,
-                    form_cwd=cwd,
-                    form_session_id=session_id,
-                )
-
-            if action_name == "save_setup":
-                alias = self.coerce_form_value(form_value.get("alias"))
-                cwd = self.coerce_form_value(form_value.get("cwd"))
-                if alias:
-                    normalized_alias = self.app._normalize_alias(alias)
-                    if normalized_alias is None:
-                        return current_card(
-                            "Project ID is invalid. Use lowercase letters, digits, '-' and '_'.",
-                            "error",
-                            form_alias=alias,
-                            form_cwd=cwd,
-                        )
-                    try:
-                        self.app._worker_store.set_alias(worker_id, normalized_alias)
-                    except ValueError as exc:
-                        return current_card(str(exc), "error", form_alias=alias, form_cwd=cwd)
-                if cwd:
-                    validation_error = self.app._validate_cwd(cwd)
-                    if validation_error:
-                        return current_card(
-                            f"Invalid cwd: {validation_error}",
-                            "error",
-                            form_alias=alias,
-                            form_cwd=cwd,
-                        )
-                    self.app._worker_store.set_cwd(worker_id, cwd)
-                return current_card("Draft saved.")
-            if action_name == "set_setup_cwd_browser":
-                alias = (
-                    self.coerce_form_value(form_value.get("alias"))
-                    or str(action_value.get("alias", "")).strip()
-                    or self.app._worker_store.alias_for(worker_id)
-                )
-                cwd = (
-                    self.coerce_form_value(form_value.get("cwd"))
-                    or str(action_value.get("cwd", "")).strip()
-                    or self.app._worker_store.cwd_for(worker_id)
-                )
-                current_path = str(action_value.get("current_path", "")).strip()
-                selected = self.action_selected_value(action)
-                self.app.LOG.warning(
-                    "setup cwd picker callback action.option=%r input_value=%r name=%r value=%r form_value=%r selected=%r current_path=%r cwd=%r",
-                    getattr(action, "option", None),
-                    getattr(action, "input_value", None),
-                    getattr(action, "name", None),
-                    getattr(action, "value", None),
-                    form_value,
-                    selected,
-                    current_path,
-                    cwd,
-                )
-                base_path = self._browse_start_path(cwd or current_path)
-                if selected == "__up__":
-                    cwd = str(Path(base_path).expanduser().resolve().parent)
-                elif selected:
-                    cwd = str((Path(base_path).expanduser() / selected).resolve())
-                return current_card(form_alias=alias, form_cwd=cwd)
-            if action_name == "enable_setup":
-                alias = self.coerce_form_value(form_value.get("alias"))
-                cwd = self.coerce_form_value(form_value.get("cwd"))
-                current_cwd = self.app._worker_store.cwd_for(worker_id)
-                if alias:
-                    normalized_alias = self.app._normalize_alias(alias)
-                    if normalized_alias is None:
-                        return current_card(
-                            "Project ID is invalid. Use lowercase letters, digits, '-' and '_'.",
-                            "error",
-                            form_alias=alias,
-                            form_cwd=cwd,
-                        )
-                    try:
-                        self.app._worker_store.set_alias(worker_id, normalized_alias)
-                    except ValueError as exc:
-                        return current_card(str(exc), "error", form_alias=alias, form_cwd=cwd)
-                if cwd:
-                    validation_error = self.app._validate_cwd(cwd)
-                    if validation_error:
-                        return current_card(
-                            f"Invalid cwd: {validation_error}",
-                            "error",
-                            form_alias=alias,
-                            form_cwd=cwd,
-                        )
-                    if cwd != current_cwd:
-                        recycle_error = self.app._recycle_worker_runtime(
-                            worker_id,
-                            reason="Stop the current reply before changing Working Dir.",
-                        )
-                        if recycle_error:
-                            return current_card(
-                                recycle_error,
-                                "error",
-                                form_alias=alias,
-                                form_cwd=cwd,
-                            )
-                    self.app._worker_store.set_cwd(worker_id, cwd)
-                enable_error = self.enable_worker(worker_id)
-                if enable_error:
-                    self.app.LOG.warning("Card action enable_setup rejected for worker_id=%s: %s", worker_id, enable_error)
-                    return current_card(enable_error, "error", form_alias=alias, form_cwd=cwd)
-                return current_card(read_only=True)
-            if action_name == "reset_session":
-                self.app._store.clear(worker_id)
-                return current_card("Started a fresh chat.")
-            if action_name == "reset_config":
-                self.reset_worker_config(worker_id)
-                return current_card("Reset.", "success")
-            if action_name == "test_ping":
-                return self.response_card(self.minimal_test_card("pong"), "pong", "success")
-            if action_name in {"set_provider", "set_backend", "set_model", "set_mode"}:
-                selected = self.action_selected_value(action)
-                if not selected:
-                    self.app.LOG.warning("Card action %s missing selected value for worker_id=%s", action_name, worker_id)
-                    return current_card("No selection received.", "error")
-                if action_name == "set_provider":
-                    current_provider = self.app._provider_name_for_worker(worker_id)
-                    if selected != current_provider:
-                        recycle_error = self.app._recycle_worker_runtime(
-                            worker_id,
-                            reason="Stop the current reply before changing Agent.",
-                        )
-                        if recycle_error:
-                            return current_card(recycle_error, "error")
-                    self.app._worker_store.set_provider(worker_id, selected)
-                    if selected == "codex":
-                        self.app._worker_store.set_backend(worker_id, "openai")
-                    elif selected == "cursor":
-                        self.app._worker_store.set_backend(worker_id, "cursor")
-                        self.app._worker_store.set_model(worker_id, "auto")
-                    elif selected == "claude":
-                        self.app._worker_store.set_backend(worker_id, self.app._claude_backend_name(worker_id))
-                    return current_card(f"Agent set to {selected}.")
-                if action_name == "set_backend":
-                    current_backend = self.app._worker_store.backend_for(worker_id)
-                    if selected != current_backend:
-                        recycle_error = self.app._recycle_worker_runtime(
-                            worker_id,
-                            reason="Stop the current reply before changing Provider.",
-                        )
-                        if recycle_error:
-                            return current_card(recycle_error, "error")
-                    self.app._worker_store.set_backend(worker_id, selected)
-                    return current_card(f"Provider set to {selected}.")
-                if action_name == "set_model":
-                    current_model = self.app._effective_model_for_worker(worker_id)
-                    if selected != current_model:
-                        recycle_error = self.app._recycle_worker_runtime(
-                            worker_id,
-                            reason="Stop the current reply before changing Model.",
-                        )
-                        if recycle_error:
-                            return current_card(recycle_error, "error")
-                    self.app._worker_store.set_model(worker_id, selected)
-                    return current_card(f"Model set to {selected}.")
-                if action_name == "set_mode":
-                    self.app._worker_store.set_mode(worker_id, selected)
-                    return current_card(f"Reply mode set to {self.app._reply_mode_label(selected)}.")
             self.app.LOG.warning("Ignoring unsupported card action for worker_id=%s action=%s", worker_id, action_name or "(empty)")
             return P2CardActionTriggerResponse({})
         except Exception:
