@@ -65,11 +65,19 @@ class PoCoTui(App[None]):
         Binding("ctrl+r", "save_and_restart", "Save & Restart"),
     ]
 
-    def __init__(self, service, *, service_factory: Callable[[str], object], focus_config: bool = False) -> None:
+    def __init__(
+        self,
+        service,
+        *,
+        service_factory: Callable[[str], object],
+        focus_config: bool = False,
+        skip_bind_on_boot: bool = False,
+    ) -> None:
         super().__init__()
         self._service = service
         self._service_factory = service_factory
         self._focus_config = focus_config
+        self._skip_bind_on_boot = skip_bind_on_boot
         self._state = AppState()
 
     def compose(self) -> ComposeResult:
@@ -95,6 +103,10 @@ class PoCoTui(App[None]):
 
     def _boot(self) -> None:
         config = self._service.load_config()
+        if self._skip_bind_on_boot and config_ready(config):
+            initial_section = WorkspaceSection.BOT if self._focus_config or not config_ready(config) else WorkspaceSection.AGENT
+            self._enter_workspace(config, section=initial_section)
+            return
         self._enter_bind_bot(config)
 
     def _refresh_runtime_state(self) -> None:

@@ -10,7 +10,7 @@ from .runtime import (
     PoCoService,
     RingLogHandler,
 )
-from .config import ConfigStore, build_paths, ensure_dirs, get_nested, workspace_binding
+from .config import ConfigStore, bind_workspace, build_paths, ensure_dirs, get_nested, workspace_binding
 from .tui import PoCoTui
 
 
@@ -25,10 +25,44 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _env_flag(name: str) -> bool:
+    value = os.getenv(name, "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
+def _env_feishu_binding() -> tuple[str, str, str] | None:
+    if not _env_flag("POCO_BIND_SKIP"):
+        return None
+    app_id = os.getenv("POCO_FEISHU_APP_ID", "").strip()
+    app_secret = os.getenv("POCO_FEISHU_APP_SECRET", "").strip()
+    if not app_id or not app_secret:
+        return None
+    alias = os.getenv("POCO_FEISHU_ALIAS", "").strip()
+    return app_id, app_secret, alias
+
+
+def _apply_env_binding(workspace: Path, app_id: str, app_secret: str, alias: str) -> str:
+    bind_workspace(workspace, app_id)
+    paths = build_paths(app_id)
+    ensure_dirs(paths)
+    store = ConfigStore(paths.config_path, paths)
+    config = store.load()
+    feishu = config.setdefault("feishu", {})
+    feishu["app_id"] = app_id
+    feishu["app_secret"] = app_secret
+    if alias:
+        feishu["alias"] = alias
+    store.save(config)
+    return app_id
+
+
 def main() -> None:
     args = parse_args()
     workspace = Path.cwd()
+    env_binding = _env_feishu_binding()
     binding = workspace_binding(workspace)
+    if env_binding is not None:
+        binding = _apply_env_binding(workspace, *env_binding)
     root_logger = logging.getLogger()
     root_logger.setLevel(getattr(logging, str(getattr(args, "log_level", "INFO")).upper(), logging.INFO))
     for handler in list(root_logger.handlers):
@@ -75,7 +109,12 @@ def main() -> None:
         current = get_nested(service.masked_config(), path)
         print(json.dumps({path: current}, ensure_ascii=False, indent=2))
         return
-    app = PoCoTui(service, service_factory=build_service_for, focus_config=args.command == "config")
+    app = PoCoTui(
+        service,
+        service_factory=build_service_for,
+        focus_config=args.command == "config",
+        skip_bind_on_boot=env_binding is not None,
+    )
     result = app.run()
     if result == "restart":
         os.execv(sys.executable, [sys.executable, *sys.argv])
