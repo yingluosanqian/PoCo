@@ -18,6 +18,7 @@ class AppConfig:
     feishu_verification_token: str
     feishu_card_test_template_id: str
     codex: ProviderConfig
+    cursor: ProviderConfig
     claude: ProviderConfig
     claude_default_backend: str
     claude_backends: Dict[str, Dict[str, object]]
@@ -34,6 +35,8 @@ class AppConfig:
         provider = provider_name.strip().lower()
         if provider == "codex":
             return self.codex
+        if provider == "cursor":
+            return self.cursor
         if provider == "claude":
             return self.claude
         raise ValueError(f"Unsupported provider: {provider_name}")

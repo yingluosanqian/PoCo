@@ -163,6 +163,10 @@ class RelayApp:
                 draft["backend"] = "openai"
                 if not draft.get("model"):
                     draft["model"] = "gpt-5.4"
+            elif provider_name == "cursor":
+                draft["backend"] = "cursor"
+                if not draft.get("model"):
+                    draft["model"] = "auto"
             elif provider_name == "claude":
                 backend = draft.get("backend", "").strip().lower() or self._config.claude_default_backend.strip().lower() or "anthropic"
                 draft["backend"] = backend
@@ -170,7 +174,7 @@ class RelayApp:
                     payload = self._config.claude_backends.get(backend, {})
                     if isinstance(payload, dict):
                         draft["model"] = str(payload.get("default_model", "")).strip()
-            if provider_name != "codex":
+            if provider_name not in {"codex", "cursor"}:
                 draft["session_id"] = ""
             self._project_drafts[chat_id] = draft
             return dict(draft)
@@ -180,6 +184,8 @@ class RelayApp:
         provider_name = draft.get("provider", "").strip().lower()
         if provider_name == "codex":
             return ["openai"]
+        if provider_name == "cursor":
+            return ["cursor"]
         if provider_name != "claude":
             return []
         return sorted(
@@ -219,6 +225,29 @@ class RelayApp:
             choices.append((label, session_id))
         return choices
 
+    def _recent_cursor_session_choices(self, limit: int = 8) -> List[Tuple[str, str]]:
+        locator = self._session_locator_for("cursor")
+        if locator is None:
+            return []
+        try:
+            sessions = locator.list_recent(limit)
+        except Exception:
+            return []
+        choices: List[Tuple[str, str]] = []
+        for item in sessions:
+            session_id = item.session_id.strip()
+            if not session_id:
+                continue
+            label = session_id[:8]
+            thread_name = item.thread_name.strip()
+            source = item.source.strip()
+            if thread_name:
+                label = f"{label} · {thread_name[:24]}"
+            elif source:
+                label = f"{label} · {source[:24]}"
+            choices.append((label, session_id))
+        return choices
+
     def _claude_backend_status(self, worker_id: str) -> Tuple[str, Optional[str]]:
         configured_backend = self._worker_store.backend_for(worker_id).strip().lower()
         if not configured_backend:
@@ -252,6 +281,8 @@ class RelayApp:
         provider = self._provider_label(self._provider_name_for_worker(worker_id))
         if provider == "codex":
             return ["openai"]
+        if provider == "cursor":
+            return ["cursor"]
         if provider != "claude":
             return []
         return sorted(
@@ -264,6 +295,8 @@ class RelayApp:
         agent = self._provider_label(self._provider_name_for_worker(worker_id))
         if agent == "codex":
             return self._worker_store.backend_for(worker_id).strip().lower() or "openai"
+        if agent == "cursor":
+            return self._worker_store.backend_for(worker_id).strip().lower() or "cursor"
         if agent == "claude":
             return self._worker_store.backend_for(worker_id).strip().lower() or self._claude_backend_name(worker_id)
         return ""
@@ -876,7 +909,7 @@ class RelayApp:
             active_turn = active_by_worker.get(worker_id, "(none)")
             provider_name = self._provider_name_for_worker(worker_id)
             model = self._effective_model_for_worker(worker_id)
-            backend = self._worker_store.backend_for(worker_id) if provider_name == "claude" else ""
+            backend = self._vendor_name_for_worker(worker_id)
             enabled = self._worker_store.enabled_for(worker_id)
             mode = self._worker_store.mode_for(worker_id)
             cwd = self._worker_store.cwd_for(worker_id)
@@ -898,7 +931,7 @@ class RelayApp:
     def _sessions_text(self, provider_name: str, limit: int) -> str:
         if not provider_name:
             lines = ["[poco] 可用 provider sessions："]
-            for current_provider in ("codex", "claude"):
+            for current_provider in ("codex", "cursor", "claude"):
                 locator = self._session_locator_for(current_provider)
                 if locator is None:
                     continue
@@ -937,7 +970,7 @@ class RelayApp:
         alias = self._worker_store.alias_for(worker_id)
         provider_name = self._provider_name_for_worker(worker_id)
         model = self._effective_model_for_worker(worker_id)
-        backend = self._worker_store.backend_for(worker_id) if provider_name == "claude" else ""
+        backend = self._vendor_name_for_worker(worker_id)
         enabled = self._worker_store.enabled_for(worker_id)
         mode = self._worker_store.mode_for(worker_id)
         cwd = self._worker_store.cwd_for(worker_id)

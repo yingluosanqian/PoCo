@@ -85,7 +85,7 @@ class WorkerStore:
         provider = str(payload.get("provider", "")).strip().lower() or "codex"
         backend = str(payload.get("backend", "")).strip().lower()
         if not backend:
-            backend = "openai" if provider == "codex" else ""
+            backend = "openai" if provider == "codex" else ("cursor" if provider == "cursor" else "")
         mode = str(payload.get("mode", "auto")).strip() or "auto"
         enabled = bool(payload.get("enabled", False))
         cwd = str(payload.get("cwd", "")).strip()
@@ -157,6 +157,8 @@ class WorkerStore:
             backend = str(payload.get("backend", "")).strip().lower()
             if not backend and provider == "codex":
                 return "openai"
+            if not backend and provider == "cursor":
+                return "cursor"
             return backend
 
     def set_provider(self, worker_id: str, provider: str) -> None:

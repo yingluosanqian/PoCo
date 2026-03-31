@@ -44,7 +44,7 @@ class SetupCardController:
                 "Agent",
                 provider_name,
                 "set_provider",
-                [("codex", "codex"), ("claude code", "claude")],
+                [("codex", "codex"), ("cursor agent", "cursor"), ("claude code", "claude")],
             )
         )
         vendor_choices = [(item, item) for item in self.app._backend_choices_for_worker(worker_id)]
@@ -201,7 +201,7 @@ class SetupCardController:
             rows.extend(
                 self.app._card_selectable_summary_row(
                     "Agent",
-                    "codex" if provider_name == "codex" else "claude code",
+                    "codex" if provider_name == "codex" else ("cursor agent" if provider_name == "cursor" else "claude code"),
                 )
             )
         if vendor:
@@ -389,7 +389,7 @@ class SetupCardController:
                 "Agent *",
                 provider_name,
                 "dm_project_set_provider",
-                [("codex", "codex"), ("claude code", "claude")],
+                [("codex", "codex"), ("cursor agent", "cursor"), ("claude code", "claude")],
             )
         )
         elements.extend(
@@ -474,17 +474,21 @@ class SetupCardController:
                 default_value=cwd,
             ),
         ]
-        if provider_name == "codex":
+        if provider_name in {"codex", "cursor"}:
             form_elements.append(
                 form_input_row(
                     "Or paste ID",
                     element_id="project_session_input",
                     name="session_id",
-                    placeholder="paste an existing codex session uuid",
+                    placeholder=f"paste an existing {provider_name} session uuid",
                     default_value=session_id,
                 )
             )
-            recent_session_choices = self.app._recent_codex_session_choices()
+            recent_session_choices = (
+                self.app._recent_codex_session_choices()
+                if provider_name == "codex"
+                else self.app._recent_cursor_session_choices()
+            )
             if recent_session_choices:
                 form_elements.insert(
                     len(form_elements) - 1,
@@ -1004,6 +1008,9 @@ class SetupCardController:
                     if selected == "codex":
                         updates["backend"] = "openai"
                         updates["model"] = "gpt-5.4"
+                    elif selected == "cursor":
+                        updates["backend"] = "cursor"
+                        updates["model"] = "auto"
                     else:
                         backend = self.app._config.claude_default_backend.strip().lower() or "anthropic"
                         updates["backend"] = backend
@@ -1015,8 +1022,12 @@ class SetupCardController:
                     selected = self.action_selected_value(action)
                     if not selected:
                         return self.response_card(self.project_launch_card(chat_id, notice="Choose a provider first."), "Choose a provider first.", "error")
-                    payload = self.app._config.claude_backends.get(selected, {})
-                    model = str(payload.get("default_model", "")).strip() if isinstance(payload, dict) else ""
+                    provider_name = str(self.app._project_draft(chat_id).get("provider", "")).strip().lower()
+                    if provider_name == "cursor":
+                        model = "auto"
+                    else:
+                        payload = self.app._config.claude_backends.get(selected, {})
+                        model = str(payload.get("default_model", "")).strip() if isinstance(payload, dict) else ""
                     self.app._merge_project_draft(chat_id, backend=selected, model=model)
                     return self.response_card(self.project_launch_card(chat_id), "", "success")
                 if action_name == "dm_project_set_model":
@@ -1185,9 +1196,9 @@ class SetupCardController:
                         form_session_id=session_id,
                     )
                 if session_id:
-                    if str(draft.get("provider", "")).strip().lower() != "codex":
+                    if str(draft.get("provider", "")).strip().lower() not in {"codex", "cursor"}:
                         return project_card_response(
-                            "Attach session is only available for Codex.",
+                            "Attach session is only available for Codex or Cursor.",
                             "error",
                             form_project_id=project_id,
                             form_cwd=cwd,
@@ -1348,6 +1359,9 @@ class SetupCardController:
                     self.app._worker_store.set_provider(worker_id, selected)
                     if selected == "codex":
                         self.app._worker_store.set_backend(worker_id, "openai")
+                    elif selected == "cursor":
+                        self.app._worker_store.set_backend(worker_id, "cursor")
+                        self.app._worker_store.set_model(worker_id, "auto")
                     elif selected == "claude":
                         self.app._worker_store.set_backend(worker_id, self.app._claude_backend_name(worker_id))
                     return current_card(f"Agent set to {selected}.")

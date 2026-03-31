@@ -7,6 +7,7 @@ from .base import (
 )
 from .claude import ClaudeProviderClient, ClaudeSessionLocator
 from .codex import CodexProviderClient, CodexSessionLocator
+from .cursor import CursorProviderClient, CursorSessionLocator
 from .models import model_choices
 
 
@@ -16,6 +17,8 @@ def build_provider_client(provider_name: str, provider_config: ProviderConfig, c
         return CodexProviderClient(provider_config, cwd)
     if provider == "claude":
         return ClaudeProviderClient(provider_config, cwd)
+    if provider == "cursor":
+        return CursorProviderClient(provider_config, cwd)
     raise RuntimeError(f"Unsupported provider: {provider_name}")
 
 
@@ -23,6 +26,7 @@ def build_session_locators() -> dict[str, SessionLocator]:
     return {
         "codex": CodexSessionLocator(),
         "claude": ClaudeSessionLocator(),
+        "cursor": CursorSessionLocator(),
     }
 
 
@@ -31,6 +35,8 @@ __all__ = [
     "ClaudeSessionLocator",
     "CodexProviderClient",
     "CodexSessionLocator",
+    "CursorProviderClient",
+    "CursorSessionLocator",
     "build_provider_client",
     "build_session_locators",
     "model_choices",

@@ -187,6 +187,7 @@ def section_fields(config: dict, section: WorkspaceSection) -> list[FieldDef]:
 
     if section == WorkspaceSection.AGENT:
         codex_model = str(config.get("codex", {}).get("model", "")).strip()
+        cursor_model = str(config.get("cursor", {}).get("model", "")).strip()
         fields = [
             FieldDef("group.codex", "Codex", ReadOnly()),
             FieldDef("codex.bin", "Bin", TextInput()),
@@ -199,6 +200,12 @@ def section_fields(config: dict, section: WorkspaceSection) -> list[FieldDef]:
             ),
             FieldDef("codex.approval_policy", "Approval Policy", TextInput()),
             FieldDef("codex.sandbox", "Sandbox", TextInput()),
+            FieldDef("group.cursor", "Cursor", ReadOnly()),
+            FieldDef("cursor.bin", "Bin", TextInput()),
+            FieldDef("cursor.app_server_args", "CLI Args", TextInput()),
+            FieldDef("cursor.model", "Model", ChoiceSelect(_non_empty_choice_labels(model_choices("cursor"), cursor_model))),
+            FieldDef("cursor.approval_policy", "Approval Policy", TextInput()),
+            FieldDef("cursor.sandbox", "Sandbox", TextInput()),
             FieldDef("group.claude", "Claude", ReadOnly()),
             FieldDef("claude.bin", "Bin", TextInput()),
             FieldDef("claude.app_server_args", "App Server Args", TextInput()),

@@ -128,6 +128,7 @@ class RelayRunner:
 def build_app_config(config: Dict[str, Any], paths: PoCoPaths) -> AppConfig:
     feishu = config["feishu"]
     codex = config["codex"]
+    cursor = config.get("cursor", {})
     claude = config.get("claude", {})
     bridge = config["bridge"]
     return AppConfig(
@@ -144,6 +145,15 @@ def build_app_config(config: Dict[str, Any], paths: PoCoPaths) -> AppConfig:
             approval_policy=codex["approval_policy"],
             sandbox=codex["sandbox"],
             reasoning_effort=str(codex.get("reasoning_effort", "")),
+        ),
+        cursor=ProviderConfig(
+            name="cursor",
+            bin=str(cursor.get("bin", "cursor-agent")),
+            app_server_args=str(cursor.get("app_server_args", "")),
+            model=str(cursor.get("model", "auto")),
+            approval_policy=str(cursor.get("approval_policy", "force")),
+            sandbox=str(cursor.get("sandbox", "disabled")),
+            reasoning_effort="",
         ),
         claude=ProviderConfig(
             name="claude",

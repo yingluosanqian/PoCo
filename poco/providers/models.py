@@ -17,6 +17,16 @@ PREDEFINED_MODELS = {
         "gpt-5-nano",
         "codex-mini-latest",
     ],
+    "cursor": [
+        "auto",
+        "gpt-5.4-medium",
+        "gpt-5.4-high",
+        "gpt-5.4-xhigh",
+        "gpt-5.3-codex",
+        "gpt-5.3-codex-high",
+        "claude-4.6-opus-high-thinking",
+        "claude-4.6-sonnet-medium-thinking",
+    ],
     "claude": {
         "anthropic": [
             "claude-opus-4-6",

@@ -90,6 +90,13 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "approval_policy": "never",
         "sandbox": "danger-full-access",
     },
+    "cursor": {
+        "bin": "cursor-agent",
+        "app_server_args": "",
+        "model": "auto",
+        "approval_policy": "force",
+        "sandbox": "disabled",
+    },
     "claude": {
         "bin": "claude",
         "app_server_args": "",
@@ -151,6 +158,11 @@ INPUT_IDS = {
     "codex.reasoning_effort": "codex_reasoning_effort",
     "codex.approval_policy": "codex_approval_policy",
     "codex.sandbox": "codex_sandbox",
+    "cursor.bin": "cursor_bin",
+    "cursor.app_server_args": "cursor_app_server_args",
+    "cursor.model": "cursor_model",
+    "cursor.approval_policy": "cursor_approval_policy",
+    "cursor.sandbox": "cursor_sandbox",
     "claude.bin": "claude_bin",
     "claude.app_server_args": "claude_app_server_args",
     "claude.approval_policy": "claude_approval_policy",
@@ -186,6 +198,11 @@ CONFIG_KEY_ALIASES = {
     "reasoning_effort": "codex.reasoning_effort",
     "approval_policy": "codex.approval_policy",
     "sandbox": "codex.sandbox",
+    "cursor_bin": "cursor.bin",
+    "cursor_app_server_args": "cursor.app_server_args",
+    "cursor_model": "cursor.model",
+    "cursor_approval_policy": "cursor.approval_policy",
+    "cursor_sandbox": "cursor.sandbox",
     "claude_bin": "claude.bin",
     "claude_app_server_args": "claude.app_server_args",
     "claude_approval_policy": "claude.approval_policy",
@@ -230,6 +247,14 @@ def normalize_config(config: Dict[str, Any]) -> Dict[str, Any]:
         codex["model"] = DEFAULT_CONFIG["codex"]["model"]
     if not str(codex.get("reasoning_effort", "")).strip():
         codex["reasoning_effort"] = DEFAULT_CONFIG["codex"]["reasoning_effort"]
+
+    cursor = config.setdefault("cursor", {})
+    if not str(cursor.get("model", "")).strip():
+        cursor["model"] = DEFAULT_CONFIG["cursor"]["model"]
+    if not str(cursor.get("approval_policy", "")).strip():
+        cursor["approval_policy"] = DEFAULT_CONFIG["cursor"]["approval_policy"]
+    if not str(cursor.get("sandbox", "")).strip():
+        cursor["sandbox"] = DEFAULT_CONFIG["cursor"]["sandbox"]
 
     claude = config.setdefault("claude", {})
     if not str(claude.get("default_backend", "")).strip():

@@ -2,7 +2,7 @@
 
 This file tracks user-facing product changes by release.
 
-## 0.2.2
+## 0.3.0
 
 Based on commit: `3c36204` (`[feat] Grant Claude Code write access to the system`)
 
