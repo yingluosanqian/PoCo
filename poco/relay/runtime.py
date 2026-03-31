@@ -334,15 +334,15 @@ class TurnController:
         """Build one reply card for streaming, completed, or stopped states."""
         normalized = state.strip().lower()
         if normalized == "stopped":
-            template = "orange"
+            template = "grey"
             tag_text = "Stopped"
-            tag_color = "orange"
+            tag_color = "neutral"
         elif normalized == "completed":
             template = "green"
             tag_text = "Completed"
             tag_color = "green"
         else:
-            template = "orange"
+            template = "blue"
             tag_text = "Running"
             tag_color = "blue"
         elements = [
