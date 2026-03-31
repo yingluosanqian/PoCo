@@ -70,6 +70,7 @@ class TurnSession:
     final_text: str = ""
     error_text: str = ""
     done: bool = False
+    stopped: bool = False
     started_at: float = field(default_factory=time.time)
     next_delay: int = 1
     next_update_at: float = field(default_factory=time.time)

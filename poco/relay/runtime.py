@@ -122,6 +122,7 @@ class TurnController:
 
             with session.lock:
                 done = session.done
+                stopped = session.stopped
                 accumulated = session.accumulated_text
                 final_text = session.final_text
                 error_text = session.error_text
@@ -131,11 +132,16 @@ class TurnController:
 
             if done:
                 if error_text and not accumulated:
-                    self.render_text(session, error_text, final=True)
+                    self.render_text(session, error_text, final=True, stopped=stopped)
                 elif final_text or accumulated:
-                    self.render_text(session, final_text or accumulated, final=True)
+                    self.render_text(session, final_text or accumulated, final=True, stopped=stopped)
                 else:
-                    self.render_text(session, "[poco] 回复已完成，但没有可显示的文本。", final=True)
+                    self.render_text(
+                        session,
+                        "[poco] 回复已完成，但没有可显示的文本。",
+                        final=True,
+                        stopped=stopped,
+                    )
                 self.cleanup_session(session)
                 return
 
@@ -156,7 +162,7 @@ class TurnController:
                     session.next_delay = min(next_delay * 2, max_delay)
                     session.next_update_at = now + session.next_delay
 
-    def render_text(self, session: TurnSession, text: str, final: bool) -> None:
+    def render_text(self, session: TurnSession, text: str, final: bool, *, stopped: bool = False) -> None:
         """Render one text snapshot into the session live surface."""
         live = session.live
         if live.card_id:
@@ -165,22 +171,23 @@ class TurnController:
             rendered = text.rstrip() or ("Done." if final else "")
             live = self.update_live_message(session.chat_id, live, rendered)
             session.live = live
-            if final and live.streaming_mode:
+            if final:
                 try:
-                    self.app._messenger.set_card_streaming_mode(
-                        live.card_id,
-                        enabled=False,
-                        sequence=live.stream_sequence + 1,
-                        summary=shorten(rendered, 80),
-                    )
-                    live.stream_sequence += 1
-                    live.streaming_mode = False
+                    if live.streaming_mode:
+                        self.app._messenger.set_card_streaming_mode(
+                            live.card_id,
+                            enabled=False,
+                            sequence=live.stream_sequence + 1,
+                            summary=shorten(rendered, 80),
+                        )
+                        live.stream_sequence += 1
+                        live.streaming_mode = False
                     self.app._messenger.update_card_entity(
                         live.card_id,
                         self.answer_card(
                             self.app._provider_name_for_worker(session.worker_id),
                             rendered,
-                            state="completed",
+                            state="stopped" if stopped else "completed",
                             stop_enabled=False,
                             streaming=False,
                             element_id=live.element_id or "answer_stream",
@@ -189,7 +196,7 @@ class TurnController:
                     )
                     live.stream_sequence += 1
                 except Exception:
-                    LOG.exception("Failed to close streaming mode for card_id=%s", live.card_id)
+                    LOG.exception("Failed to finalize streaming card_id=%s", live.card_id)
             return
         rendered = self.with_turn_state(text, completed=final)
         chunks = chunk_text(rendered, self.app._config.message_limit)
@@ -356,22 +363,6 @@ class TurnController:
                             "width": "auto",
                             "elements": [
                                 self.app._card_button("Stop", "stop_turn", "default")
-                            ],
-                        }
-                    ],
-                }
-            )
-        elif normalized == "stopped":
-            elements.append(
-                {
-                    "tag": "column_set",
-                    "horizontal_spacing": "8px",
-                    "columns": [
-                        {
-                            "tag": "column",
-                            "width": "auto",
-                            "elements": [
-                                self.app._card_button("Stopped", "stopped", "default", enable_callback=False)
                             ],
                         }
                     ],

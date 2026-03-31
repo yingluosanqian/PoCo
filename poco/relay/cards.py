@@ -954,6 +954,9 @@ class SetupCardController:
             action_name = str(action_value.get("action", "")).strip()
             form_value = action.form_value if action is not None and isinstance(action.form_value, dict) else {}
 
+            if action_name in {"", "stopped"}:
+                return P2CardActionTriggerResponse({})
+
             def dm_console_response(
                 *,
                 mode: str = "root",
@@ -1110,19 +1113,13 @@ class SetupCardController:
                 with session.lock:
                     rendered = (session.final_text or session.accumulated_text).rstrip() or "_Stopped._"
                     session.done = True
+                    session.stopped = True
                     session.final_text = rendered
                     session.error_text = ""
-                    session.live.card_broken = True
+                    live = session.live
+                    live.last_text = rendered
                 session.notify()
-                return self.response_card(
-                    self.app._turns.answer_card(
-                        worker.provider_name,
-                        rendered,
-                        state="stopped",
-                        stop_enabled=False,
-                        streaming=False,
-                    ),
-                )
+                return P2CardActionTriggerResponse({})
 
             if action_name in {"launch_project", "reset_project_launch"}:
                 def project_card_response(
@@ -1379,8 +1376,8 @@ class SetupCardController:
                 if action_name == "set_mode":
                     self.app._worker_store.set_mode(worker_id, selected)
                     return current_card(f"Reply mode set to {self.app._reply_mode_label(selected)}.")
-            self.app.LOG.warning("Card action unsupported for worker_id=%s action=%s", worker_id, action_name or "(empty)")
-            return current_card("Unsupported action.", "error")
+            self.app.LOG.warning("Ignoring unsupported card action for worker_id=%s action=%s", worker_id, action_name or "(empty)")
+            return P2CardActionTriggerResponse({})
         except Exception:
             self.app.LOG.exception("Unhandled card action trigger failure")
             return self.response_card(
