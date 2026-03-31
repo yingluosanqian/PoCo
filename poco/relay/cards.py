@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional
 
 from lark_oapi.event.callback.model.p2_card_action_trigger import (
@@ -18,6 +20,315 @@ class SetupCardController:
 
     def __init__(self, app: "RelayApp") -> None:
         self.app = app
+
+    @staticmethod
+    def _setup_section_header(title: str, description: str = "") -> dict:
+        content = f"<font color='orange-700'>**{title}**</font>"
+        if description:
+            content = (
+                f"{content}\n"
+                f"<font color='grey-650'>{description}</font>"
+            )
+        return {
+            "tag": "markdown",
+            "content": content,
+        }
+
+    def _setup_choice_group(
+        self,
+        title: str,
+        current_value: str,
+        action_name: str,
+        choices: List[tuple[str, str]],
+        **extra_value: str,
+    ) -> List[dict]:
+        buttons: List[dict] = []
+        current = current_value.strip().lower()
+        for label, value in choices:
+            selected = value.strip().lower()
+            button_type = "primary" if current and selected == current else "default"
+            button = self.app._card_button(
+                label,
+                action_name,
+                button_type,
+                selected=value,
+            )
+            if extra_value and "value" in button:
+                button["value"].update(extra_value)
+                behaviors = button.get("behaviors")
+                if isinstance(behaviors, list) and behaviors:
+                    callback_value = behaviors[0].get("value")
+                    if isinstance(callback_value, dict):
+                        callback_value.update(extra_value)
+            buttons.append(button)
+        columns = [
+            {
+                "tag": "column",
+                "width": "auto",
+                "elements": [button],
+                "element_id": f"setup_choice_{idx}",
+            }
+            for idx, button in enumerate(buttons, start=1)
+        ]
+        return [
+            self.app._card_label_markdown(title),
+            {
+                "tag": "column_set",
+                "flex_mode": "flow",
+                "horizontal_spacing": "8px",
+                "columns": columns,
+            },
+        ]
+
+    def _setup_select(
+        self,
+        title: str,
+        action_name: str,
+        current_value: str,
+        choices: List[tuple[str, str]],
+        *,
+        placeholder: str,
+    ) -> List[dict]:
+        options: List[dict] = []
+        initial_option = ""
+        for label, value in choices:
+            options.append(
+                {
+                    "text": {"tag": "plain_text", "content": label},
+                    "value": value,
+                }
+            )
+            if value == current_value:
+                initial_option = value
+        payload = {
+            "tag": "select_static",
+            "element_id": self.app._card_button(title, action_name)["element_id"].replace("btn_", "sel_", 1),
+            "placeholder": {"tag": "plain_text", "content": placeholder},
+            "options": options,
+            "value": {"action": action_name},
+            "behaviors": [
+                {
+                    "type": "callback",
+                    "value": {"action": action_name},
+                }
+            ],
+        }
+        if initial_option:
+            payload["initial_option"] = initial_option
+        return [
+            self.app._card_label_markdown(title),
+            payload,
+        ]
+
+    def _setup_inline_select(
+        self,
+        title: str,
+        action_name: str,
+        current_value: str,
+        choices: List[tuple[str, str]],
+        *,
+        placeholder: str,
+        **extra_value: str,
+    ) -> dict:
+        options: List[dict] = []
+        initial_option = ""
+        for label, value in choices:
+            options.append(
+                {
+                    "text": {"tag": "plain_text", "content": label},
+                    "value": value,
+                }
+            )
+            if value == current_value:
+                initial_option = value
+        payload = {
+            "tag": "select_static",
+            "element_id": self.app._card_button(title, action_name)["element_id"].replace("btn_", "sel_", 1),
+            "placeholder": {"tag": "plain_text", "content": placeholder},
+            "options": options,
+            "value": {"action": action_name, **extra_value},
+            "behaviors": [
+                {
+                    "type": "callback",
+                    "value": {"action": action_name, **extra_value},
+                }
+            ],
+            "width": "fill",
+        }
+        if initial_option:
+            payload["initial_option"] = initial_option
+        return {
+            "tag": "column_set",
+            "flex_mode": "none",
+            "horizontal_spacing": "8px",
+            "columns": [
+                {
+                    "tag": "column",
+                    "width": "96px",
+                    "vertical_align": "center",
+                    "elements": [self.app._card_label_markdown(title)],
+                },
+                {
+                    "tag": "column",
+                    "width": "weighted",
+                    "vertical_align": "center",
+                    "elements": [payload],
+                },
+            ],
+        }
+
+    def _setup_form_select_row(
+        self,
+        title: str,
+        action_name: str,
+        current_value: str,
+        choices: List[tuple[str, str]],
+        *,
+        placeholder: str,
+        **extra_value: str,
+    ) -> dict:
+        options: List[dict] = []
+        initial_option = ""
+        for label, value in choices:
+            options.append(
+                {
+                    "text": {"tag": "plain_text", "content": label},
+                    "value": value,
+                }
+            )
+            if value == current_value:
+                initial_option = value
+        payload = {
+            "tag": "select_static",
+            "element_id": self.app._card_button(title, action_name)["element_id"].replace("btn_", "sel_", 1),
+            "placeholder": {"tag": "plain_text", "content": placeholder},
+            "options": options,
+            "value": {"action": action_name, **extra_value},
+            "behaviors": [
+                {
+                    "type": "callback",
+                    "value": {"action": action_name, **extra_value},
+                }
+            ],
+        }
+        if initial_option:
+            payload["initial_option"] = initial_option
+        return self.app._card_labeled_row(title, payload)
+
+    def _setup_input(self, label: str, *, element_id: str, name: str, placeholder: str, default_value: str) -> List[dict]:
+        return [
+            self.app._card_label_markdown(label),
+            {
+                "tag": "input",
+                "element_id": element_id,
+                "name": name,
+                "placeholder": {"tag": "plain_text", "content": placeholder},
+                "default_value": default_value,
+            },
+        ]
+
+    def _setup_single_button_row(self, button: dict) -> dict:
+        return {
+            "tag": "column_set",
+            "horizontal_spacing": "8px",
+            "columns": [
+                {
+                    "tag": "column",
+                    "width": "weighted",
+                    "weight": 1,
+                    "elements": [button],
+                }
+            ],
+        }
+
+    @staticmethod
+    def _browse_start_path(raw_path: str) -> str:
+        candidate = (raw_path or "").strip()
+        if candidate:
+            path = Path(candidate).expanduser()
+            if path.is_dir():
+                return str(path.resolve())
+        return "/"
+
+    @staticmethod
+    def _browse_child_dirs(current_path: str) -> tuple[list[str], str]:
+        path = Path(current_path).expanduser()
+        try:
+            names = sorted(
+                [item.name for item in path.iterdir() if item.is_dir()],
+                key=str.casefold,
+            )
+        except Exception as exc:
+            return [], str(exc)
+        return names, ""
+
+    def _cwd_picker_status(self, current_cwd: str) -> List[dict]:
+        current_path = self._browse_start_path(current_cwd)
+        directories, browse_error = self._browse_child_dirs(current_path)
+        elements: List[dict] = [
+            {
+                "tag": "markdown",
+                "content": f"<font color='grey-650'>Browsing: `{current_path}`</font>",
+            }
+        ]
+        if browse_error:
+            elements.append(
+                {
+                    "tag": "markdown",
+                    "content": f"**Cannot read directory:** {browse_error}",
+                }
+            )
+        elif not directories:
+            elements.append(
+                {
+                    "tag": "markdown",
+                    "content": "<font color='grey-650'>No subdirectories here.</font>",
+                }
+            )
+        return elements
+
+    def _cwd_picker(
+        self,
+        title: str,
+        action_name: str,
+        current_cwd: str,
+        *,
+        picker_name: str,
+        **extra_value: str,
+    ) -> dict:
+        current_path = self._browse_start_path(current_cwd)
+        directories, browse_error = self._browse_child_dirs(current_path)
+        if browse_error:
+            directories = []
+        options = [
+            {
+                "text": {"tag": "plain_text", "content": "[..] Parent Directory"},
+                "value": "__up__",
+            }
+        ]
+        options.extend(
+            {
+                "text": {"tag": "plain_text", "content": f"{name}/"},
+                "value": name,
+            }
+            for name in directories
+        )
+        digest = hashlib.sha1(f"{action_name}|{current_path}".encode("utf-8")).hexdigest()[:8]
+        select_payload = {
+            "tag": "select_static",
+            "element_id": f"cwdsel_{digest}",
+            "name": picker_name,
+            "placeholder": {"tag": "plain_text", "content": title},
+            "options": options,
+            "value": {**extra_value, "action": action_name, "current_path": current_path},
+            "behaviors": [
+                {
+                    "type": "callback",
+                    "value": {**extra_value, "action": action_name, "current_path": current_path},
+                }
+            ],
+        }
+        return select_payload
 
     def setup_card(
         self,
@@ -40,17 +351,30 @@ class SetupCardController:
             return self._readonly_setup_card(worker_id, alias=alias, cwd=cwd)
         elements: List[dict] = []
         elements.extend(
-            self.app._card_choice_group(
-                "Agent",
-                provider_name,
-                "set_provider",
-                [("codex", "codex"), ("cursor agent", "cursor"), ("claude code", "claude")],
-            )
+            [
+                {
+                    "tag": "markdown",
+                    "element_id": "setup_intro",
+                    "content": "<font color='grey-650'>Choose agent, confirm project info, then start.</font>",
+                },
+                self._setup_section_header("Runtime"),
+            ]
+        )
+        elements.extend(
+            [
+                self._setup_inline_select(
+                    "Agent",
+                    "set_provider",
+                    provider_name,
+                    [("codex", "codex"), ("cursor agent", "cursor"), ("claude code", "claude")],
+                    placeholder="Choose an agent",
+                )
+            ]
         )
         vendor_choices = [(item, item) for item in self.app._backend_choices_for_worker(worker_id)]
         if vendor_choices:
-            elements.extend(
-                self.app._card_select(
+            elements.append(
+                self._setup_inline_select(
                     "Provider",
                     "set_backend",
                     vendor,
@@ -60,8 +384,8 @@ class SetupCardController:
             )
         model_choices = [(item, item) for item in self.app._model_choices_for_worker(worker_id)]
         if model_choices:
-            elements.extend(
-                self.app._card_select(
+            elements.append(
+                self._setup_inline_select(
                     "Model",
                     "set_model",
                     model,
@@ -70,13 +394,14 @@ class SetupCardController:
                 )
             )
         elements.extend(
-            self.app._card_choice_group(
+            self._setup_choice_group(
                 "Reply Mode",
                 self.app._worker_store.mode_for(worker_id),
                 "set_mode",
                 [("mention only", "mention"), ("all", "auto")],
             )
         )
+        elements.append(self._setup_section_header("Project"))
         elements.append(
             {
                 "tag": "form",
@@ -84,64 +409,48 @@ class SetupCardController:
                 "name": "setup_form",
                 "vertical_spacing": "8px",
                 "elements": [
-                    {
-                        "tag": "markdown",
-                        "element_id": "setup_alias_label",
-                        "content": "<font color='orange-700'>**Project ID**</font>",
-                    },
-                    {
-                        "tag": "input",
-                        "element_id": "setup_alias",
-                        "name": "alias",
-                        "placeholder": {"tag": "plain_text", "content": "unique project id"},
-                        "default_value": alias,
-                    },
-                    {
-                        "tag": "markdown",
-                        "element_id": "setup_cwd_label",
-                        "content": "<font color='orange-700'>**Working Dir**</font>",
-                    },
-                    {
-                        "tag": "input",
-                        "element_id": "setup_cwd",
-                        "name": "cwd",
-                        "placeholder": {"tag": "plain_text", "content": "/root/project/..."},
-                        "default_value": cwd,
-                    },
-                    {
-                        "tag": "column_set",
-                        "flex_mode": "flow",
-                        "horizontal_spacing": "8px",
-                        "columns": [
-                            {
-                                "tag": "column",
-                                "width": "auto",
-                                "elements": [
-                                    self.app._card_button(
-                                        "Start",
-                                        "enable_setup",
-                                        "primary",
-                                        name="enable_setup",
-                                        form_action_type="submit",
-                                    )
-                                ],
-                            },
-                            {
-                                "tag": "column",
-                                "width": "auto",
-                                "elements": [
-                                    self.app._card_button(
-                                        "Reset",
-                                        "reset_config",
-                                        "default",
-                                    )
-                                ],
-                            },
-                        ],
-                    },
+                    *self._setup_input(
+                        "Project ID",
+                        element_id="setup_alias",
+                        name="alias",
+                        placeholder="unique project id",
+                        default_value=alias,
+                    ),
+                    *self._setup_input(
+                        "Working Dir",
+                        element_id="setup_cwd",
+                        name="cwd",
+                        placeholder="/root/project/...",
+                        default_value=cwd,
+                    ),
+                    self._cwd_picker(
+                        "Choose subdirectory",
+                        "set_setup_cwd_browser",
+                        cwd,
+                        picker_name="setup_cwd_browser",
+                        alias=alias,
+                        cwd=cwd,
+                    ),
+                    self._setup_single_button_row(
+                        self.app._card_button(
+                            "Start",
+                            "enable_setup",
+                            "primary",
+                            name="enable_setup",
+                            form_action_type="submit",
+                        )
+                    ),
+                    self._setup_single_button_row(
+                        self.app._card_button(
+                            "Reset",
+                            "reset_config",
+                            "default",
+                        )
+                    ),
                 ],
             }
         )
+        elements.extend(self._cwd_picker_status(cwd))
         if cwd_error:
             elements.append(
                 {
@@ -383,91 +692,76 @@ class SetupCardController:
         model = draft.get("model", "gpt-5.4")
         mode = draft.get("mode", "auto")
         session_id = form_session_id if form_session_id else draft.get("session_id", "")
-        elements: List[dict] = []
+        launch_state = {
+            "project_id": project_id,
+            "cwd": cwd,
+            "session_id": session_id,
+        }
+        elements: List[dict] = [
+            {
+                "tag": "markdown",
+                "element_id": "project_launch_intro",
+                "content": "<font color='grey-650'>Choose runtime, confirm project path, then start.</font>",
+            },
+            self._setup_section_header("Runtime"),
+        ]
         elements.extend(
-            self.app._card_choice_group(
-                "Agent *",
-                provider_name,
-                "dm_project_set_provider",
-                [("codex", "codex"), ("cursor agent", "cursor"), ("claude code", "claude")],
-            )
-        )
-        elements.extend(
-            self.app._card_choice_group(
-                "Reply Mode *",
-                mode,
-                "dm_project_set_mode",
-                [("mention only", "mention"), ("all", "auto")],
-            )
+            [
+                self._setup_inline_select(
+                    "Agent",
+                    "dm_project_set_provider",
+                    provider_name,
+                    [("codex", "codex"), ("cursor agent", "cursor"), ("claude code", "claude")],
+                    placeholder="Choose an agent",
+                    **launch_state,
+                )
+            ]
         )
         backend_choices = [(item, item) for item in self.app._backend_choices_for_project_draft(chat_id)]
         model_choices = [(item, item) for item in self.app._model_choices_for_project_draft(chat_id)]
         if backend_choices:
-            elements.extend(
-                self.app._card_select(
-                    "Provider *",
+            elements.append(
+                self._setup_inline_select(
+                    "Provider",
                     "dm_project_set_backend",
                     backend,
                     backend_choices,
                     placeholder="Choose a provider",
+                    **launch_state,
                 )
             )
         if model_choices:
-            elements.extend(
-                self.app._card_select(
-                    "Model *",
+            elements.append(
+                self._setup_inline_select(
+                    "Model",
                     "dm_project_set_model",
                     model,
                     model_choices,
                     placeholder="Choose a model",
+                    **launch_state,
                 )
             )
-        def form_input_row(
-            label: str,
-            *,
-            element_id: str,
-            name: str,
-            placeholder: str,
-            default_value: str,
-        ) -> dict:
-            return {
-                "tag": "column_set",
-                "flex_mode": "none",
-                "horizontal_spacing": "8px",
-                "columns": [
-                    {
-                        "tag": "column",
-                        "width": "150px",
-                        "vertical_align": "center",
-                        "elements": [self.app._card_label_markdown(label)],
-                    },
-                    {
-                        "tag": "column",
-                        "width": "weighted",
-                        "vertical_align": "center",
-                        "elements": [
-                            {
-                                "tag": "input",
-                                "element_id": element_id,
-                                "name": name,
-                                "placeholder": {"tag": "plain_text", "content": placeholder},
-                                "default_value": default_value,
-                            }
-                        ],
-                    },
-                ],
-            }
+        elements.extend(
+            self._setup_choice_group(
+                "Reply Mode",
+                mode,
+                "dm_project_set_mode",
+                [("mention only", "mention"), ("all", "auto")],
+                **launch_state,
+            )
+        )
+        elements.append(self._setup_section_header("Project"))
 
         form_elements: List[dict] = [
-            form_input_row(
-                "Project ID *",
+            *self._setup_input(
+                "Project ID",
                 element_id="project_id_input",
                 name="project_id",
                 placeholder="unique project id",
                 default_value=project_id,
             ),
-            form_input_row(
-                "Working Dir *",
+            *self._setup_input(
+                "Working Dir",
                 element_id="project_cwd_input",
                 name="cwd",
                 placeholder="/root/project/...",
@@ -475,8 +769,24 @@ class SetupCardController:
             ),
         ]
         if provider_name in {"codex", "cursor"}:
-            form_elements.append(
-                form_input_row(
+            recent_session_choices = (
+                self.app._recent_codex_session_choices()
+                if provider_name == "codex"
+                else self.app._recent_cursor_session_choices()
+            )
+            if recent_session_choices:
+                form_elements.append(
+                    self._setup_form_select_row(
+                        "Recent Session",
+                        "dm_project_set_session_id",
+                        session_id,
+                        recent_session_choices,
+                        placeholder="Choose a recent session",
+                        **launch_state,
+                    )
+                )
+            form_elements.extend(
+                self._setup_input(
                     "Or paste ID",
                     element_id="project_session_input",
                     name="session_id",
@@ -484,73 +794,48 @@ class SetupCardController:
                     default_value=session_id,
                 )
             )
-            recent_session_choices = (
-                self.app._recent_codex_session_choices()
-                if provider_name == "codex"
-                else self.app._recent_cursor_session_choices()
-            )
-            if recent_session_choices:
-                form_elements.insert(
-                    len(form_elements) - 1,
-                    self.app._card_select(
-                        "Attach to",
-                        "dm_project_set_session_id",
-                        session_id,
-                        recent_session_choices,
-                        placeholder="Choose a recent session",
-                    )[0],
-                )
-        form_elements.extend(
-            [
-                {
-                    "tag": "column_set",
-                    "flex_mode": "flow",
-                    "horizontal_spacing": "8px",
-                    "columns": [
-                        {
-                            "tag": "column",
-                            "width": "auto",
-                            "elements": [
-                                self.app._card_button(
-                                    "Start",
-                                    "launch_project",
-                                    "primary",
-                                    name="launch_project",
-                                    form_action_type="submit",
-                                )
-                            ],
-                        },
-                        {
-                            "tag": "column",
-                            "width": "auto",
-                            "elements": [
-                                self.app._card_button(
-                                    "Reset",
-                                    "reset_project_launch",
-                                    "default",
-                                )
-                            ],
-                        },
-                    ],
-                },
-                {
-                    "tag": "column_set",
-                    "horizontal_align": "right",
-                    "columns": [
-                        {
-                            "tag": "column",
-                            "width": "auto",
-                            "elements": [
-                                self.app._card_button(
-                                    "Back",
-                                    "dm_mode_root",
-                                    "default",
-                                )
-                            ],
-                        }
-                    ],
-                },
-            ]
+        form_elements.append(
+            {
+                "tag": "column_set",
+                "horizontal_spacing": "8px",
+                "columns": [
+                    {
+                        "tag": "column",
+                        "width": "weighted",
+                        "elements": [
+                            self.app._card_button(
+                                "Start",
+                                "launch_project",
+                                "primary",
+                                name="launch_project",
+                                form_action_type="submit",
+                            )
+                        ],
+                    },
+                    {
+                        "tag": "column",
+                        "width": "weighted",
+                        "elements": [
+                            self.app._card_button(
+                                "Reset",
+                                "reset_project_launch",
+                                "default",
+                            )
+                        ],
+                    },
+                    {
+                        "tag": "column",
+                        "width": "weighted",
+                        "elements": [
+                            self.app._card_button(
+                                "Back",
+                                "dm_mode_root",
+                                "default",
+                            )
+                        ],
+                    },
+                ],
+            }
         )
         elements.append(
             {
@@ -560,6 +845,18 @@ class SetupCardController:
                 "vertical_spacing": "8px",
                 "elements": form_elements,
             }
+        )
+        elements.extend(self._cwd_picker_status(cwd))
+        elements.append(
+            self._cwd_picker(
+                "Choose subdirectory",
+                "set_project_cwd_browser",
+                cwd,
+                picker_name="project_cwd_browser",
+                project_id=project_id,
+                cwd=cwd,
+                session_id=session_id,
+            )
         )
         if notice:
             elements.append(
@@ -957,9 +1254,60 @@ class SetupCardController:
             action_value = action.value if action is not None and isinstance(action.value, dict) else {}
             action_name = str(action_value.get("action", "")).strip()
             form_value = action.form_value if action is not None and isinstance(action.form_value, dict) else {}
+            self.app.LOG.warning(
+                "card callback tag=%r action_name=%r option=%r input_value=%r name=%r value=%r form_value=%r",
+                getattr(action, "tag", None) if action is not None else None,
+                action_name,
+                getattr(action, "option", None) if action is not None else None,
+                getattr(action, "input_value", None) if action is not None else None,
+                getattr(action, "name", None) if action is not None else None,
+                getattr(action, "value", None) if action is not None else None,
+                form_value,
+            )
 
             if action_name in {"", "stopped"}:
                 return P2CardActionTriggerResponse({})
+
+            def project_card_response(
+                notice: str = "",
+                toast_type: str = "info",
+                *,
+                form_project_id: str = "",
+                form_cwd: str = "",
+                form_session_id: str = "",
+            ) -> P2CardActionTriggerResponse:
+                return self.response_card(
+                    self.project_launch_card(
+                        chat_id,
+                        notice=notice,
+                        form_project_id=form_project_id,
+                        form_cwd=form_cwd,
+                        form_session_id=form_session_id,
+                    ),
+                    notice,
+                    toast_type,
+                )
+
+            def current_card(
+                notice: str = "",
+                toast_type: str = "info",
+                *,
+                form_alias: str = "",
+                form_cwd: str = "",
+                read_only: bool = False,
+            ) -> P2CardActionTriggerResponse:
+                return self.response_card(
+                    self.setup_card(
+                        chat_id,
+                        worker_id,
+                        notice=notice,
+                        form_alias=form_alias,
+                        form_cwd=form_cwd,
+                        read_only=read_only,
+                    ),
+                    notice,
+                    toast_type,
+                )
 
             def dm_console_response(
                 *,
@@ -1002,8 +1350,21 @@ class SetupCardController:
                     return dm_console_response(mode="status")
                 if action_name == "dm_project_set_provider":
                     selected = self.action_selected_value(action)
+                    project_id = str(action_value.get("project_id", "")).strip()
+                    cwd = str(action_value.get("cwd", "")).strip()
+                    session_id = str(action_value.get("session_id", "")).strip()
                     if not selected:
-                        return self.response_card(self.project_launch_card(chat_id, notice="Choose an agent first."), "Choose an agent first.", "error")
+                        return self.response_card(
+                            self.project_launch_card(
+                                chat_id,
+                                notice="Choose an agent first.",
+                                form_project_id=project_id,
+                                form_cwd=cwd,
+                                form_session_id=session_id,
+                            ),
+                            "Choose an agent first.",
+                            "error",
+                        )
                     updates = {"provider": selected}
                     if selected == "codex":
                         updates["backend"] = "openai"
@@ -1016,38 +1377,135 @@ class SetupCardController:
                         updates["backend"] = backend
                         payload = self.app._config.claude_backends.get(backend, {})
                         updates["model"] = str(payload.get("default_model", "")).strip() if isinstance(payload, dict) else ""
-                    self.app._merge_project_draft(chat_id, **updates)
-                    return self.response_card(self.project_launch_card(chat_id), "", "success")
+                    self.app._merge_project_draft(chat_id, project_id=project_id, cwd=cwd, session_id=session_id, **updates)
+                    return self.response_card(
+                        self.project_launch_card(
+                            chat_id,
+                            form_project_id=project_id,
+                            form_cwd=cwd,
+                            form_session_id=session_id,
+                        ),
+                        "",
+                        "success",
+                    )
                 if action_name == "dm_project_set_backend":
                     selected = self.action_selected_value(action)
+                    project_id = str(action_value.get("project_id", "")).strip()
+                    cwd = str(action_value.get("cwd", "")).strip()
+                    session_id = str(action_value.get("session_id", "")).strip()
                     if not selected:
-                        return self.response_card(self.project_launch_card(chat_id, notice="Choose a provider first."), "Choose a provider first.", "error")
+                        return self.response_card(
+                            self.project_launch_card(
+                                chat_id,
+                                notice="Choose a provider first.",
+                                form_project_id=project_id,
+                                form_cwd=cwd,
+                                form_session_id=session_id,
+                            ),
+                            "Choose a provider first.",
+                            "error",
+                        )
                     provider_name = str(self.app._project_draft(chat_id).get("provider", "")).strip().lower()
                     if provider_name == "cursor":
                         model = "auto"
                     else:
                         payload = self.app._config.claude_backends.get(selected, {})
                         model = str(payload.get("default_model", "")).strip() if isinstance(payload, dict) else ""
-                    self.app._merge_project_draft(chat_id, backend=selected, model=model)
-                    return self.response_card(self.project_launch_card(chat_id), "", "success")
+                    self.app._merge_project_draft(chat_id, project_id=project_id, cwd=cwd, session_id=session_id, backend=selected, model=model)
+                    return self.response_card(
+                        self.project_launch_card(
+                            chat_id,
+                            form_project_id=project_id,
+                            form_cwd=cwd,
+                            form_session_id=session_id,
+                        ),
+                        "",
+                        "success",
+                    )
                 if action_name == "dm_project_set_model":
                     selected = self.action_selected_value(action)
+                    project_id = str(action_value.get("project_id", "")).strip()
+                    cwd = str(action_value.get("cwd", "")).strip()
+                    session_id = str(action_value.get("session_id", "")).strip()
                     if not selected:
-                        return self.response_card(self.project_launch_card(chat_id, notice="Choose a model first."), "Choose a model first.", "error")
-                    self.app._merge_project_draft(chat_id, model=selected)
-                    return self.response_card(self.project_launch_card(chat_id), "", "success")
+                        return self.response_card(
+                            self.project_launch_card(
+                                chat_id,
+                                notice="Choose a model first.",
+                                form_project_id=project_id,
+                                form_cwd=cwd,
+                                form_session_id=session_id,
+                            ),
+                            "Choose a model first.",
+                            "error",
+                        )
+                    self.app._merge_project_draft(chat_id, project_id=project_id, cwd=cwd, session_id=session_id, model=selected)
+                    return self.response_card(
+                        self.project_launch_card(
+                            chat_id,
+                            form_project_id=project_id,
+                            form_cwd=cwd,
+                            form_session_id=session_id,
+                        ),
+                        "",
+                        "success",
+                    )
                 if action_name == "dm_project_set_mode":
                     selected = self.action_selected_value(action)
+                    project_id = str(action_value.get("project_id", "")).strip()
+                    cwd = str(action_value.get("cwd", "")).strip()
+                    session_id = str(action_value.get("session_id", "")).strip()
                     if not selected:
-                        return self.response_card(self.project_launch_card(chat_id, notice="Choose a reply mode first."), "Choose a reply mode first.", "error")
-                    self.app._merge_project_draft(chat_id, mode=selected)
-                    return self.response_card(self.project_launch_card(chat_id), "", "success")
+                        return self.response_card(
+                            self.project_launch_card(
+                                chat_id,
+                                notice="Choose a reply mode first.",
+                                form_project_id=project_id,
+                                form_cwd=cwd,
+                                form_session_id=session_id,
+                            ),
+                            "Choose a reply mode first.",
+                            "error",
+                        )
+                    self.app._merge_project_draft(chat_id, project_id=project_id, cwd=cwd, session_id=session_id, mode=selected)
+                    return self.response_card(
+                        self.project_launch_card(
+                            chat_id,
+                            form_project_id=project_id,
+                            form_cwd=cwd,
+                            form_session_id=session_id,
+                        ),
+                        "",
+                        "success",
+                    )
                 if action_name == "dm_project_set_session_id":
                     selected = self.action_selected_value(action)
+                    project_id = str(action_value.get("project_id", "")).strip()
+                    cwd = str(action_value.get("cwd", "")).strip()
+                    existing_session_id = str(action_value.get("session_id", "")).strip()
                     if not selected:
-                        return self.response_card(self.project_launch_card(chat_id, notice="Choose a session first."), "Choose a session first.", "error")
-                    self.app._merge_project_draft(chat_id, session_id=selected)
-                    return self.response_card(self.project_launch_card(chat_id), "", "success")
+                        return self.response_card(
+                            self.project_launch_card(
+                                chat_id,
+                                notice="Choose a session first.",
+                                form_project_id=project_id,
+                                form_cwd=cwd,
+                                form_session_id=existing_session_id,
+                            ),
+                            "Choose a session first.",
+                            "error",
+                        )
+                    self.app._merge_project_draft(chat_id, project_id=project_id, cwd=cwd, session_id=selected)
+                    return self.response_card(
+                        self.project_launch_card(
+                            chat_id,
+                            form_project_id=project_id,
+                            form_cwd=cwd,
+                            form_session_id=selected,
+                        ),
+                        "",
+                        "success",
+                    )
                 if action_name == "dm_status_select_worker":
                     selected = self.action_selected_value(action)
                     if not selected:
@@ -1133,26 +1591,6 @@ class SetupCardController:
                 return P2CardActionTriggerResponse({})
 
             if action_name in {"launch_project", "reset_project_launch"}:
-                def project_card_response(
-                    notice: str = "",
-                    toast_type: str = "info",
-                    *,
-                    form_project_id: str = "",
-                    form_cwd: str = "",
-                    form_session_id: str = "",
-                ) -> P2CardActionTriggerResponse:
-                    return self.response_card(
-                        self.project_launch_card(
-                            chat_id,
-                            notice=notice,
-                            form_project_id=form_project_id,
-                            form_cwd=form_cwd,
-                            form_session_id=form_session_id,
-                        ),
-                        notice,
-                        toast_type,
-                    )
-
                 if action_name == "reset_project_launch":
                     self.app._reset_project_draft(chat_id)
                     return project_card_response("Reset.", "success")
@@ -1242,25 +1680,46 @@ class SetupCardController:
                     "success",
                 )
 
-            def current_card(
-                notice: str = "",
-                toast_type: str = "info",
-                *,
-                form_alias: str = "",
-                form_cwd: str = "",
-                read_only: bool = False,
-            ) -> P2CardActionTriggerResponse:
-                return self.response_card(
-                    self.setup_card(
-                        chat_id,
-                        worker_id,
-                        notice=notice,
-                        form_alias=form_alias,
-                        form_cwd=form_cwd,
-                        read_only=read_only,
-                    ),
-                    notice,
-                    toast_type,
+            if action_name == "set_project_cwd_browser":
+                draft = self.app._project_draft(chat_id)
+                project_id = (
+                    self.coerce_form_value(form_value.get("project_id"))
+                    or str(action_value.get("project_id", "")).strip()
+                    or str(draft.get("project_id", ""))
+                )
+                cwd = (
+                    self.coerce_form_value(form_value.get("cwd"))
+                    or str(action_value.get("cwd", "")).strip()
+                    or str(draft.get("cwd", ""))
+                )
+                session_id = (
+                    self.coerce_form_value(form_value.get("session_id"))
+                    or str(action_value.get("session_id", "")).strip()
+                    or str(draft.get("session_id", ""))
+                )
+                current_path = str(action_value.get("current_path", "")).strip()
+                selected = self.action_selected_value(action)
+                self.app.LOG.warning(
+                    "project cwd picker callback action.option=%r input_value=%r name=%r value=%r form_value=%r selected=%r current_path=%r cwd=%r",
+                    getattr(action, "option", None),
+                    getattr(action, "input_value", None),
+                    getattr(action, "name", None),
+                    getattr(action, "value", None),
+                    form_value,
+                    selected,
+                    current_path,
+                    cwd,
+                )
+                base_path = self._browse_start_path(cwd or current_path)
+                if selected == "__up__":
+                    cwd = str(Path(base_path).expanduser().resolve().parent)
+                elif selected:
+                    cwd = str((Path(base_path).expanduser() / selected).resolve())
+                self.app._merge_project_draft(chat_id, project_id=project_id, cwd=cwd, session_id=session_id)
+                return project_card_response(
+                    form_project_id=project_id,
+                    form_cwd=cwd,
+                    form_session_id=session_id,
                 )
 
             if action_name == "save_setup":
@@ -1290,6 +1749,36 @@ class SetupCardController:
                         )
                     self.app._worker_store.set_cwd(worker_id, cwd)
                 return current_card("Draft saved.")
+            if action_name == "set_setup_cwd_browser":
+                alias = (
+                    self.coerce_form_value(form_value.get("alias"))
+                    or str(action_value.get("alias", "")).strip()
+                    or self.app._worker_store.alias_for(worker_id)
+                )
+                cwd = (
+                    self.coerce_form_value(form_value.get("cwd"))
+                    or str(action_value.get("cwd", "")).strip()
+                    or self.app._worker_store.cwd_for(worker_id)
+                )
+                current_path = str(action_value.get("current_path", "")).strip()
+                selected = self.action_selected_value(action)
+                self.app.LOG.warning(
+                    "setup cwd picker callback action.option=%r input_value=%r name=%r value=%r form_value=%r selected=%r current_path=%r cwd=%r",
+                    getattr(action, "option", None),
+                    getattr(action, "input_value", None),
+                    getattr(action, "name", None),
+                    getattr(action, "value", None),
+                    form_value,
+                    selected,
+                    current_path,
+                    cwd,
+                )
+                base_path = self._browse_start_path(cwd or current_path)
+                if selected == "__up__":
+                    cwd = str(Path(base_path).expanduser().resolve().parent)
+                elif selected:
+                    cwd = str((Path(base_path).expanduser() / selected).resolve())
+                return current_card(form_alias=alias, form_cwd=cwd)
             if action_name == "enable_setup":
                 alias = self.coerce_form_value(form_value.get("alias"))
                 cwd = self.coerce_form_value(form_value.get("cwd"))
