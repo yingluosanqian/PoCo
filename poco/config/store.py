@@ -101,7 +101,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "bin": "claude",
         "app_server_args": "",
         "approval_policy": "dangerously-skip-permissions",
-        "sandbox": "",
+        "sandbox": "is_sandbox",
         "default_backend": "anthropic",
         "backends": {
             "anthropic": {
@@ -257,6 +257,10 @@ def normalize_config(config: Dict[str, Any]) -> Dict[str, Any]:
         cursor["sandbox"] = DEFAULT_CONFIG["cursor"]["sandbox"]
 
     claude = config.setdefault("claude", {})
+    if not str(claude.get("approval_policy", "")).strip():
+        claude["approval_policy"] = DEFAULT_CONFIG["claude"]["approval_policy"]
+    if not str(claude.get("sandbox", "")).strip():
+        claude["sandbox"] = DEFAULT_CONFIG["claude"]["sandbox"]
     if not str(claude.get("default_backend", "")).strip():
         claude["default_backend"] = DEFAULT_CONFIG["claude"]["default_backend"]
 
