@@ -85,6 +85,7 @@ class FeishuGatewayTest(unittest.TestCase):
             "event": {
                 "sender": {"sender_id": {"open_id": "ou_demo_user"}},
                 "message": {
+                    "chat_type": "group",
                     "chat_id": "oc_demo_chat",
                     "content": json.dumps({"text": "/help"}),
                 },
@@ -105,6 +106,31 @@ class FeishuGatewayTest(unittest.TestCase):
         self.assertEqual(sent["receive_id_type"], "chat_id")
         self.assertEqual(sent["receive_id"], "oc_demo_chat")
         self.assertIn("/run <prompt>", sent["text"])
+
+    def test_p2p_message_prefers_open_id_over_chat_id(self) -> None:
+        payload = {
+            "token": "verify-token",
+            "event": {
+                "sender": {"sender_id": {"open_id": "ou_demo_user"}},
+                "message": {
+                    "chat_type": "p2p",
+                    "chat_id": "oc_p2p_chat",
+                    "content": json.dumps({"text": "/help"}),
+                },
+            },
+        }
+
+        response = self.gateway.handle_event(
+            payload,
+            headers={},
+            raw_body=json.dumps(payload).encode("utf-8"),
+        )
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(len(self.message_client.sent_messages), 1)
+        sent = self.message_client.sent_messages[0]
+        self.assertEqual(sent["receive_id_type"], "open_id")
+        self.assertEqual(sent["receive_id"], "ou_demo_user")
 
     def test_run_command_dispatches_background_start(self) -> None:
         payload = {

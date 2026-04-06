@@ -4,9 +4,11 @@ import json
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
+from pydantic import BaseModel
 
 from poco.agent.runner import create_agent_runner
 from poco.config import Settings
+from poco.demo import DemoCommandRequest
 from poco.interaction.service import InteractionService
 from poco.platform.feishu.client import FeishuAccessTokenProvider, FeishuApiError, FeishuMessageClient
 from poco.platform.feishu.gateway import FeishuGateway
@@ -15,6 +17,10 @@ from poco.storage.memory import InMemoryTaskStore
 from poco.task.controller import TaskController, TaskNotFoundError
 from poco.task.dispatcher import AsyncTaskDispatcher
 from poco.task.notifier import FeishuTaskNotifier, NullTaskNotifier
+
+
+class DemoDecisionRequest(BaseModel):
+    approved: bool
 
 
 def create_app() -> FastAPI:
@@ -123,6 +129,61 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=401, detail=str(exc)) from exc
         except FeishuApiError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    @app.post("/demo/command")
+    def handle_demo_command(payload: DemoCommandRequest) -> dict[str, Any]:
+        response = interaction.handle_text(
+            user_id=payload.user_id,
+            text=payload.text,
+            source="demo",
+        )
+        task = controller.get_task(response.task_id) if response.task_id else None
+        if response.task_id:
+            if response.dispatch_action == "start":
+                dispatcher.dispatch_start(response.task_id)
+            elif response.dispatch_action == "resume":
+                dispatcher.dispatch_resume(response.task_id)
+
+        return {
+            "ok": True,
+            "mode": "demo",
+            "response_text": response.text,
+            "task_id": response.task_id,
+            "dispatch_action": response.dispatch_action,
+            "task": task.to_dict() if task is not None else None,
+        }
+
+    @app.post("/demo/tasks/{task_id}/approve")
+    def approve_demo_task(task_id: str) -> dict[str, Any]:
+        response = interaction.handle_text(
+            user_id="local_demo_user",
+            text=f"/approve {task_id}",
+            source="demo",
+        )
+        if response.dispatch_action == "resume" and response.task_id:
+            dispatcher.dispatch_resume(response.task_id)
+        task = controller.get_task(task_id)
+        return {
+            "ok": True,
+            "mode": "demo",
+            "response_text": response.text,
+            "task": task.to_dict(),
+        }
+
+    @app.post("/demo/tasks/{task_id}/reject")
+    def reject_demo_task(task_id: str) -> dict[str, Any]:
+        response = interaction.handle_text(
+            user_id="local_demo_user",
+            text=f"/reject {task_id}",
+            source="demo",
+        )
+        task = controller.get_task(task_id)
+        return {
+            "ok": True,
+            "mode": "demo",
+            "response_text": response.text,
+            "task": task.to_dict(),
+        }
 
     @app.get("/tasks")
     def list_tasks() -> dict[str, list[dict[str, object]]]:

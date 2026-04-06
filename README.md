@@ -30,9 +30,36 @@ In that mode:
 
 - PoCo runs in local/demo mode
 - the agent backend can still be checked
+- you can still use the local demo HTTP interface
 - Feishu callback handling is not ready yet
 
 The `/health` response will tell you exactly what is missing.
+
+### Local Demo Interface
+
+You can exercise the full command flow without Feishu:
+
+```bash
+curl -X POST http://127.0.0.1:8000/demo/command \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"/run Reply with exactly: DEMO_OK"}'
+```
+
+Check task status:
+
+```bash
+curl http://127.0.0.1:8000/tasks/<task_id>
+```
+
+Approval flow example:
+
+```bash
+curl -X POST http://127.0.0.1:8000/demo/command \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"/run confirm: Reply with exactly: APPROVED"}'
+
+curl -X POST http://127.0.0.1:8000/demo/tasks/<task_id>/approve
+```
 
 PoCo currently plans to support:
 

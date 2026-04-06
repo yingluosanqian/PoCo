@@ -69,6 +69,7 @@
 - 平台无关的任务控制层
 - Codex-first agent adapter 与本机 Codex CLI 调用
 - 进程内后台任务调度与关键状态回推
+- 本地 demo HTTP 联调入口
 - 内存版任务状态存储
 - stub agent runner
 

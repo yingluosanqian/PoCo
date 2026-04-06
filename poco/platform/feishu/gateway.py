@@ -117,7 +117,13 @@ class FeishuGateway:
     ) -> dict[str, str]:
         message = event.get("message", {})
         chat_id = message.get("chat_id")
-        if chat_id:
+        chat_type = (
+            message.get("chat_type")
+            or event.get("chat_type")
+            or event.get("message_type")
+        )
+        normalized_chat_type = str(chat_type).lower() if chat_type is not None else ""
+        if chat_id and normalized_chat_type in {"group", "chat", "group_chat"}:
             return {
                 "receive_id": str(chat_id),
                 "receive_id_type": "chat_id",

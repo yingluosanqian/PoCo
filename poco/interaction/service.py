@@ -80,6 +80,7 @@ class InteractionService:
         headline = "Task approved." if approved else "Task rejected."
         return InteractionResponse(
             text=render_task_text(task, headline=headline),
+            task_id=task.id,
             dispatch_action="resume" if approved else None,
         )
 
