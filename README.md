@@ -132,6 +132,27 @@ The health response now includes:
 - what is still missing
 - warnings about relaxed safety settings
 
+### Feishu Debug Snapshot
+
+When Feishu messages do not get any reply, inspect:
+
+```bash
+curl http://127.0.0.1:8000/debug/feishu
+```
+
+It shows:
+
+- recent inbound Feishu callbacks
+- the reply target PoCo selected for each callback
+- recent outbound send attempts
+- recent Feishu send errors
+
+This is the fastest way to tell whether the problem is:
+
+- Feishu never called PoCo
+- PoCo picked the wrong reply target
+- PoCo tried to send but Feishu rejected the request
+
 Real Feishu callbacks should target:
 
 ```text

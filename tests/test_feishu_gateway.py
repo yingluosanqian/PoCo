@@ -5,6 +5,7 @@ import json
 import unittest
 
 from poco.interaction.service import InteractionService
+from poco.platform.feishu.debug import FeishuDebugRecorder
 from poco.platform.feishu.gateway import FeishuGateway
 from poco.platform.feishu.verification import (
     FeishuRequestVerifier,
@@ -50,11 +51,13 @@ class FeishuGatewayTest(unittest.TestCase):
         interaction = InteractionService(controller)
         self.message_client = FakeMessageClient()
         self.dispatcher = FakeDispatcher()
+        self.debug_recorder = FeishuDebugRecorder()
         self.gateway = FeishuGateway(
             interaction,
             request_verifier=FeishuRequestVerifier(verification_token="verify-token"),
             message_client=self.message_client,
             dispatcher=self.dispatcher,
+            debug_recorder=self.debug_recorder,
         )
 
     def test_challenge_round_trip_requires_valid_token(self) -> None:
@@ -106,6 +109,9 @@ class FeishuGatewayTest(unittest.TestCase):
         self.assertEqual(sent["receive_id_type"], "chat_id")
         self.assertEqual(sent["receive_id"], "oc_demo_chat")
         self.assertIn("/run <prompt>", sent["text"])
+        snapshot = self.debug_recorder.snapshot()
+        self.assertEqual(len(snapshot["inbound_events"]), 1)
+        self.assertEqual(snapshot["inbound_events"][0]["reply_receive_id_type"], "chat_id")
 
     def test_p2p_message_prefers_open_id_over_chat_id(self) -> None:
         payload = {
@@ -131,6 +137,45 @@ class FeishuGatewayTest(unittest.TestCase):
         sent = self.message_client.sent_messages[0]
         self.assertEqual(sent["receive_id_type"], "open_id")
         self.assertEqual(sent["receive_id"], "ou_demo_user")
+
+    def test_debug_recorder_tracks_gateway_reply_failure(self) -> None:
+        class RaisingMessageClient(FakeMessageClient):
+            def send_text(self, *, receive_id: str, receive_id_type: str, text: str) -> None:
+                raise RuntimeError("simulated send failure")
+
+        controller = TaskController(
+            store=InMemoryTaskStore(),
+            runner=StubAgentRunner(),
+        )
+        interaction = InteractionService(controller)
+        recorder = FeishuDebugRecorder()
+        gateway = FeishuGateway(
+            interaction,
+            request_verifier=FeishuRequestVerifier(verification_token="verify-token"),
+            message_client=RaisingMessageClient(),
+            debug_recorder=recorder,
+        )
+        payload = {
+            "token": "verify-token",
+            "event": {
+                "sender": {"sender_id": {"open_id": "ou_demo_user"}},
+                "message": {
+                    "chat_type": "p2p",
+                    "content": json.dumps({"text": "/help"}),
+                },
+            },
+        }
+
+        with self.assertRaises(RuntimeError):
+            gateway.handle_event(
+                payload,
+                headers={},
+                raw_body=json.dumps(payload).encode("utf-8"),
+            )
+
+        snapshot = recorder.snapshot()
+        self.assertEqual(len(snapshot["errors"]), 1)
+        self.assertEqual(snapshot["errors"][0]["stage"], "gateway_reply")
 
     def test_run_command_dispatches_background_start(self) -> None:
         payload = {

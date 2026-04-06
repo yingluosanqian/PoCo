@@ -11,6 +11,7 @@ from poco.config import Settings
 from poco.demo import DemoCommandRequest
 from poco.interaction.service import InteractionService
 from poco.platform.feishu.client import FeishuAccessTokenProvider, FeishuApiError, FeishuMessageClient
+from poco.platform.feishu.debug import FeishuDebugRecorder
 from poco.platform.feishu.gateway import FeishuGateway
 from poco.platform.feishu.verification import FeishuRequestVerifier, FeishuVerificationError
 from poco.storage.memory import InMemoryTaskStore
@@ -37,6 +38,7 @@ def create_app() -> FastAPI:
     )
     controller = TaskController(store=store, runner=runner)
     interaction = InteractionService(controller)
+    feishu_debug = FeishuDebugRecorder()
     request_verifier = FeishuRequestVerifier(
         verification_token=settings.feishu_verification_token,
         encrypt_key=settings.feishu_encrypt_key,
@@ -52,13 +54,18 @@ def create_app() -> FastAPI:
             base_url=settings.feishu_api_origin,
             token_provider=token_provider,
         )
-    notifier = FeishuTaskNotifier(message_client) if message_client is not None else NullTaskNotifier()
+    notifier = (
+        FeishuTaskNotifier(message_client, debug_recorder=feishu_debug)
+        if message_client is not None
+        else NullTaskNotifier()
+    )
     dispatcher = AsyncTaskDispatcher(controller, notifier=notifier)
     gateway = FeishuGateway(
         interaction,
         request_verifier=request_verifier,
         message_client=message_client,
         dispatcher=dispatcher,
+        debug_recorder=feishu_debug,
     )
 
     app = FastAPI(title=settings.app_name)
@@ -67,6 +74,7 @@ def create_app() -> FastAPI:
     app.state.settings = settings
     app.state.agent_runner = runner
     app.state.task_dispatcher = dispatcher
+    app.state.feishu_debug = feishu_debug
 
     @app.get("/health")
     def health() -> dict[str, Any]:
@@ -197,6 +205,10 @@ def create_app() -> FastAPI:
         except TaskNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return task.to_dict()
+
+    @app.get("/debug/feishu")
+    def feishu_debug_snapshot() -> dict[str, Any]:
+        return app.state.feishu_debug.snapshot()
 
     return app
 

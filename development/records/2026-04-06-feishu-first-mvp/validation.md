@@ -29,10 +29,12 @@
 - 通过 PoCo 自身的 `TaskController + CodexCliRunner` 创建真实任务后，任务成功进入 `completed`，并返回结果 `PONG`
 - 通过 PoCo 自身的 `AsyncTaskDispatcher + TaskController + CodexCliRunner` 异步派发真实任务后，任务成功在后台进入 `completed`，并返回结果 `ASYNC_OK`
 - 通过 PoCo 自身的 `/demo/command` 与 `/demo/tasks/{id}/approve` 本地入口，已成功验证创建任务、等待确认、批准恢复和最终完成链路
+- `/debug/feishu` 已能显示最近入站事件、回复目标、出站尝试和错误记录，可用于定位“飞书没反馈”的问题位置
 - 本轮形成了更接近真实接入的 Python 服务端骨架：`FastAPI` 入口、飞书请求校验、tenant access token 获取、文本消息回发、任务控制层、内存状态存储、stub agent runner
 - 本轮已形成 Codex-first agent adapter，可将任务真正转发给本机 Codex CLI
 - 本轮已形成后台任务调度与关键状态的主动回推链路
 - 本轮已形成本地 demo 联调入口，可在不接飞书的情况下反复验证整条任务链路
+- 本轮已形成飞书调试快照入口，支持排查真实回调和回发失败
 
 ## 是否通过
 
