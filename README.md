@@ -6,11 +6,60 @@ PoCo is a Python-first MVP scaffold for controlling server-side AI agent workflo
 
 - `FastAPI` webhook service
 - Feishu-first event gateway
+- Feishu callback verification token support
+- Feishu tenant access token retrieval and text message send support
+- Codex-first agent execution path
 - Platform-independent task controller
 - In-memory task state store
-- Stub agent runner for flow validation
+- Stub fallback runner for flow validation
 
 ## Local Run
+
+PoCo currently plans to support:
+
+- Codex
+- Claude Code
+- Cursor Agent
+
+Current implementation priority is Codex, and the default backend is `codex`.
+
+Agent backend configuration:
+
+```bash
+export POCO_AGENT_BACKEND="codex"
+export POCO_CODEX_COMMAND="codex"
+export POCO_CODEX_WORKDIR="/absolute/path/to/your/repo"
+```
+
+Optional Codex settings:
+
+```bash
+export POCO_CODEX_MODEL="gpt-5.4"
+export POCO_CODEX_SANDBOX="workspace-write"
+export POCO_CODEX_APPROVAL_POLICY="never"
+export POCO_CODEX_TIMEOUT_SECONDS="900"
+```
+
+Use `POCO_AGENT_BACKEND=stub` if you want to exercise the flow without calling Codex.
+
+`claude_code` and `cursor_agent` are recognized as planned backends, but they are not implemented yet. If selected, PoCo will start and report the backend as not ready.
+
+Set the Feishu app credentials before using the real callback flow:
+
+```bash
+export POCO_FEISHU_APP_ID="cli_xxx"
+export POCO_FEISHU_APP_SECRET="xxx"
+export POCO_FEISHU_VERIFICATION_TOKEN="xxx"
+```
+
+Optional:
+
+```bash
+export POCO_FEISHU_API_BASE_URL="https://open.feishu.cn"
+export POCO_FEISHU_ENCRYPT_KEY="xxx"
+```
+
+If `POCO_FEISHU_ENCRYPT_KEY` is configured, the service expects Feishu signature headers and validates them. Encrypted callback payload bodies are not supported yet, so keep event encryption disabled for the current MVP.
 
 Install dependencies, then start the service:
 
@@ -24,10 +73,19 @@ Health check:
 curl http://127.0.0.1:8000/health
 ```
 
+The health response now includes the chosen agent backend and whether the backend looks ready on this machine.
+
+Real Feishu callbacks should target:
+
+```text
+POST /platform/feishu/events
+```
+
 Example webhook payload:
 
 ```json
 {
+  "token": "verification_token_from_feishu",
   "event": {
     "sender": {
       "sender_id": {
@@ -35,6 +93,7 @@ Example webhook payload:
       }
     },
     "message": {
+      "chat_id": "oc_demo_chat",
       "content": "{\"text\":\"/run confirm: review the deployment plan\"}"
     }
   }
@@ -50,3 +109,5 @@ Example webhook payload:
 - `/help`
 
 If the prompt starts with `confirm:`, the stub runner pauses the task at a confirmation checkpoint so the approval flow can be exercised without a real agent backend.
+
+The same `confirm:` prefix also works for the Codex backend: PoCo will pause before invoking `codex`, then continue only after `/approve <task_id>`.

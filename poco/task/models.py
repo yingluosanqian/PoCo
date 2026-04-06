@@ -38,6 +38,7 @@ class Task:
     source: str
     requester_id: str
     prompt: str
+    agent_backend: str = "unknown"
     status: TaskStatus = TaskStatus.CREATED
     events: list[TaskEvent] = field(default_factory=list)
     awaiting_confirmation_reason: str | None = None
@@ -59,6 +60,7 @@ class Task:
             "source": self.source,
             "requester_id": self.requester_id,
             "prompt": self.prompt,
+            "agent_backend": self.agent_backend,
             "status": self.status.value,
             "awaiting_confirmation_reason": self.awaiting_confirmation_reason,
             "result_summary": self.result_summary,

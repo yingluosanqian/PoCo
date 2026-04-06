@@ -64,13 +64,15 @@
 
 - `FastAPI` 作为 webhook 服务入口
 - 飞书事件网关的最小适配
+- 飞书 callback verification token 与签名头校验
+- 飞书 tenant access token 获取与文本消息回发
 - 平台无关的任务控制层
+- Codex-first agent adapter 与本机 Codex CLI 调用
 - 内存版任务状态存储
 - stub agent runner
 
 ### 当前明确未实现
 
-- 真实飞书签名校验与回调安全
-- 真实消息发送能力
-- 真实服务器侧 agent 执行集成
+- 飞书加密事件体处理
+- Claude Code 与 Cursor Agent 执行适配
 - 持久化数据库

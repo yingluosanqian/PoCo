@@ -73,3 +73,9 @@
 ### 当前实现栈取向
 
 当前实现层优先使用 Python 搭建服务端骨架。
+
+### 当前 agent 优先级
+
+当前执行器方向计划包含 Codex、Claude Code、Cursor Agent。
+
+当前优先实现 Codex。

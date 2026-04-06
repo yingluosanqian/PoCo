@@ -72,6 +72,7 @@ class InteractionService:
         lines = [
             headline,
             f"task_id={task.id}",
+            f"agent_backend={task.agent_backend}",
             f"status={task.status.value}",
             f"source={task.source}",
             f"prompt={task.prompt}",
@@ -81,7 +82,7 @@ class InteractionService:
             lines.append(f"awaiting_confirmation={task.awaiting_confirmation_reason}")
 
         if task.result_summary:
-            lines.append(f"result={task.result_summary}")
+            lines.append(f"result={_truncate(task.result_summary, limit=1200)}")
 
         if task.events:
             lines.append(f"latest_event={task.events[-1].message}")
@@ -102,3 +103,9 @@ class InteractionService:
                 "/help",
             ]
         )
+
+
+def _truncate(text: str, *, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    return f"{text[: limit - 3]}..."

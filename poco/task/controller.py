@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from poco.agent.runner import StubAgentRunner
+from poco.agent.runner import AgentRunner
 from poco.storage.memory import InMemoryTaskStore
 from poco.task.models import Task, TaskStatus
 
@@ -19,7 +19,7 @@ class TaskController:
     def __init__(
         self,
         store: InMemoryTaskStore,
-        runner: StubAgentRunner,
+        runner: AgentRunner,
     ) -> None:
         self._store = store
         self._runner = runner
@@ -30,6 +30,7 @@ class TaskController:
             requester_id=requester_id,
             prompt=prompt,
             source=source,
+            agent_backend=self._runner.name,
         )
         task.add_event("task_created", f"Task created from {source}.")
         self._store.save(task)
@@ -85,6 +86,9 @@ class TaskController:
                 task.result_summary = update.result_summary
                 task.set_status(TaskStatus.COMPLETED)
                 task.add_event("task_completed", update.message)
+            elif update.kind == "failed":
+                task.set_status(TaskStatus.FAILED)
+                task.add_event("task_failed", update.message)
             else:
                 raise TaskStateError(f"Unsupported runner update kind: {update.kind}")
 

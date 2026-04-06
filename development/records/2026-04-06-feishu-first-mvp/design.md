@@ -76,6 +76,12 @@
 - 对上暴露任务级接口，而不是裸 shell 透传
 - 不负责面向用户的消息交互
 
+第一阶段取向：
+
+- 建立统一的 agent runner 接口
+- 优先实现 Codex 适配
+- 为 Claude Code、Cursor Agent 预留后续扩展位置，但当前不实现假适配
+
 ### 5. Task State Store
 
 负责保存 MVP 所需的最小任务状态。
@@ -111,7 +117,7 @@
 - `task`
   处理任务模型、状态流转和关键事件
 - `agent`
-  处理服务器侧 agent 驱动适配
+  处理服务器侧 agent 驱动适配与执行器选择
 - `storage`
   处理任务状态与事件的最小持久化
 

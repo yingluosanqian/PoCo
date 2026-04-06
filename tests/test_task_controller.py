@@ -21,6 +21,7 @@ class TaskControllerTest(unittest.TestCase):
             prompt="summarize the repository",
             source="feishu",
         )
+        self.assertEqual(task.agent_backend, "stub")
         self.assertEqual(task.status, TaskStatus.COMPLETED)
         self.assertIsNotNone(task.result_summary)
 
