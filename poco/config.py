@@ -30,6 +30,20 @@ class Settings:
         return bool(self.feishu_app_id and self.feishu_app_secret)
 
     @property
+    def feishu_verification_enabled(self) -> bool:
+        return bool(self.feishu_verification_token)
+
+    @property
+    def feishu_signature_enabled(self) -> bool:
+        return bool(self.feishu_encrypt_key)
+
+    @property
+    def runtime_mode(self) -> str:
+        if self.feishu_enabled:
+            return "feishu"
+        return "local"
+
+    @property
     def feishu_api_origin(self) -> str:
         parsed = urlparse(self.feishu_api_base_url)
         if not parsed.scheme or not parsed.netloc:

@@ -65,12 +65,41 @@ def create_app() -> FastAPI:
     @app.get("/health")
     def health() -> dict[str, Any]:
         agent_ready, agent_detail = runner.is_ready()
+        missing = []
+        warnings = []
+
+        if not settings.feishu_enabled:
+            missing.extend(["POCO_FEISHU_APP_ID", "POCO_FEISHU_APP_SECRET"])
+            warnings.append(
+                "Feishu integration is disabled. PoCo is currently in local/demo mode."
+            )
+        if not settings.feishu_verification_enabled:
+            warnings.append(
+                "Feishu callback verification token is disabled. This lowers security but keeps MVP setup friction low."
+            )
+        if settings.feishu_signature_enabled:
+            warnings.append(
+                "Feishu signature validation is enabled. Encrypted event bodies are still unsupported in the current MVP."
+            )
+        else:
+            warnings.append(
+                "Feishu signature validation is disabled."
+            )
+
+        if not agent_ready:
+            missing.append("agent backend readiness")
+
         return {
             "status": "ok",
+            "mode": settings.runtime_mode,
             "feishu_enabled": settings.feishu_enabled,
+            "feishu_verification_enabled": settings.feishu_verification_enabled,
+            "feishu_signature_enabled": settings.feishu_signature_enabled,
             "agent_backend": runner.name,
             "agent_ready": agent_ready,
             "agent_detail": agent_detail,
+            "missing": missing,
+            "warnings": warnings,
         }
 
     @app.post("/platform/feishu/events")

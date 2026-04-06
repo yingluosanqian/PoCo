@@ -17,6 +17,23 @@ PoCo is a Python-first MVP scaffold for controlling server-side AI agent workflo
 
 ## Local Run
 
+### Lowest-Friction Start
+
+If you only want to verify that PoCo itself can run on this machine, you can start with no Feishu credentials at all:
+
+```bash
+uvicorn poco.main:app --reload
+curl http://127.0.0.1:8000/health
+```
+
+In that mode:
+
+- PoCo runs in local/demo mode
+- the agent backend can still be checked
+- Feishu callback handling is not ready yet
+
+The `/health` response will tell you exactly what is missing.
+
 PoCo currently plans to support:
 
 - Codex
@@ -51,17 +68,21 @@ Set the Feishu app credentials before using the real callback flow:
 ```bash
 export POCO_FEISHU_APP_ID="cli_xxx"
 export POCO_FEISHU_APP_SECRET="xxx"
-export POCO_FEISHU_VERIFICATION_TOKEN="xxx"
 ```
 
 Optional:
 
 ```bash
 export POCO_FEISHU_API_BASE_URL="https://open.feishu.cn"
+export POCO_FEISHU_VERIFICATION_TOKEN="xxx"
 export POCO_FEISHU_ENCRYPT_KEY="xxx"
 ```
 
-If `POCO_FEISHU_ENCRYPT_KEY` is configured, the service expects Feishu signature headers and validates them. Encrypted callback payload bodies are not supported yet, so keep event encryption disabled for the current MVP.
+Notes:
+
+- `POCO_FEISHU_VERIFICATION_TOKEN` is optional in the current MVP. Leaving it unset reduces setup friction, but also lowers webhook security.
+- If `POCO_FEISHU_ENCRYPT_KEY` is configured, the service expects Feishu signature headers and validates them.
+- Encrypted callback payload bodies are not supported yet, so keep event encryption disabled for the current MVP.
 
 Install dependencies, then start the service:
 
@@ -75,7 +96,14 @@ Health check:
 curl http://127.0.0.1:8000/health
 ```
 
-The health response now includes the chosen agent backend and whether the backend looks ready on this machine.
+The health response now includes:
+
+- current runtime mode: `local` or `feishu`
+- chosen agent backend and whether it looks ready
+- whether Feishu callback token verification is enabled
+- whether Feishu signature validation is enabled
+- what is still missing
+- warnings about relaxed safety settings
 
 Real Feishu callbacks should target:
 
