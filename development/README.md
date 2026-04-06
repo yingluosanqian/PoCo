@@ -77,6 +77,25 @@ flowchart TD
 4. 只有问题、决策、计划清楚后，才进入实现
 5. 实现结束后，补 `validation` 结论
 
+### Commit 规范
+
+提交信息使用统一格式：
+
+- `[xxx] ...`
+
+要求：
+
+- 方括号内填写本次提交的类型或主题标签
+- 方括号后接一个空格，再写简洁的提交说明
+- 一个 commit 应对应一个清晰边界的变更，不要把多个不相关主题混在一起
+
+示例：
+
+- `[feat] bootstrap PoCo feishu-first Python MVP scaffold`
+- `[fix] correct task confirmation state transition`
+- `[docs] add commit message convention to development docs`
+- `[refactor] separate feishu gateway from task controller`
+
 ### AI
 
 AI 必须把这里当成 repo 内的工作协议，而不是可选参考。

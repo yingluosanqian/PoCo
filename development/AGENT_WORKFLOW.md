@@ -128,6 +128,25 @@ AI 不应把这里当建议，而应把这里当默认工作协议。
 - 新的 `decision`
 - `state` 相关描述所依赖的证据
 
+## Commit 规范
+
+提交信息统一使用：
+
+- `[xxx] ...`
+
+执行要求：
+
+- `[]` 内写本次提交的类型或主题标签，如 `feat`、`fix`、`docs`、`refactor`
+- `[]` 后必须有一个空格，再写本次提交的简洁说明
+- 不要把多个无关改动塞进同一个 commit
+- 若当前工作尚未形成清晰边界，应先继续整理，不要急于提交
+
+示例：
+
+- `[feat] bootstrap PoCo feishu-first Python MVP scaffold`
+- `[fix] handle waiting task approval correctly`
+- `[docs] define repository commit message format`
+
 ## 最小执行顺序
 
 1. 读 `purpose` 与 `constraints`
