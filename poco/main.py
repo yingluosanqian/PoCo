@@ -13,6 +13,8 @@ from poco.platform.feishu.gateway import FeishuGateway
 from poco.platform.feishu.verification import FeishuRequestVerifier, FeishuVerificationError
 from poco.storage.memory import InMemoryTaskStore
 from poco.task.controller import TaskController, TaskNotFoundError
+from poco.task.dispatcher import AsyncTaskDispatcher
+from poco.task.notifier import FeishuTaskNotifier, NullTaskNotifier
 
 
 def create_app() -> FastAPI:
@@ -44,10 +46,13 @@ def create_app() -> FastAPI:
             base_url=settings.feishu_api_origin,
             token_provider=token_provider,
         )
+    notifier = FeishuTaskNotifier(message_client) if message_client is not None else NullTaskNotifier()
+    dispatcher = AsyncTaskDispatcher(controller, notifier=notifier)
     gateway = FeishuGateway(
         interaction,
         request_verifier=request_verifier,
         message_client=message_client,
+        dispatcher=dispatcher,
     )
 
     app = FastAPI(title=settings.app_name)
@@ -55,6 +60,7 @@ def create_app() -> FastAPI:
     app.state.feishu_gateway = gateway
     app.state.settings = settings
     app.state.agent_runner = runner
+    app.state.task_dispatcher = dispatcher
 
     @app.get("/health")
     def health() -> dict[str, Any]:

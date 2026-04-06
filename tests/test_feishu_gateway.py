@@ -12,6 +12,7 @@ from poco.platform.feishu.verification import (
 )
 from poco.storage.memory import InMemoryTaskStore
 from poco.task.controller import TaskController
+from poco.task.dispatcher import AsyncTaskDispatcher
 from poco.agent.runner import StubAgentRunner
 
 
@@ -29,6 +30,17 @@ class FakeMessageClient:
         )
 
 
+class FakeDispatcher(AsyncTaskDispatcher):
+    def __init__(self) -> None:
+        self.actions: list[tuple[str, str]] = []
+
+    def dispatch_start(self, task_id: str) -> None:
+        self.actions.append(("start", task_id))
+
+    def dispatch_resume(self, task_id: str) -> None:
+        self.actions.append(("resume", task_id))
+
+
 class FeishuGatewayTest(unittest.TestCase):
     def setUp(self) -> None:
         controller = TaskController(
@@ -37,10 +49,12 @@ class FeishuGatewayTest(unittest.TestCase):
         )
         interaction = InteractionService(controller)
         self.message_client = FakeMessageClient()
+        self.dispatcher = FakeDispatcher()
         self.gateway = FeishuGateway(
             interaction,
             request_verifier=FeishuRequestVerifier(verification_token="verify-token"),
             message_client=self.message_client,
+            dispatcher=self.dispatcher,
         )
 
     def test_challenge_round_trip_requires_valid_token(self) -> None:
@@ -86,10 +100,35 @@ class FeishuGatewayTest(unittest.TestCase):
         self.assertTrue(response["ok"])
         self.assertTrue(response["delivered"])
         self.assertEqual(len(self.message_client.sent_messages), 1)
+        self.assertEqual(len(self.dispatcher.actions), 0)
         sent = self.message_client.sent_messages[0]
         self.assertEqual(sent["receive_id_type"], "chat_id")
         self.assertEqual(sent["receive_id"], "oc_demo_chat")
         self.assertIn("/run <prompt>", sent["text"])
+
+    def test_run_command_dispatches_background_start(self) -> None:
+        payload = {
+            "token": "verify-token",
+            "event": {
+                "sender": {"sender_id": {"open_id": "ou_demo_user"}},
+                "message": {
+                    "chat_id": "oc_demo_chat",
+                    "content": json.dumps({"text": "/run summarize the repository"}),
+                },
+            },
+        }
+
+        response = self.gateway.handle_event(
+            payload,
+            headers={},
+            raw_body=json.dumps(payload).encode("utf-8"),
+        )
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(len(self.dispatcher.actions), 1)
+        action, task_id = self.dispatcher.actions[0]
+        self.assertEqual(action, "start")
+        self.assertEqual(task_id, response["task_id"])
 
 
 class FeishuRequestVerifierTest(unittest.TestCase):

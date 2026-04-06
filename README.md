@@ -9,6 +9,8 @@ PoCo is a Python-first MVP scaffold for controlling server-side AI agent workflo
 - Feishu callback verification token support
 - Feishu tenant access token retrieval and text message send support
 - Codex-first agent execution path
+- Asynchronous background task dispatch
+- Feishu task-state push on confirmation wait and terminal states
 - Platform-independent task controller
 - In-memory task state store
 - Stub fallback runner for flow validation
@@ -80,6 +82,12 @@ Real Feishu callbacks should target:
 ```text
 POST /platform/feishu/events
 ```
+
+Current interaction model:
+
+- The webhook request returns quickly after acknowledging the command
+- Task execution happens in a background dispatcher
+- When a task waits for confirmation, completes, fails, or is cancelled, PoCo pushes a follow-up message to the stored Feishu reply target
 
 Example webhook payload:
 

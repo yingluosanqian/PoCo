@@ -68,6 +68,7 @@
 - 飞书 tenant access token 获取与文本消息回发
 - 平台无关的任务控制层
 - Codex-first agent adapter 与本机 Codex CLI 调用
+- 进程内后台任务调度与关键状态回推
 - 内存版任务状态存储
 - stub agent runner
 
@@ -75,4 +76,5 @@
 
 - 飞书加密事件体处理
 - Claude Code 与 Cursor Agent 执行适配
+- 跨进程可恢复的任务队列
 - 持久化数据库

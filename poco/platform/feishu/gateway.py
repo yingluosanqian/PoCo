@@ -7,6 +7,7 @@ from typing import Any
 from poco.interaction.service import InteractionService
 from poco.platform.feishu.client import FeishuMessageClient
 from poco.platform.feishu.verification import FeishuRequestVerifier
+from poco.task.dispatcher import AsyncTaskDispatcher
 
 
 class FeishuGateway:
@@ -16,10 +17,12 @@ class FeishuGateway:
         *,
         request_verifier: FeishuRequestVerifier | None = None,
         message_client: FeishuMessageClient | None = None,
+        dispatcher: AsyncTaskDispatcher | None = None,
     ) -> None:
         self._interaction_service = interaction_service
         self._request_verifier = request_verifier
         self._message_client = message_client
+        self._dispatcher = dispatcher
 
     def handle_event(
         self,
@@ -46,14 +49,16 @@ class FeishuGateway:
 
         user_id = self._extract_user_id(event)
         text = self._extract_text(event)
+        target = self._resolve_reply_target(event, fallback_user_id=user_id)
 
         response = self._interaction_service.handle_text(
             user_id=user_id,
             text=text,
             source="feishu",
+            reply_receive_id=target["receive_id"],
+            reply_receive_id_type=target["receive_id_type"],
         )
 
-        target = self._resolve_reply_target(event, fallback_user_id=user_id)
         delivered = False
         if self._message_client is not None:
             self._message_client.send_text(
@@ -62,6 +67,12 @@ class FeishuGateway:
                 text=response.text,
             )
             delivered = True
+
+        if self._dispatcher is not None and response.task_id:
+            if response.dispatch_action == "start":
+                self._dispatcher.dispatch_start(response.task_id)
+            elif response.dispatch_action == "resume":
+                self._dispatcher.dispatch_resume(response.task_id)
 
         return {
             "ok": True,

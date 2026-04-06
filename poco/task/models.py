@@ -39,6 +39,8 @@ class Task:
     requester_id: str
     prompt: str
     agent_backend: str = "unknown"
+    reply_receive_id: str | None = None
+    reply_receive_id_type: str | None = None
     status: TaskStatus = TaskStatus.CREATED
     events: list[TaskEvent] = field(default_factory=list)
     awaiting_confirmation_reason: str | None = None
@@ -61,6 +63,8 @@ class Task:
             "requester_id": self.requester_id,
             "prompt": self.prompt,
             "agent_backend": self.agent_backend,
+            "reply_receive_id": self.reply_receive_id,
+            "reply_receive_id_type": self.reply_receive_id_type,
             "status": self.status.value,
             "awaiting_confirmation_reason": self.awaiting_confirmation_reason,
             "result_summary": self.result_summary,

@@ -61,6 +61,11 @@
 - 不依赖飞书具体协议
 - 不直接承担底层 agent 进程实现细节
 
+补充约束：
+
+- Task Controller 负责状态变更，不直接承担后台线程调度
+- 后台调度应由独立调度层驱动，以避免把执行模型耦合进核心任务状态逻辑
+
 ### 4. Agent Runner
 
 负责在服务器侧实际驱动 AI agent 执行任务。
@@ -106,6 +111,37 @@
 - 接收用户确认或拒绝
 - 将结果回传给 Task Controller
 
+### 7. Background Dispatcher
+
+负责把任务执行从 webhook 请求线程中解耦出来。
+
+职责：
+
+- 在任务创建后异步触发执行
+- 在批准后异步恢复执行
+- 捕获执行异常并回写任务失败状态
+- 在关键状态变化后触发通知
+
+边界：
+
+- 不定义业务状态，只消费和推进 Task Controller 已批准的状态流
+- 不承担平台协议细节
+
+### 8. Task Notifier
+
+负责把关键任务状态变化主动推送回消息入口。
+
+职责：
+
+- 在等待确认时主动推送任务状态和操作提示
+- 在完成或失败时主动推送结果摘要
+- 基于任务保存的回复目标选择回推位置
+
+边界：
+
+- 只处理通知，不参与任务调度和执行
+- 当前可由飞书实现，但接口应保持可替换
+
 ## 模块/接口影响
 
 第一阶段建议形成如下模块边界：
@@ -115,7 +151,7 @@
 - `interaction`
   处理用户意图解析和交互路由
 - `task`
-  处理任务模型、状态流转和关键事件
+  处理任务模型、状态流转、后台调度和关键事件
 - `agent`
   处理服务器侧 agent 驱动适配与执行器选择
 - `storage`
@@ -127,6 +163,7 @@
 - 面向内部的“创建任务 / 查询任务 / 确认任务”接口
 - 来自 Agent Runner 的“事件回传接口”
 - 面向飞书的“状态通知输出接口”
+- 面向后台调度器的“异步启动 / 异步恢复”接口
 
 ## 状态变化
 
@@ -142,10 +179,12 @@
 最小状态流：
 
 1. 用户在飞书中发起任务，任务进入 `created`
-2. Task Controller 下发给 Agent Runner，任务进入 `running`
+2. Background Dispatcher 异步触发执行，任务进入 `running`
 3. 若需要人工确认，任务进入 `waiting_for_confirmation`
-4. 用户确认后回到 `running`，或拒绝后进入 `cancelled`
-5. 执行成功进入 `completed`，失败进入 `failed`
+4. Task Notifier 主动回推确认提示
+5. 用户确认后由 Background Dispatcher 异步恢复执行并回到 `running`，或拒绝后进入 `cancelled`
+6. Task Notifier 在终态时主动回推结果
+7. 执行成功进入 `completed`，失败进入 `failed`
 
 ## 方案比较
 
@@ -191,6 +230,8 @@
 以飞书作为唯一优先入口，但将飞书相关协议、事件和消息格式限制在 `Message Gateway` 层；服务器侧围绕 `Task Controller + Agent Runner + Task State Store + Approval Checkpoint` 形成平台无关的最小核心。
 
 这样可以先跑通一条真实主链路，同时保留后续增加其他平台入口的可能性。
+
+同时，通过引入 Background Dispatcher 和 Task Notifier，可以避免 webhook 长时间阻塞，并让移动端真正收到异步结果回推。
 
 ## 风险与兼容性
 

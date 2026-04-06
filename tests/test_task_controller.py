@@ -21,6 +21,7 @@ class TaskControllerTest(unittest.TestCase):
             prompt="summarize the repository",
             source="feishu",
         )
+        task = self.controller.start_task_execution(task.id)
         self.assertEqual(task.agent_backend, "stub")
         self.assertEqual(task.status, TaskStatus.COMPLETED)
         self.assertIsNotNone(task.result_summary)
@@ -31,6 +32,7 @@ class TaskControllerTest(unittest.TestCase):
             prompt="confirm: deploy the patch",
             source="feishu",
         )
+        task = self.controller.start_task_execution(task.id)
         self.assertEqual(task.status, TaskStatus.WAITING_FOR_CONFIRMATION)
         self.assertIsNotNone(task.awaiting_confirmation_reason)
 
@@ -40,7 +42,9 @@ class TaskControllerTest(unittest.TestCase):
             prompt="confirm: deploy the patch",
             source="feishu",
         )
+        task = self.controller.start_task_execution(task.id)
         approved = self.controller.resolve_confirmation(task.id, approved=True)
+        approved = self.controller.resume_task_execution(approved.id)
         self.assertEqual(approved.status, TaskStatus.COMPLETED)
         self.assertIsNotNone(approved.result_summary)
 
