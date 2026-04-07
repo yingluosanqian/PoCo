@@ -6,6 +6,7 @@ PoCo is a Python-first MVP scaffold for controlling server-side AI agent workflo
 
 - `FastAPI` webhook service
 - Feishu-first event gateway
+- Optional Feishu long-connection intake for local development
 - Feishu callback verification token support
 - Feishu tenant access token retrieval and text message send support
 - Codex-first agent execution path
@@ -97,6 +98,18 @@ export POCO_FEISHU_APP_ID="cli_xxx"
 export POCO_FEISHU_APP_SECRET="xxx"
 ```
 
+Choose the inbound delivery mode:
+
+```bash
+export POCO_FEISHU_DELIVERY_MODE="webhook"
+```
+
+Use `longconn` when you want local development without a public callback URL:
+
+```bash
+export POCO_FEISHU_DELIVERY_MODE="longconn"
+```
+
 Optional:
 
 ```bash
@@ -110,6 +123,9 @@ Notes:
 - `POCO_FEISHU_VERIFICATION_TOKEN` is optional in the current MVP. Leaving it unset reduces setup friction, but also lowers webhook security.
 - If `POCO_FEISHU_ENCRYPT_KEY` is configured, the service expects Feishu signature headers and validates them.
 - Encrypted callback payload bodies are not supported yet, so keep event encryption disabled for the current MVP.
+- `POCO_FEISHU_DELIVERY_MODE=longconn` removes the need for public inbound webhook access during local development.
+- The current long-connection implementation is intentionally scoped to `im.message.receive_v1`, because PoCo currently only needs bot message intake. Feishu card callbacks are not implemented in PoCo yet.
+- Callback token/signature settings apply to webhook delivery. Feishu long-connection inbound events are authenticated by the long-connection session itself.
 
 Install dependencies, then start the service:
 
@@ -126,7 +142,9 @@ curl http://127.0.0.1:8000/health
 The health response now includes:
 
 - current runtime mode: `local` or `feishu`
+- chosen Feishu delivery mode: `webhook` or `longconn`
 - chosen agent backend and whether it looks ready
+- whether the Feishu long-connection listener is actually ready
 - whether Feishu callback token verification is enabled
 - whether Feishu signature validation is enabled
 - what is still missing
@@ -146,6 +164,7 @@ It shows:
 - the reply target PoCo selected for each callback
 - recent outbound send attempts
 - recent Feishu send errors
+- current long-connection listener status
 
 This is the fastest way to tell whether the problem is:
 
@@ -164,6 +183,12 @@ Current interaction model:
 - The webhook request returns quickly after acknowledging the command
 - Task execution happens in a background dispatcher
 - When a task waits for confirmation, completes, fails, or is cancelled, PoCo pushes a follow-up message to the stored Feishu reply target
+
+If `POCO_FEISHU_DELIVERY_MODE=longconn` is enabled:
+
+- inbound message events arrive over Feishu long connection instead of the webhook route
+- the same `InteractionService -> TaskController -> Dispatcher -> Notifier` chain is reused
+- outbound replies still use the Feishu HTTP API
 
 Example webhook payload:
 

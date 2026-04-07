@@ -19,6 +19,7 @@ class DebugApiTest(unittest.TestCase):
         self.assertIn("inbound_events", payload)
         self.assertIn("outbound_attempts", payload)
         self.assertIn("errors", payload)
+        self.assertIn("listener", payload)
 
     def test_inbound_event_appears_in_debug_snapshot(self) -> None:
         payload = {

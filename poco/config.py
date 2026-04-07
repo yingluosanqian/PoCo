@@ -22,6 +22,7 @@ class Settings:
     feishu_api_base_url: str = getenv("POCO_FEISHU_API_BASE_URL", "https://open.feishu.cn").rstrip("/")
     feishu_app_id: str | None = getenv("POCO_FEISHU_APP_ID")
     feishu_app_secret: str | None = getenv("POCO_FEISHU_APP_SECRET")
+    feishu_delivery_mode: str = getenv("POCO_FEISHU_DELIVERY_MODE", "webhook").strip().lower()
     feishu_verification_token: str | None = getenv("POCO_FEISHU_VERIFICATION_TOKEN")
     feishu_encrypt_key: str | None = getenv("POCO_FEISHU_ENCRYPT_KEY")
 
@@ -42,6 +43,10 @@ class Settings:
         if self.feishu_enabled:
             return "feishu"
         return "local"
+
+    @property
+    def feishu_longconn_enabled(self) -> bool:
+        return self.feishu_delivery_mode == "longconn"
 
     @property
     def feishu_api_origin(self) -> str:

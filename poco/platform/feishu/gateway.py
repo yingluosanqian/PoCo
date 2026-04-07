@@ -47,6 +47,8 @@ class FeishuGateway:
             return {"challenge": payload["challenge"]}
 
         event = payload.get("event", payload)
+        if self._should_ignore_sender(event):
+            return {"ok": True, "ignored": True, "reason": "non_user_sender"}
         if not event.get("message"):
             return {"ok": True, "ignored": True}
 
@@ -108,6 +110,13 @@ class FeishuGateway:
             "reply_preview": response.text,
             "task_id": response.task_id,
         }
+
+    def _should_ignore_sender(self, event: dict[str, Any]) -> bool:
+        sender = event.get("sender", {})
+        sender_type = sender.get("sender_type")
+        if sender_type is None:
+            return False
+        return str(sender_type).lower() in {"app", "bot"}
 
     def _extract_user_id(self, event: dict[str, Any]) -> str:
         sender = event.get("sender", {})

@@ -14,6 +14,7 @@
 
 - 代码结构与设计记录人工对照检查
 - 使用 `python3 -m unittest tests/test_task_controller.py tests/test_feishu_gateway.py` 验证核心任务状态流、飞书 challenge 校验、飞书签名校验与文本消息回发路由
+- 使用 `python3 -m unittest tests/test_feishu_longconn.py` 验证 Feishu long connection 消息事件能复用现有 `FeishuGateway`
 - 使用 `python3 -m compileall poco tests` 做语法级检查
 - 使用 `python3 -c "from poco.main import app; print(app.title, app.state.settings.feishu_enabled)"` 验证应用可导入并装配飞书配置
 
@@ -23,6 +24,7 @@
 - `python3 -m unittest tests/test_task_controller.py tests/test_feishu_gateway.py tests/test_agent_runner.py` 通过，覆盖了 Codex runner 就绪性、确认前暂停、成功结果采集和失败映射
 - `python3 -m unittest tests/test_task_controller.py tests/test_feishu_gateway.py tests/test_agent_runner.py tests/test_task_dispatcher.py` 通过，覆盖了后台调度启动、等待确认通知和批准后恢复执行
 - `python3 -m unittest tests/test_task_controller.py tests/test_feishu_gateway.py tests/test_agent_runner.py tests/test_task_dispatcher.py tests/test_health.py tests/test_demo_api.py` 通过，覆盖了 health readiness 输出和本地 demo 命令流
+- `python3 -m unittest tests/test_feishu_longconn.py` 通过，覆盖了长连接消息事件到现有网关的复用路径
 - `python3 -m compileall poco tests` 通过，当前 Python 代码语法成立
 - `python3 -c "from poco.main import app; print(app.title, app.state.settings.feishu_enabled)"` 通过，说明应用对象已经能被实际导入装配
 - `codex -a never exec -C /Users/yihanc/project/PoCo --skip-git-repo-check -o /tmp/poco_codex_smoke.txt "Reply with exactly: PING"` 通过，说明当前机器上的 Codex CLI 可被非交互调用
@@ -35,6 +37,7 @@
 - 本轮已形成后台任务调度与关键状态的主动回推链路
 - 本轮已形成本地 demo 联调入口，可在不接飞书的情况下反复验证整条任务链路
 - 本轮已形成飞书调试快照入口，支持排查真实回调和回发失败
+- 本轮已形成 Feishu 长连接消息接入模式，可在没有公网 webhook 的本地开发环境中接收消息事件
 
 ## 是否通过
 
@@ -58,6 +61,7 @@
 - 当前状态存储仅为内存实现
 - 当前确认流仍依赖 `confirm:` 规则触发，而不是来自真实执行器事件
 - 飞书加密事件体尚未支持，当前 MVP 需要关闭事件加密
+- 当前长连接接入只覆盖消息事件接收，尚未实现卡片回调等更复杂交互
 - 尚未覆盖真实网络调用下的集成级验证
 - Claude Code、Cursor Agent 仍未实现
 - 当前后台调度仍基于进程内线程，服务重启后不会恢复未完成任务

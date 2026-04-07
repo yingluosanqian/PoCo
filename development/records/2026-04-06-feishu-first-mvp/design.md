@@ -20,6 +20,7 @@
 职责：
 
 - 接收飞书 webhook / 回调事件
+- 接收飞书 long connection 消息事件
 - 验证来源与基础身份
 - 把平台事件转换为内部统一交互请求
 - 把内部状态更新转换为飞书消息输出
@@ -32,6 +33,7 @@
 补充说明：
 
 - 本地 demo HTTP 入口可以作为联调辅助入口存在，但不改变“飞书是正式优先入口”的产品决策
+- 传输模式可以是 webhook 或 long connection，但它们都必须复用同一个 `FeishuGateway`，避免分叉业务逻辑
 
 ### 2. Interaction Service
 

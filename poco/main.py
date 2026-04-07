@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
@@ -13,6 +15,7 @@ from poco.interaction.service import InteractionService
 from poco.platform.feishu.client import FeishuAccessTokenProvider, FeishuApiError, FeishuMessageClient
 from poco.platform.feishu.debug import FeishuDebugRecorder
 from poco.platform.feishu.gateway import FeishuGateway
+from poco.platform.feishu.longconn import FeishuLongconnListener
 from poco.platform.feishu.verification import FeishuRequestVerifier, FeishuVerificationError
 from poco.storage.memory import InMemoryTaskStore
 from poco.task.controller import TaskController, TaskNotFoundError
@@ -67,18 +70,32 @@ def create_app() -> FastAPI:
         dispatcher=dispatcher,
         debug_recorder=feishu_debug,
     )
+    longconn_listener = FeishuLongconnListener(
+        app_id=settings.feishu_app_id,
+        app_secret=settings.feishu_app_secret,
+        gateway=gateway,
+        delivery_mode=settings.feishu_delivery_mode,
+        debug_recorder=feishu_debug,
+    )
 
-    app = FastAPI(title=settings.app_name)
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        longconn_listener.start_background()
+        yield
+
+    app = FastAPI(title=settings.app_name, lifespan=lifespan)
     app.state.task_controller = controller
     app.state.feishu_gateway = gateway
     app.state.settings = settings
     app.state.agent_runner = runner
     app.state.task_dispatcher = dispatcher
     app.state.feishu_debug = feishu_debug
+    app.state.feishu_longconn = longconn_listener
 
     @app.get("/health")
     def health() -> dict[str, Any]:
         agent_ready, agent_detail = runner.is_ready()
+        listener_ready, listener_detail = longconn_listener.readiness()
         missing = []
         warnings = []
 
@@ -91,6 +108,17 @@ def create_app() -> FastAPI:
             warnings.append(
                 "Feishu callback verification token is disabled. This lowers security but keeps MVP setup friction low."
             )
+        if settings.feishu_longconn_enabled:
+            warnings.append(
+                "Feishu long connection mode is enabled. Public webhook ingress is not required for inbound message events."
+            )
+            warnings.append(
+                "Current long connection intake is scoped to message events. PoCo does not implement Feishu card callbacks yet."
+            )
+            if settings.feishu_verification_enabled or settings.feishu_signature_enabled:
+                warnings.append(
+                    "Feishu callback token/signature validation settings only apply to webhook delivery, not long connection inbound events."
+                )
         if settings.feishu_signature_enabled:
             warnings.append(
                 "Feishu signature validation is enabled. Encrypted event bodies are still unsupported in the current MVP."
@@ -102,13 +130,18 @@ def create_app() -> FastAPI:
 
         if not agent_ready:
             missing.append("agent backend readiness")
+        if settings.feishu_longconn_enabled and not listener_ready:
+            missing.append("feishu long connection listener")
 
         return {
             "status": "ok",
             "mode": settings.runtime_mode,
             "feishu_enabled": settings.feishu_enabled,
+            "feishu_delivery_mode": settings.feishu_delivery_mode,
             "feishu_verification_enabled": settings.feishu_verification_enabled,
             "feishu_signature_enabled": settings.feishu_signature_enabled,
+            "feishu_listener_ready": listener_ready,
+            "feishu_listener_detail": listener_detail,
             "agent_backend": runner.name,
             "agent_ready": agent_ready,
             "agent_detail": agent_detail,
@@ -208,7 +241,9 @@ def create_app() -> FastAPI:
 
     @app.get("/debug/feishu")
     def feishu_debug_snapshot() -> dict[str, Any]:
-        return app.state.feishu_debug.snapshot()
+        snapshot = app.state.feishu_debug.snapshot()
+        snapshot["listener"] = app.state.feishu_longconn.snapshot()
+        return snapshot
 
     return app
 

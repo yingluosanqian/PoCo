@@ -138,6 +138,32 @@ class FeishuGatewayTest(unittest.TestCase):
         self.assertEqual(sent["receive_id_type"], "open_id")
         self.assertEqual(sent["receive_id"], "ou_demo_user")
 
+    def test_bot_sender_is_ignored(self) -> None:
+        payload = {
+            "token": "verify-token",
+            "event": {
+                "sender": {
+                    "sender_id": {"open_id": "ou_demo_bot"},
+                    "sender_type": "bot",
+                },
+                "message": {
+                    "chat_type": "p2p",
+                    "content": json.dumps({"text": "/help"}),
+                },
+            },
+        }
+
+        response = self.gateway.handle_event(
+            payload,
+            headers={},
+            raw_body=json.dumps(payload).encode("utf-8"),
+        )
+
+        self.assertTrue(response["ok"])
+        self.assertTrue(response["ignored"])
+        self.assertEqual(response["reason"], "non_user_sender")
+        self.assertEqual(len(self.message_client.sent_messages), 0)
+
     def test_debug_recorder_tracks_gateway_reply_failure(self) -> None:
         class RaisingMessageClient(FakeMessageClient):
             def send_text(self, *, receive_id: str, receive_id_type: str, text: str) -> None:

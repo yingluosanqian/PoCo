@@ -18,8 +18,11 @@ class HealthEndpointTest(unittest.TestCase):
 
         self.assertEqual(payload["status"], "ok")
         self.assertIn(payload["mode"], {"local", "feishu"})
+        self.assertIn(payload["feishu_delivery_mode"], {"webhook", "longconn"})
         self.assertIn("agent_backend", payload)
         self.assertIn("agent_ready", payload)
+        self.assertIn("feishu_listener_ready", payload)
+        self.assertIn("feishu_listener_detail", payload)
         self.assertIn("warnings", payload)
         self.assertIn("missing", payload)
 
