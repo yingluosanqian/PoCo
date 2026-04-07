@@ -86,3 +86,5 @@
 在主链路已基本跑通后，下一轮计划应优先定义最小 `session/handoff` 层，而不是继续把所有连续性压力压到 task 或 backend 内部上下文上。
 
 同时，需要补出 `DM -> project lifecycle -> group workspace -> session -> task` 的正式交互模型，再进入具体实现。
+
+在交互协议已经转向 card-first 后，下一轮实现前设计应先围绕 DM 管理卡片和群工作区卡片的最小信息架构展开。

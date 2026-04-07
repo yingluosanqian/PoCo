@@ -66,6 +66,7 @@
 - 飞书传输模式适配，允许 webhook 与 long connection 共用同一消息网关
 - `DM control plane + group workspace` 的双入口交互模型
 - card-first interaction model，正式交互由卡片驱动而不是文本命令驱动
+- 分层卡片信息架构：DM 管理卡片与群工作区卡片
 - 平台无关的任务控制核心
 - 最小 `session/handoff` 连续性交接层
 - 服务器侧 agent 执行层
@@ -84,3 +85,5 @@
 ### 当前设计取向
 
 优先采用“薄平台适配 + 独立任务核心”的结构，避免在 MVP 阶段走向完全耦合或过度抽象两端。
+
+在正式交互面上，优先采用“少量分层卡片”而不是万能卡片或完整卡片体系。
