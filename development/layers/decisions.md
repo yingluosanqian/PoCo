@@ -79,3 +79,11 @@
 当前执行器方向计划包含 Codex、Claude Code、Cursor Agent。
 
 当前优先实现 Codex。
+
+### 当前上下文责任边界决策
+
+产品级连续性交接上下文由 PoCo 持有。
+
+执行期上下文由 Codex、Claude Code、Cursor Agent 等 backend 各自持有。
+
+当前不把“完整上下文”全部外包给单一 backend，也不把 PoCo 扩写成重型 memory 系统。
