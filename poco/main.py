@@ -11,13 +11,18 @@ from pydantic import BaseModel
 from poco.agent.runner import create_agent_runner
 from poco.config import Settings
 from poco.demo import DemoCommandRequest
+from poco.interaction.card_dispatcher import CardActionDispatcher
+from poco.interaction.card_handlers import ProjectIntentHandler, WorkspaceIntentHandler
 from poco.interaction.service import InteractionService
 from poco.platform.feishu.client import FeishuAccessTokenProvider, FeishuApiError, FeishuMessageClient
+from poco.platform.feishu.card_gateway import FeishuCardActionGateway
 from poco.platform.feishu.debug import FeishuDebugRecorder
+from poco.platform.feishu.cards import FeishuCardRenderer
 from poco.platform.feishu.gateway import FeishuGateway
 from poco.platform.feishu.longconn import FeishuLongconnListener
 from poco.platform.feishu.verification import FeishuRequestVerifier, FeishuVerificationError
-from poco.storage.memory import InMemoryTaskStore
+from poco.project.controller import ProjectController
+from poco.storage.memory import InMemoryProjectStore, InMemoryTaskStore
 from poco.task.controller import TaskController, TaskNotFoundError
 from poco.task.dispatcher import AsyncTaskDispatcher
 from poco.task.notifier import FeishuTaskNotifier, NullTaskNotifier
@@ -30,6 +35,7 @@ class DemoDecisionRequest(BaseModel):
 def create_app() -> FastAPI:
     settings = Settings()
     store = InMemoryTaskStore()
+    project_store = InMemoryProjectStore()
     runner = create_agent_runner(
         backend=settings.agent_backend,
         codex_command=settings.codex_command,
@@ -40,6 +46,7 @@ def create_app() -> FastAPI:
         codex_timeout_seconds=settings.codex_timeout_seconds,
     )
     controller = TaskController(store=store, runner=runner)
+    project_controller = ProjectController(project_store)
     interaction = InteractionService(controller)
     feishu_debug = FeishuDebugRecorder()
     request_verifier = FeishuRequestVerifier(
@@ -70,6 +77,23 @@ def create_app() -> FastAPI:
         dispatcher=dispatcher,
         debug_recorder=feishu_debug,
     )
+    card_dispatcher = CardActionDispatcher(
+        {
+            "project.create": ProjectIntentHandler(project_controller),
+            "project.open": ProjectIntentHandler(project_controller),
+            "project.bind_group": ProjectIntentHandler(project_controller),
+            "project.archive": ProjectIntentHandler(project_controller),
+            "workspace.open": WorkspaceIntentHandler(project_controller),
+            "workspace.refresh": WorkspaceIntentHandler(project_controller),
+        }
+    )
+    card_gateway = FeishuCardActionGateway(
+        dispatcher=card_dispatcher,
+        renderer=FeishuCardRenderer(),
+        project_controller=project_controller,
+        request_verifier=request_verifier,
+        debug_recorder=feishu_debug,
+    )
     longconn_listener = FeishuLongconnListener(
         app_id=settings.feishu_app_id,
         app_secret=settings.feishu_app_secret,
@@ -85,7 +109,9 @@ def create_app() -> FastAPI:
 
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
     app.state.task_controller = controller
+    app.state.project_controller = project_controller
     app.state.feishu_gateway = gateway
+    app.state.feishu_card_gateway = card_gateway
     app.state.settings = settings
     app.state.agent_runner = runner
     app.state.task_dispatcher = dispatcher
@@ -113,7 +139,7 @@ def create_app() -> FastAPI:
                 "Feishu long connection mode is enabled. Public webhook ingress is not required for inbound message events."
             )
             warnings.append(
-                "Current long connection intake is scoped to message events. PoCo does not implement Feishu card callbacks yet."
+                "Current long connection intake is scoped to message events. Card callbacks currently use HTTP callback endpoints."
             )
             if settings.feishu_verification_enabled or settings.feishu_signature_enabled:
                 warnings.append(
@@ -170,6 +196,28 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=401, detail=str(exc)) from exc
         except FeishuApiError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    @app.post("/platform/feishu/card-actions")
+    async def handle_feishu_card_action(request: Request) -> dict[str, Any]:
+        raw_body = await request.body()
+        try:
+            payload = json.loads(raw_body.decode("utf-8"))
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=400, detail="Invalid JSON payload.") from exc
+
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="Feishu payload must be a JSON object.")
+
+        try:
+            return card_gateway.handle_action(
+                payload,
+                headers=dict(request.headers),
+                raw_body=raw_body,
+            )
+        except FeishuVerificationError as exc:
+            raise HTTPException(status_code=401, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/demo/command")
     def handle_demo_command(payload: DemoCommandRequest) -> dict[str, Any]:
@@ -244,6 +292,18 @@ def create_app() -> FastAPI:
         snapshot = app.state.feishu_debug.snapshot()
         snapshot["listener"] = app.state.feishu_longconn.snapshot()
         return snapshot
+
+    @app.get("/demo/cards/dm/projects")
+    def demo_dm_project_list_card() -> dict[str, Any]:
+        response = card_gateway.render_dm_project_list()
+        response["mode"] = "demo"
+        return response
+
+    @app.post("/demo/card-actions")
+    def demo_card_action(payload: dict[str, Any]) -> dict[str, Any]:
+        response = card_gateway.handle_action(payload)
+        response["mode"] = "demo"
+        return response
 
     return app
 

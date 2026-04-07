@@ -9,6 +9,7 @@ PoCo is a Python-first MVP scaffold for controlling server-side AI agent workflo
 - Optional Feishu long-connection intake for local development
 - Feishu callback verification token support
 - Feishu tenant access token retrieval and text message send support
+- Card-first interaction scaffolding with platform-neutral dispatcher
 - Codex-first agent execution path
 - Asynchronous background task dispatch
 - Feishu task-state push on confirmation wait and terminal states
@@ -150,6 +151,45 @@ The health response now includes:
 - what is still missing
 - warnings about relaxed safety settings
 
+### Card Demo Interface
+
+You can now exercise the first DM card chain locally:
+
+```bash
+curl http://127.0.0.1:8000/demo/cards/dm/projects
+```
+
+Create a project through the demo card-action endpoint:
+
+```bash
+curl -X POST http://127.0.0.1:8000/demo/card-actions \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "event": {
+      "operator": {"open_id": "ou_demo_user"},
+      "context": {"open_message_id": "om_demo_card"},
+      "action": {
+        "value": {
+          "intent_key": "project.create",
+          "surface": "dm",
+          "request_id": "req_demo_project_create_1"
+        },
+        "form_value": {
+          "name": "PoCo",
+          "backend": "codex"
+        }
+      }
+    }
+  }'
+```
+
+This currently proves the first card chain:
+
+- DM card action payload -> `ActionIntent`
+- dispatcher -> project handler
+- `IntentDispatchResult` -> render instruction
+- renderer -> card response payload
+
 ### Feishu Debug Snapshot
 
 When Feishu messages do not get any reply, inspect:
@@ -178,6 +218,12 @@ Real Feishu callbacks should target:
 POST /platform/feishu/events
 ```
 
+Card action callbacks should currently target:
+
+```text
+POST /platform/feishu/card-actions
+```
+
 Current interaction model:
 
 - The webhook request returns quickly after acknowledging the command
@@ -189,6 +235,7 @@ If `POCO_FEISHU_DELIVERY_MODE=longconn` is enabled:
 - inbound message events arrive over Feishu long connection instead of the webhook route
 - the same `InteractionService -> TaskController -> Dispatcher -> Notifier` chain is reused
 - outbound replies still use the Feishu HTTP API
+- card callbacks still use the HTTP callback endpoint in the current scaffold
 
 Example webhook payload:
 
