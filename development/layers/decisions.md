@@ -87,3 +87,9 @@
 执行期上下文由 Codex、Claude Code、Cursor Agent 等 backend 各自持有。
 
 当前不把“完整上下文”全部外包给单一 backend，也不把 PoCo 扩写成重型 memory 系统。
+
+### 当前正式交互模型决策
+
+PoCo 的正式交互主路径采用“一个 project 一个飞书群”。
+
+群绑定 project；project 之下再承载 session 和 task。
