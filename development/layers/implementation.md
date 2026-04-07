@@ -72,10 +72,12 @@
 - 本地 demo HTTP 联调入口
 - 内存版任务状态存储
 - stub agent runner
+- card-first 的最小平台无关协议骨架，包括 `ActionIntent`、`IntentDispatchResult`、`PlatformRenderInstruction`、`CardActionDispatcher` 和最小幂等缓存
 
 ### 当前明确未实现
 
 - 飞书卡片 2.0 驱动的正式交互面
+- 飞书卡片回调入口与真实 renderer
 - 飞书加密事件体处理
 - Claude Code 与 Cursor Agent 执行适配
 - 跨进程可恢复的任务队列
