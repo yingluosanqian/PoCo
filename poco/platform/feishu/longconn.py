@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import importlib
 import json
 from datetime import UTC, datetime
 from threading import RLock, Thread
@@ -56,11 +58,12 @@ class FeishuLongconnListener:
         with self._lock:
             if self._thread is not None:
                 return
-            self._start_attempted = True
-            ready, detail = self.readiness()
-            if not ready:
-                self._last_error = detail
+            missing_detail = self._missing_dependency_detail()
+            if missing_detail is not None:
+                self._start_attempted = True
+                self._last_error = missing_detail
                 return
+            self._start_attempted = True
 
             self._thread = Thread(
                 target=self._run_forever,
@@ -72,18 +75,19 @@ class FeishuLongconnListener:
     def readiness(self) -> tuple[bool, str]:
         if not self.enabled:
             return True, "Feishu webhook delivery mode is active."
-        if not self._app_id or not self._app_secret:
-            return False, "Feishu long connection requires app_id and app_secret."
-        if EventDispatcherHandler is None or JSON is None or LarkWsClient is None:
-            return False, "Feishu long connection requires the lark-oapi dependency."
+        missing_detail = self._missing_dependency_detail()
+        if missing_detail is not None:
+            return False, missing_detail
 
         with self._lock:
             if self._running and self._thread is not None and self._thread.is_alive():
                 return True, "Feishu long connection listener is running."
+            if self._thread is not None and self._thread.is_alive():
+                return False, "Feishu long connection listener is starting."
             if self._last_error and self._start_attempted:
                 return False, self._last_error
             if self._start_attempted:
-                return False, "Feishu long connection listener is starting."
+                return True, "Feishu long connection listener has been started."
         return True, "Feishu long connection is configured and ready to start."
 
     def snapshot(self) -> dict[str, Any]:
@@ -121,6 +125,7 @@ class FeishuLongconnListener:
             raise
 
     def _run_forever(self) -> None:
+        loop = self._prepare_sdk_event_loop()
         self._set_running(True)
         try:
             client = self._build_client()
@@ -132,6 +137,8 @@ class FeishuLongconnListener:
                 context={"delivery_mode": self._delivery_mode},
             )
         finally:
+            if not loop.is_closed():
+                loop.close()
             self._set_running(False)
 
     def _build_client(self) -> Any:
@@ -144,7 +151,7 @@ class FeishuLongconnListener:
         return LarkWsClient(
             app_id=self._app_id,
             app_secret=self._app_secret,
-            log_level=LogLevel.WARN,
+            log_level=LogLevel.WARNING,
             event_handler=handler,
         )
 
@@ -184,3 +191,17 @@ class FeishuLongconnListener:
                 message=message,
                 context=context,
             )
+
+    def _missing_dependency_detail(self) -> str | None:
+        if not self._app_id or not self._app_secret:
+            return "Feishu long connection requires app_id and app_secret."
+        if EventDispatcherHandler is None or JSON is None or LarkWsClient is None:
+            return "Feishu long connection requires the lark-oapi dependency."
+        return None
+
+    def _prepare_sdk_event_loop(self) -> asyncio.AbstractEventLoop:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        client_module = importlib.import_module("lark_oapi.ws.client")
+        client_module.loop = loop
+        return loop
