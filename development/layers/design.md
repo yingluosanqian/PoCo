@@ -69,6 +69,7 @@
 - 分层卡片信息架构：DM 管理卡片与群工作区卡片
 - 统一 card action intent 协议与固定 refresh mode
 - 统一 ActionIntent payload、资源级 handler ownership 与写操作幂等约束
+- `IntentDispatchResult -> PlatformRenderInstruction -> Renderer` 的平台解耦链路
 - 平台无关的任务控制核心
 - 最小 `session/handoff` 连续性交接层
 - 服务器侧 agent 执行层
