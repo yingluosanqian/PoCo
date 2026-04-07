@@ -90,6 +90,14 @@
 
 ### 当前正式交互模型决策
 
-PoCo 的正式交互主路径采用“一个 project 一个飞书群”。
+PoCo 的正式交互模型调整为：
 
-群绑定 project；project 之下再承载 session 和 task。
+- 单聊负责 project 管理与建群绑定
+- 群负责 project 的正式执行与协作
+
+也就是：
+
+- `DM -> control plane`
+- `Group -> project workspace`
+
+project 之下继续承载 session 和 task。

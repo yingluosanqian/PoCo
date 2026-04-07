@@ -85,4 +85,4 @@
 
 在主链路已基本跑通后，下一轮计划应优先定义最小 `session/handoff` 层，而不是继续把所有连续性压力压到 task 或 backend 内部上下文上。
 
-同时，需要补出 `group -> project -> session -> task` 的正式交互模型，再进入具体实现。
+同时，需要补出 `DM -> project lifecycle -> group workspace -> session -> task` 的正式交互模型，再进入具体实现。

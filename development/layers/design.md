@@ -64,7 +64,7 @@
 
 - 飞书消息入口适配层
 - 飞书传输模式适配，允许 webhook 与 long connection 共用同一消息网关
-- project 级消息容器，正式路径中采用一个飞书群对应一个 project
+- `DM control plane + group workspace` 的双入口交互模型
 - 平台无关的任务控制核心
 - 最小 `session/handoff` 连续性交接层
 - 服务器侧 agent 执行层
@@ -75,7 +75,7 @@
 
 - 飞书平台细节应限制在入口适配层
 - 核心执行必须围绕任务和状态，而不是裸命令透传
-- 正式 project 上下文不应混在单一 bot 聊天框中
+- project 管理动作不应与正式执行消息混在同一入口
 - 产品级连续性交接上下文应由 PoCo 维护，但不复制 backend 的完整执行期上下文
 - 当前设计只服务单平台、单主链路 MVP，不覆盖多平台协作扩展
 
