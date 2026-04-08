@@ -100,6 +100,7 @@ def create_app() -> FastAPI:
         app_id=settings.feishu_app_id,
         app_secret=settings.feishu_app_secret,
         gateway=gateway,
+        card_gateway=card_gateway,
         delivery_mode=settings.feishu_delivery_mode,
         debug_recorder=feishu_debug,
     )
@@ -141,7 +142,7 @@ def create_app() -> FastAPI:
                 "Feishu long connection mode is enabled. Public webhook ingress is not required for inbound message events."
             )
             warnings.append(
-                "Current long connection intake is scoped to message events. Card callbacks currently use HTTP callback endpoints."
+                "Current long connection intake handles both message events and card callbacks."
             )
             if settings.feishu_verification_enabled or settings.feishu_signature_enabled:
                 warnings.append(

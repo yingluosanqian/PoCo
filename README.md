@@ -125,7 +125,7 @@ Notes:
 - If `POCO_FEISHU_ENCRYPT_KEY` is configured, the service expects Feishu signature headers and validates them.
 - Encrypted callback payload bodies are not supported yet, so keep event encryption disabled for the current MVP.
 - `POCO_FEISHU_DELIVERY_MODE=longconn` removes the need for public inbound webhook access during local development.
-- The current long-connection implementation is intentionally scoped to `im.message.receive_v1`, because PoCo currently only needs bot message intake. Feishu card callbacks still use the HTTP callback endpoint.
+- The current long-connection implementation now handles both `im.message.receive_v1` and card callback traffic for local/mobile-first operation.
 - Callback token/signature settings apply to webhook delivery. Feishu long-connection inbound events are authenticated by the long-connection session itself.
 
 Install dependencies, then start the service:
@@ -251,7 +251,7 @@ If `POCO_FEISHU_DELIVERY_MODE=longconn` is enabled:
 - DM events can now trigger proactive project-list card sends
 - group events still reuse the same `InteractionService -> TaskController -> Dispatcher -> Notifier` chain
 - outbound replies still use the Feishu HTTP API
-- card callbacks still use the HTTP callback endpoint in the current scaffold
+- card callbacks are now also handled through the Feishu long-connection listener
 
 To verify the DM card bootstrap on a real Feishu bot:
 

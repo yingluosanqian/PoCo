@@ -102,17 +102,18 @@ def _payload_to_action_intent(payload: dict[str, Any]) -> ActionIntent:
 
     operator = event.get("operator", {})
     context = event.get("context", {})
+    actor_id = str(operator.get("open_id") or operator.get("user_id") or "anonymous")
     return ActionIntent(
         intent_key=str(value.get("intent_key", "")).strip(),
         surface=surface,
-        actor_id=str(operator.get("open_id") or operator.get("user_id") or "anonymous"),
+        actor_id=actor_id,
         source_message_id=str(context.get("open_message_id") or ""),
-        request_id=str(
-            value.get("request_id")
-            or payload.get("event_id")
-            or payload.get("header", {}).get("event_id")
-            or context.get("open_message_id")
-            or ""
+        request_id=_request_id_for_action(
+            payload=payload,
+            actor_id=actor_id,
+            value=value,
+            action=action,
+            context=context,
         ),
         project_id=_optional_string(value.get("project_id")),
         session_id=_optional_string(value.get("session_id")),
@@ -166,3 +167,33 @@ def _optional_string(value: object) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _request_id_for_action(
+    *,
+    payload: dict[str, Any],
+    actor_id: str,
+    value: dict[str, Any],
+    action: dict[str, Any],
+    context: dict[str, Any],
+) -> str:
+    explicit = _optional_string(value.get("request_id"))
+    if explicit is not None:
+        return explicit
+
+    event_id = _optional_string(payload.get("event_id"))
+    if event_id is not None:
+        return event_id
+
+    header_event_id = _optional_string((payload.get("header") or {}).get("event_id"))
+    if header_event_id is not None:
+        return header_event_id
+
+    parts = [
+        _optional_string(context.get("open_message_id")) or "unknown_message",
+        actor_id or "anonymous",
+        _optional_string(value.get("intent_key")) or "unknown_intent",
+        _optional_string(action.get("name")) or "unnamed_action",
+        json.dumps(value, ensure_ascii=False, sort_keys=True),
+    ]
+    return "::".join(parts)

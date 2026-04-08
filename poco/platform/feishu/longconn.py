@@ -1,23 +1,47 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import http
 import importlib
 import json
+import time
 from datetime import UTC, datetime
 from threading import RLock, Thread
 from typing import Any
 
 from poco.platform.feishu.debug import FeishuDebugRecorder
+from poco.platform.feishu.card_gateway import FeishuCardActionGateway
 from poco.platform.feishu.gateway import FeishuGateway
 
 try:
     from lark_oapi import EventDispatcherHandler, JSON, LogLevel
+    from lark_oapi.core.const import UTF_8
     from lark_oapi.ws import Client as LarkWsClient
+    from lark_oapi.ws.const import (
+        HEADER_BIZ_RT,
+        HEADER_MESSAGE_ID,
+        HEADER_SEQ,
+        HEADER_SUM,
+        HEADER_TRACE_ID,
+        HEADER_TYPE,
+    )
+    from lark_oapi.ws.enum import MessageType
+    from lark_oapi.ws.model import Response
 except ImportError:  # pragma: no cover
     EventDispatcherHandler = None
     JSON = None
     LogLevel = None
     LarkWsClient = None
+    HEADER_BIZ_RT = None
+    HEADER_MESSAGE_ID = None
+    HEADER_SEQ = None
+    HEADER_SUM = None
+    HEADER_TRACE_ID = None
+    HEADER_TYPE = None
+    UTF_8 = "utf-8"
+    MessageType = None
+    Response = None
 
 
 def _utc_now_iso() -> str:
@@ -31,12 +55,14 @@ class FeishuLongconnListener:
         app_id: str | None,
         app_secret: str | None,
         gateway: FeishuGateway,
+        card_gateway: FeishuCardActionGateway | None = None,
         delivery_mode: str,
         debug_recorder: FeishuDebugRecorder | None = None,
     ) -> None:
         self._app_id = app_id or ""
         self._app_secret = app_secret or ""
         self._gateway = gateway
+        self._card_gateway = card_gateway
         self._delivery_mode = delivery_mode
         self._debug_recorder = debug_recorder
         self._lock = RLock()
@@ -124,6 +150,26 @@ class FeishuLongconnListener:
             )
             raise
 
+    def handle_card_action_event(self, data: Any) -> dict[str, Any]:
+        if self._card_gateway is None:
+            raise RuntimeError("Feishu long connection card action gateway is not configured.")
+
+        payload = self._sdk_event_to_payload(data)
+        self._mark_event()
+        try:
+            return self._card_gateway.handle_action(
+                payload,
+                headers={},
+                raw_body=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            )
+        except Exception as exc:
+            self._record_error(
+                stage="feishu_longconn_card",
+                message=str(exc),
+                context={"event_type": payload.get("event_type")},
+            )
+            raise
+
     def _run_forever(self) -> None:
         loop = self._prepare_sdk_event_loop()
         self._set_running(True)
@@ -145,10 +191,11 @@ class FeishuLongconnListener:
         if EventDispatcherHandler is None or LogLevel is None or LarkWsClient is None:
             raise RuntimeError("lark-oapi is not available")
         builder = EventDispatcherHandler.builder("", "")
-        handler = (
-            builder.register_p2_im_message_receive_v1(self.handle_message_receive_event).build()
-        )
-        return LarkWsClient(
+        builder.register_p2_im_message_receive_v1(self.handle_message_receive_event)
+        if self._card_gateway is not None:
+            builder.register_p2_card_action_trigger(self.handle_card_action_event)
+        handler = builder.build()
+        return PoCoLarkWsClient(
             app_id=self._app_id,
             app_secret=self._app_secret,
             log_level=LogLevel.WARNING,
@@ -205,3 +252,49 @@ class FeishuLongconnListener:
         client_module = importlib.import_module("lark_oapi.ws.client")
         client_module.loop = loop
         return loop
+
+
+if LarkWsClient is not None:
+    class PoCoLarkWsClient(LarkWsClient):
+        async def _handle_data_frame(self, frame: Any) -> None:
+            hs = frame.headers
+            msg_id = _get_by_key(hs, HEADER_MESSAGE_ID)
+            trace_id = _get_by_key(hs, HEADER_TRACE_ID)
+            sum_ = _get_by_key(hs, HEADER_SUM)
+            seq = _get_by_key(hs, HEADER_SEQ)
+            type_ = _get_by_key(hs, HEADER_TYPE)
+
+            pl = frame.payload
+            if int(sum_) > 1:
+                pl = self._combine(msg_id, int(sum_), int(seq), pl)
+                if pl is None:
+                    return
+
+            message_type = MessageType(type_)
+            resp = Response(code=http.HTTPStatus.OK)
+            try:
+                start = int(round(time.time() * 1000))
+                if message_type in {MessageType.EVENT, MessageType.CARD}:
+                    result = self._event_handler.do_without_validation(pl)
+                else:
+                    return
+                end = int(round(time.time() * 1000))
+                header = hs.add()
+                header.key = HEADER_BIZ_RT
+                header.value = str(end - start)
+                if result is not None:
+                    resp.data = base64.b64encode(JSON.marshal(result).encode(UTF_8))
+            except Exception:
+                resp = Response(code=http.HTTPStatus.INTERNAL_SERVER_ERROR)
+
+            frame.payload = JSON.marshal(resp).encode(UTF_8)
+            await self._write_message(frame.SerializeToString())
+else:  # pragma: no cover
+    PoCoLarkWsClient = None
+
+
+def _get_by_key(headers: Any, key: str) -> str:
+    for header in headers:
+        if header.key == key:
+            return header.value
+    raise KeyError(key)
