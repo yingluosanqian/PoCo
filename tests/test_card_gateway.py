@@ -31,7 +31,8 @@ class FeishuCardGatewayTest(unittest.TestCase):
         response = self.gateway.render_dm_project_list()
 
         self.assertEqual(response["instruction"]["template_key"], "project_list")
-        self.assertEqual(response["card"]["view"], "project_list")
+        self.assertEqual(response["card"]["schema"], "2.0")
+        self.assertEqual(response["card"]["header"]["title"]["content"], "PoCo Projects")
 
     def test_project_create_action_returns_project_detail_card(self) -> None:
         payload = {
@@ -55,8 +56,8 @@ class FeishuCardGatewayTest(unittest.TestCase):
         response = self.gateway.handle_action(payload)
 
         self.assertEqual(response["instruction"]["template_key"], "project_detail")
-        self.assertEqual(response["card"]["data"]["view"], "project_detail")
-        self.assertEqual(response["card"]["data"]["project"]["name"], "PoCo")
+        self.assertEqual(response["card"]["data"]["schema"], "2.0")
+        self.assertEqual(response["card"]["data"]["header"]["title"]["content"], "PoCo")
         projects = self.project_controller.list_projects()
         self.assertEqual(len(projects), 1)
 
@@ -84,8 +85,11 @@ class FeishuCardGatewayTest(unittest.TestCase):
         response = self.gateway.handle_action(payload)
 
         self.assertEqual(response["instruction"]["template_key"], "workspace_overview")
-        self.assertEqual(response["card"]["data"]["view"], "workspace_overview")
-        self.assertEqual(response["card"]["data"]["project"]["id"], project.id)
+        self.assertEqual(response["card"]["data"]["schema"], "2.0")
+        self.assertEqual(
+            response["card"]["data"]["header"]["title"]["content"],
+            f"Workspace: {project.name}",
+        )
 
 
 if __name__ == "__main__":

@@ -65,7 +65,7 @@
 - `FastAPI` 作为 webhook 服务入口
 - 飞书事件网关的最小适配
 - 飞书 callback verification token 与签名头校验
-- 飞书 tenant access token 获取与文本消息回发
+- 飞书 tenant access token 获取、文本消息回发与 interactive card 发送
 - 平台无关的任务控制层
 - Codex-first agent adapter 与本机 Codex CLI 调用
 - 进程内后台任务调度与关键状态回推
@@ -74,11 +74,12 @@
 - stub agent runner
 - card-first 的最小平台无关协议骨架，包括 `ActionIntent`、`IntentDispatchResult`、`PlatformRenderInstruction`、`CardActionDispatcher` 和最小幂等缓存
 - 最小 project 领域模型、DM card handlers、Feishu card gateway、card renderer 和本地 demo card 入口
+- DM 收到消息后主动回发 project list card 的最小 bootstrap 链路
 
 ### 当前明确未实现
 
-- 飞书卡片 2.0 驱动的正式交互面
-- 飞书卡片端到端正式工作流，以及 project/session/task 的完整 card handlers
+- 飞书卡片 2.0 驱动的完整正式交互面
+- 飞书卡片端到端正式工作流，以及 project/session/task/group 的完整 card handlers
 - 飞书加密事件体处理
 - Claude Code 与 Cursor Agent 执行适配
 - 跨进程可恢复的任务队列

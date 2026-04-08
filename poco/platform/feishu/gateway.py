@@ -6,6 +6,7 @@ from typing import Any
 
 from poco.interaction.service import InteractionService
 from poco.platform.feishu.client import FeishuMessageClient
+from poco.platform.feishu.card_gateway import FeishuCardActionGateway
 from poco.platform.feishu.debug import FeishuDebugRecorder
 from poco.platform.feishu.verification import FeishuRequestVerifier
 from poco.task.dispatcher import AsyncTaskDispatcher
@@ -19,12 +20,14 @@ class FeishuGateway:
         request_verifier: FeishuRequestVerifier | None = None,
         message_client: FeishuMessageClient | None = None,
         dispatcher: AsyncTaskDispatcher | None = None,
+        card_gateway: FeishuCardActionGateway | None = None,
         debug_recorder: FeishuDebugRecorder | None = None,
     ) -> None:
         self._interaction_service = interaction_service
         self._request_verifier = request_verifier
         self._message_client = message_client
         self._dispatcher = dispatcher
+        self._card_gateway = card_gateway
         self._debug_recorder = debug_recorder
 
     def handle_event(
@@ -61,6 +64,43 @@ class FeishuGateway:
             target=target,
             payload=payload,
         )
+
+        if (
+            target["receive_id_type"] == "open_id"
+            and self._message_client is not None
+            and self._card_gateway is not None
+        ):
+            rendered = self._card_gateway.render_dm_project_list(actor_id=user_id)
+            self._record_outbound_attempt(
+                source="gateway_dm_card",
+                receive_id=target["receive_id"],
+                receive_id_type=target["receive_id_type"],
+                text="[card] PoCo Projects",
+                task_id=None,
+            )
+            try:
+                self._message_client.send_interactive(
+                    receive_id=target["receive_id"],
+                    receive_id_type=target["receive_id_type"],
+                    card=rendered["card"],
+                )
+            except Exception as exc:
+                self._record_error(
+                    stage="gateway_dm_card",
+                    message=str(exc),
+                    context={
+                        "receive_id": target["receive_id"],
+                        "receive_id_type": target["receive_id_type"],
+                    },
+                )
+                raise
+
+            return {
+                "ok": True,
+                "delivered": True,
+                "reply_preview": "[card] PoCo Projects",
+                "task_id": None,
+            }
 
         response = self._interaction_service.handle_text(
             user_id=user_id,

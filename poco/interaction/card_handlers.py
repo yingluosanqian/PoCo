@@ -135,8 +135,15 @@ class WorkspaceIntentHandler:
         )
 
 
-def build_dm_project_list_result(project_controller: ProjectController) -> IntentDispatchResult:
-    projects = project_controller.list_projects()
+def build_dm_project_list_result(
+    project_controller: ProjectController,
+    *,
+    actor_id: str | None = None,
+) -> IntentDispatchResult:
+    if actor_id:
+        projects = project_controller.list_projects_for_user(actor_id)
+    else:
+        projects = project_controller.list_projects()
     return IntentDispatchResult(
         status=DispatchStatus.OK,
         intent_key="project.list",

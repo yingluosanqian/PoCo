@@ -5,13 +5,18 @@ import json
 import unittest
 
 from poco.interaction.service import InteractionService
+from poco.interaction.card_dispatcher import CardActionDispatcher
+from poco.interaction.card_handlers import ProjectIntentHandler, WorkspaceIntentHandler
+from poco.platform.feishu.card_gateway import FeishuCardActionGateway
+from poco.platform.feishu.cards import FeishuCardRenderer
 from poco.platform.feishu.debug import FeishuDebugRecorder
 from poco.platform.feishu.gateway import FeishuGateway
 from poco.platform.feishu.verification import (
     FeishuRequestVerifier,
     FeishuVerificationError,
 )
-from poco.storage.memory import InMemoryTaskStore
+from poco.project.controller import ProjectController
+from poco.storage.memory import InMemoryProjectStore, InMemoryTaskStore
 from poco.task.controller import TaskController
 from poco.task.dispatcher import AsyncTaskDispatcher
 from poco.agent.runner import StubAgentRunner
@@ -20,6 +25,7 @@ from poco.agent.runner import StubAgentRunner
 class FakeMessageClient:
     def __init__(self) -> None:
         self.sent_messages: list[dict[str, str]] = []
+        self.sent_cards: list[dict[str, object]] = []
 
     def send_text(self, *, receive_id: str, receive_id_type: str, text: str) -> None:
         self.sent_messages.append(
@@ -27,6 +33,21 @@ class FakeMessageClient:
                 "receive_id": receive_id,
                 "receive_id_type": receive_id_type,
                 "text": text,
+            }
+        )
+
+    def send_interactive(
+        self,
+        *,
+        receive_id: str,
+        receive_id_type: str,
+        card: dict[str, object],
+    ) -> None:
+        self.sent_cards.append(
+            {
+                "receive_id": receive_id,
+                "receive_id_type": receive_id_type,
+                "card": card,
             }
         )
 
@@ -52,11 +73,26 @@ class FeishuGatewayTest(unittest.TestCase):
         self.message_client = FakeMessageClient()
         self.dispatcher = FakeDispatcher()
         self.debug_recorder = FeishuDebugRecorder()
+        self.project_controller = ProjectController(InMemoryProjectStore())
+        self.card_gateway = FeishuCardActionGateway(
+            dispatcher=CardActionDispatcher(
+                {
+                    "project.create": ProjectIntentHandler(self.project_controller),
+                    "project.open": ProjectIntentHandler(self.project_controller),
+                    "project.bind_group": ProjectIntentHandler(self.project_controller),
+                    "workspace.open": WorkspaceIntentHandler(self.project_controller),
+                    "workspace.refresh": WorkspaceIntentHandler(self.project_controller),
+                }
+            ),
+            renderer=FeishuCardRenderer(),
+            project_controller=self.project_controller,
+        )
         self.gateway = FeishuGateway(
             interaction,
             request_verifier=FeishuRequestVerifier(verification_token="verify-token"),
             message_client=self.message_client,
             dispatcher=self.dispatcher,
+            card_gateway=self.card_gateway,
             debug_recorder=self.debug_recorder,
         )
 
@@ -104,6 +140,7 @@ class FeishuGatewayTest(unittest.TestCase):
         self.assertTrue(response["ok"])
         self.assertTrue(response["delivered"])
         self.assertEqual(len(self.message_client.sent_messages), 1)
+        self.assertEqual(len(self.message_client.sent_cards), 0)
         self.assertEqual(len(self.dispatcher.actions), 0)
         sent = self.message_client.sent_messages[0]
         self.assertEqual(sent["receive_id_type"], "chat_id")
@@ -113,7 +150,12 @@ class FeishuGatewayTest(unittest.TestCase):
         self.assertEqual(len(snapshot["inbound_events"]), 1)
         self.assertEqual(snapshot["inbound_events"][0]["reply_receive_id_type"], "chat_id")
 
-    def test_p2p_message_prefers_open_id_over_chat_id(self) -> None:
+    def test_p2p_message_sends_dm_project_card(self) -> None:
+        self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+        )
         payload = {
             "token": "verify-token",
             "event": {
@@ -133,10 +175,16 @@ class FeishuGatewayTest(unittest.TestCase):
         )
 
         self.assertTrue(response["ok"])
-        self.assertEqual(len(self.message_client.sent_messages), 1)
-        sent = self.message_client.sent_messages[0]
+        self.assertEqual(len(self.message_client.sent_messages), 0)
+        self.assertEqual(len(self.message_client.sent_cards), 1)
+        sent = self.message_client.sent_cards[0]
         self.assertEqual(sent["receive_id_type"], "open_id")
         self.assertEqual(sent["receive_id"], "ou_demo_user")
+        card = sent["card"]
+        self.assertEqual(card["schema"], "2.0")
+        self.assertEqual(card["header"]["title"]["content"], "PoCo Projects")
+        snapshot = self.debug_recorder.snapshot()
+        self.assertEqual(snapshot["outbound_attempts"][0]["source"], "gateway_dm_card")
 
     def test_bot_sender_is_ignored(self) -> None:
         payload = {
@@ -163,6 +211,7 @@ class FeishuGatewayTest(unittest.TestCase):
         self.assertTrue(response["ignored"])
         self.assertEqual(response["reason"], "non_user_sender")
         self.assertEqual(len(self.message_client.sent_messages), 0)
+        self.assertEqual(len(self.message_client.sent_cards), 0)
 
     def test_debug_recorder_tracks_gateway_reply_failure(self) -> None:
         class RaisingMessageClient(FakeMessageClient):
@@ -186,7 +235,8 @@ class FeishuGatewayTest(unittest.TestCase):
             "event": {
                 "sender": {"sender_id": {"open_id": "ou_demo_user"}},
                 "message": {
-                    "chat_type": "p2p",
+                    "chat_type": "group",
+                    "chat_id": "oc_demo_chat",
                     "content": json.dumps({"text": "/help"}),
                 },
             },
@@ -209,6 +259,7 @@ class FeishuGatewayTest(unittest.TestCase):
             "event": {
                 "sender": {"sender_id": {"open_id": "ou_demo_user"}},
                 "message": {
+                    "chat_type": "group",
                     "chat_id": "oc_demo_chat",
                     "content": json.dumps({"text": "/run summarize the repository"}),
                 },

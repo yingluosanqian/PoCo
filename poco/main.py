@@ -70,13 +70,6 @@ def create_app() -> FastAPI:
         else NullTaskNotifier()
     )
     dispatcher = AsyncTaskDispatcher(controller, notifier=notifier)
-    gateway = FeishuGateway(
-        interaction,
-        request_verifier=request_verifier,
-        message_client=message_client,
-        dispatcher=dispatcher,
-        debug_recorder=feishu_debug,
-    )
     card_dispatcher = CardActionDispatcher(
         {
             "project.create": ProjectIntentHandler(project_controller),
@@ -92,6 +85,14 @@ def create_app() -> FastAPI:
         renderer=FeishuCardRenderer(),
         project_controller=project_controller,
         request_verifier=request_verifier,
+        debug_recorder=feishu_debug,
+    )
+    gateway = FeishuGateway(
+        interaction,
+        request_verifier=request_verifier,
+        message_client=message_client,
+        dispatcher=dispatcher,
+        card_gateway=card_gateway,
         debug_recorder=feishu_debug,
     )
     longconn_listener = FeishuLongconnListener(

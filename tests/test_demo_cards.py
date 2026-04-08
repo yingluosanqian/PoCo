@@ -17,6 +17,7 @@ class DemoCardApiTest(unittest.TestCase):
         payload = response.json()
         self.assertEqual(payload["mode"], "demo")
         self.assertEqual(payload["instruction"]["template_key"], "project_list")
+        self.assertEqual(payload["card"]["schema"], "2.0")
 
     def test_demo_card_action_creates_project(self) -> None:
         response = self.client.post(
@@ -43,7 +44,8 @@ class DemoCardApiTest(unittest.TestCase):
         payload = response.json()
         self.assertEqual(payload["mode"], "demo")
         self.assertEqual(payload["instruction"]["template_key"], "project_detail")
-        self.assertEqual(payload["card"]["data"]["project"]["name"], "PoCo")
+        self.assertEqual(payload["card"]["data"]["schema"], "2.0")
+        self.assertEqual(payload["card"]["data"]["header"]["title"]["content"], "PoCo")
 
 
 if __name__ == "__main__":

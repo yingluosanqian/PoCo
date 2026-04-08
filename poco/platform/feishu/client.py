@@ -66,14 +66,43 @@ class FeishuMessageClient:
         receive_id_type: str,
         text: str,
     ) -> FeishuSendResult:
+        return self._send_message(
+            receive_id=receive_id,
+            receive_id_type=receive_id_type,
+            msg_type="text",
+            content={"text": text},
+        )
+
+    def send_interactive(
+        self,
+        *,
+        receive_id: str,
+        receive_id_type: str,
+        card: dict[str, Any],
+    ) -> FeishuSendResult:
+        return self._send_message(
+            receive_id=receive_id,
+            receive_id_type=receive_id_type,
+            msg_type="interactive",
+            content=card,
+        )
+
+    def _send_message(
+        self,
+        *,
+        receive_id: str,
+        receive_id_type: str,
+        msg_type: str,
+        content: dict[str, Any],
+    ) -> FeishuSendResult:
         token = self._token_provider.get_token()
         query = urlencode({"receive_id_type": receive_id_type})
         response = _post_json(
             url=f"{self._base_url}/open-apis/im/v1/messages?{query}",
             payload={
                 "receive_id": receive_id,
-                "msg_type": "text",
-                "content": json.dumps({"text": text}, ensure_ascii=False),
+                "msg_type": msg_type,
+                "content": json.dumps(content, ensure_ascii=False),
             },
             headers={
                 "Authorization": f"Bearer {token}",

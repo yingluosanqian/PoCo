@@ -74,6 +74,7 @@
 - 已存在 Feishu 长连接消息接收模式，可在本地开发时绕开公网 webhook 入口
 - 已存在 card-first 的最小平台无关协议骨架和 dispatcher，可承接后续卡片交互实现
 - 已存在最小 DM card 链路，包括 project 内存模型、card handlers、Feishu card gateway、renderer 和 demo card 入口
+- 已存在真实 Feishu interactive card 发送能力，DM 消息当前可主动回发 project list card
 - 已有最小自动化验证，覆盖核心任务状态流、飞书 challenge 校验、签名校验、Codex runner、后台调度器和本地 demo 接口
 - 仓库当前结构仍较简单，尚无重型历史实现包袱
 
@@ -86,8 +87,9 @@
 - 当前状态存储仅为内存实现，不适合跨进程或重启后的任务追踪
 - 当前系统仅维护 task state，尚未维护 session continuity 或产品级 handoff context
 - 当前系统尚未实现 project lifecycle、DM 管理入口与 group binding，正式交互模型仍停留在记录层
-- 当前正式实现仍以文本命令解析为主，卡片 2.0 仅具备最小 DM scaffold，尚未形成完整正式交互面
-- 当前虽已有 card callback HTTP 入口和最小 renderer，但尚未接入完整 group workspace、session/task handlers 和真实飞书端到端验证
+- 当前 DM 已能主动下发首页卡片，但 project 创建、建群、工作区进入等真实卡片交互仍未形成完整正式工作流
+- 当前正式实现仍是 DM 首屏卡片 + group 文本 fallback 的混合态，尚未形成完整 card-first 正式交互面
+- 当前虽已有 card callback HTTP 入口和真实 interactive renderer，但尚未接入完整 group workspace、session/task handlers 和真实飞书端到端验证
 - 当前权限模型、审计机制和敏感操作保护仍停留在约束层，没有落成实现
 - 当前用户工作流已可接近真实消息交互，但尚未形成真实可用的手机端生产链路
 - 当前仍缺少对真实飞书端到端流量的持续观测与错误可视化

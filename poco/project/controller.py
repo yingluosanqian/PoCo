@@ -48,6 +48,22 @@ class ProjectController:
         with self._lock:
             return self._store.list_all()
 
+    def list_projects_for_user(
+        self,
+        user_id: str,
+        *,
+        include_archived: bool = False,
+    ) -> list[Project]:
+        with self._lock:
+            projects = [
+                project
+                for project in self._store.list_all()
+                if project.created_by == user_id
+            ]
+            if include_archived:
+                return projects
+            return [project for project in projects if not project.archived]
+
     def bind_group(self, project_id: str, group_chat_id: str) -> Project:
         with self._lock:
             project = self.get_project(project_id)
@@ -61,4 +77,3 @@ class ProjectController:
             project.archive()
             self._store.save(project)
             return project
-

@@ -8,7 +8,7 @@ PoCo is a Python-first MVP scaffold for controlling server-side AI agent workflo
 - Feishu-first event gateway
 - Optional Feishu long-connection intake for local development
 - Feishu callback verification token support
-- Feishu tenant access token retrieval and text message send support
+- Feishu tenant access token retrieval and text / interactive card send support
 - Card-first interaction scaffolding with platform-neutral dispatcher
 - Codex-first agent execution path
 - Asynchronous background task dispatch
@@ -125,7 +125,7 @@ Notes:
 - If `POCO_FEISHU_ENCRYPT_KEY` is configured, the service expects Feishu signature headers and validates them.
 - Encrypted callback payload bodies are not supported yet, so keep event encryption disabled for the current MVP.
 - `POCO_FEISHU_DELIVERY_MODE=longconn` removes the need for public inbound webhook access during local development.
-- The current long-connection implementation is intentionally scoped to `im.message.receive_v1`, because PoCo currently only needs bot message intake. Feishu card callbacks are not implemented in PoCo yet.
+- The current long-connection implementation is intentionally scoped to `im.message.receive_v1`, because PoCo currently only needs bot message intake. Feishu card callbacks still use the HTTP callback endpoint.
 - Callback token/signature settings apply to webhook delivery. Feishu long-connection inbound events are authenticated by the long-connection session itself.
 
 Install dependencies, then start the service:
@@ -190,6 +190,17 @@ This currently proves the first card chain:
 - `IntentDispatchResult` -> render instruction
 - renderer -> card response payload
 
+Real Feishu DM bootstrap is now also wired:
+
+- when PoCo receives a DM message event from Feishu
+- it replies with a real Feishu card JSON 2.0 project-list card
+- current group chats still keep the text-command fallback path
+
+That means the current interaction split is:
+
+- `DM`: control-plane card bootstrap
+- `Group`: text-command task fallback until workspace cards are implemented
+
 ### Feishu Debug Snapshot
 
 When Feishu messages do not get any reply, inspect:
@@ -202,7 +213,7 @@ It shows:
 
 - recent inbound Feishu callbacks
 - the reply target PoCo selected for each callback
-- recent outbound send attempts
+- recent outbound send attempts, including DM card sends
 - recent Feishu send errors
 - current long-connection listener status
 
@@ -226,6 +237,8 @@ POST /platform/feishu/card-actions
 
 Current interaction model:
 
+- DM messages currently bootstrap a project-list card instead of returning text help
+- Group messages still return the current text fallback and can dispatch tasks
 - The webhook request returns quickly after acknowledging the command
 - Task execution happens in a background dispatcher
 - When a task waits for confirmation, completes, fails, or is cancelled, PoCo pushes a follow-up message to the stored Feishu reply target
@@ -233,9 +246,18 @@ Current interaction model:
 If `POCO_FEISHU_DELIVERY_MODE=longconn` is enabled:
 
 - inbound message events arrive over Feishu long connection instead of the webhook route
-- the same `InteractionService -> TaskController -> Dispatcher -> Notifier` chain is reused
+- DM events can now trigger proactive project-list card sends
+- group events still reuse the same `InteractionService -> TaskController -> Dispatcher -> Notifier` chain
 - outbound replies still use the Feishu HTTP API
 - card callbacks still use the HTTP callback endpoint in the current scaffold
+
+To verify the DM card bootstrap on a real Feishu bot:
+
+1. Set `POCO_FEISHU_DELIVERY_MODE=longconn`
+2. Start `uvicorn poco.main:app --reload`
+3. Confirm `/health` shows `feishu_listener_ready=true`
+4. Send any DM message like `hi` to the bot
+5. The bot should reply with a `PoCo Projects` card
 
 Example webhook payload:
 

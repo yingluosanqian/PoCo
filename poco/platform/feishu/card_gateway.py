@@ -28,8 +28,11 @@ class FeishuCardActionGateway:
         self._request_verifier = request_verifier
         self._debug_recorder = debug_recorder
 
-    def render_dm_project_list(self) -> dict[str, Any]:
-        result = build_dm_project_list_result(self._project_controller)
+    def render_dm_project_list(self, *, actor_id: str | None = None) -> dict[str, Any]:
+        result = build_dm_project_list_result(
+            self._project_controller,
+            actor_id=actor_id,
+        )
         instruction = build_render_instruction(result, surface=Surface.DM)
         return {
             "instruction": _instruction_to_dict(instruction),
