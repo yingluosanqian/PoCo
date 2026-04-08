@@ -10,12 +10,14 @@ from poco.interaction.card_models import (
     ResourceRefs,
     ViewModel,
 )
+from poco.project.bootstrap import ProjectBootstrapError, ProjectBootstrapper
 from poco.project.controller import ProjectController, ProjectNotFoundError
 
 
 @dataclass(slots=True)
 class ProjectIntentHandler:
     project_controller: ProjectController
+    bootstrapper: ProjectBootstrapper | None = None
 
     def handle(self, intent: ActionIntent) -> IntentDispatchResult:
         if intent.intent_key == "project.list":
@@ -58,13 +60,31 @@ class ProjectIntentHandler:
             repo=_optional_string(intent.payload.get("repo")),
             workdir=_optional_string(intent.payload.get("workdir")),
         )
+        if self.bootstrapper is not None:
+            try:
+                bootstrap = self.bootstrapper.bootstrap_project(
+                    project=project,
+                    actor_id=intent.actor_id,
+                )
+            except ProjectBootstrapError as exc:
+                self.project_controller.delete_project(project.id)
+                return _rejected(intent, f"Failed to create project group: {exc}")
+            if bootstrap.group_chat_id is not None:
+                project = self.project_controller.bind_group(
+                    project.id,
+                    bootstrap.group_chat_id,
+                )
+
+        message = f"Project created: {project.name}"
+        if project.group_chat_id:
+            message = f"Project created with group: {project.name}"
         return IntentDispatchResult(
             status=DispatchStatus.OK,
             intent_key=intent.intent_key,
             resource_refs=ResourceRefs(project_id=project.id),
             view_model=_project_detail_view_model(project),
             refresh_mode=RefreshMode.REPLACE_CURRENT,
-            message=f"Project created: {project.name}",
+            message=message,
         )
 
     def _open_project(self, intent: ActionIntent) -> IntentDispatchResult:

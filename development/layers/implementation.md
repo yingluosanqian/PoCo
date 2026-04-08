@@ -76,6 +76,7 @@
 - 最小 project 领域模型、DM card handlers、Feishu card gateway、card renderer 和本地 demo card 入口
 - DM 收到消息后主动回发 project list card 的最小 bootstrap 链路
 - DM 首页卡片上的首批真实 callback 动作，包括 `project.create`、`project.open`、`workspace.open` 和 `workspace.refresh`
+- `project.create` 在真实飞书模式下会同时调用建群 API，并把返回的 `chat_id` 绑定回 project；失败时会回滚 project 创建
 
 ### 当前明确未实现
 

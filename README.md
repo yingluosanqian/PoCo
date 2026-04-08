@@ -194,13 +194,20 @@ Real Feishu DM bootstrap is now also wired:
 
 - when PoCo receives a DM message event from Feishu
 - it replies with a real Feishu card JSON 2.0 project-list card
-- the project-list card now contains real callback buttons such as `Create Project`
+- the project-list card now contains real callback buttons such as `Create Project + Group`
+- `Create Project + Group` now creates the project and, in real Feishu mode, bootstraps a dedicated group chat in the same action
 - current group chats still keep the text-command fallback path
 
 That means the current interaction split is:
 
 - `DM`: control-plane card bootstrap and first project-management actions
 - `Group`: text-command task fallback until workspace cards are implemented
+
+Notes about project bootstrap:
+
+- in real Feishu mode, `project.create` now calls the Feishu group-create API and binds the returned `chat_id` to the new project
+- if group bootstrap fails, PoCo rolls the project creation back instead of leaving a half-created project behind
+- in local/demo mode without Feishu credentials, `project.create` still works, but no group is created
 
 ### Feishu Debug Snapshot
 
@@ -239,7 +246,7 @@ POST /platform/feishu/card-actions
 Current interaction model:
 
 - DM messages currently bootstrap a project-list card instead of returning text help
-- DM project-list cards now support callback actions including `Create Project`
+- DM project-list cards now support callback actions including `Create Project + Group`
 - Group messages still return the current text fallback and can dispatch tasks
 - The webhook request returns quickly after acknowledging the command
 - Task execution happens in a background dispatcher
@@ -260,7 +267,7 @@ To verify the DM card bootstrap on a real Feishu bot:
 3. Confirm `/health` shows `feishu_listener_ready=true`
 4. Send any DM message like `hi` to the bot
 5. The bot should reply with a `PoCo Projects` card
-6. Click `Create Project` and the card should refresh into a project detail view
+6. Click `Create Project + Group` and the card should refresh into a project detail view
 
 Example webhook payload:
 

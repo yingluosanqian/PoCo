@@ -6,20 +6,46 @@ from poco.interaction.card_dispatcher import CardActionDispatcher
 from poco.interaction.card_handlers import ProjectIntentHandler, WorkspaceIntentHandler
 from poco.platform.feishu.card_gateway import FeishuCardActionGateway
 from poco.platform.feishu.cards import FeishuCardRenderer
+from poco.project.bootstrap import ProjectBootstrapError, ProjectBootstrapResult
 from poco.project.controller import ProjectController
 from poco.storage.memory import InMemoryProjectStore
+
+
+class FakeProjectBootstrapper:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, str]] = []
+
+    def bootstrap_project(self, *, project, actor_id: str) -> ProjectBootstrapResult:
+        self.calls.append(
+            {
+                "project_id": project.id,
+                "project_name": project.name,
+                "actor_id": actor_id,
+            }
+        )
+        return ProjectBootstrapResult(group_chat_id=f"oc_group_{project.id}")
+
+
+class FailingProjectBootstrapper:
+    def bootstrap_project(self, *, project, actor_id: str) -> ProjectBootstrapResult:
+        raise ProjectBootstrapError("simulated bootstrap failure")
 
 
 class FeishuCardGatewayTest(unittest.TestCase):
     def setUp(self) -> None:
         self.project_controller = ProjectController(InMemoryProjectStore())
+        self.bootstrapper = FakeProjectBootstrapper()
+        self.project_handler = ProjectIntentHandler(
+            self.project_controller,
+            bootstrapper=self.bootstrapper,
+        )
         self.gateway = FeishuCardActionGateway(
             dispatcher=CardActionDispatcher(
                 {
-                    "project.list": ProjectIntentHandler(self.project_controller),
-                    "project.create": ProjectIntentHandler(self.project_controller),
-                    "project.open": ProjectIntentHandler(self.project_controller),
-                    "project.bind_group": ProjectIntentHandler(self.project_controller),
+                    "project.list": self.project_handler,
+                    "project.create": self.project_handler,
+                    "project.open": self.project_handler,
+                    "project.bind_group": self.project_handler,
                     "workspace.open": WorkspaceIntentHandler(self.project_controller),
                     "workspace.refresh": WorkspaceIntentHandler(self.project_controller),
                 }
@@ -36,6 +62,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
         self.assertEqual(response["card"]["header"]["title"]["content"], "PoCo Projects")
         create_button = response["card"]["body"]["elements"][1]
         self.assertEqual(create_button["tag"], "button")
+        self.assertEqual(create_button["text"]["content"], "Create Project + Group")
         self.assertEqual(create_button["behaviors"][0]["type"], "callback")
         self.assertEqual(
             create_button["behaviors"][0]["value"]["intent_key"],
@@ -68,6 +95,45 @@ class FeishuCardGatewayTest(unittest.TestCase):
         self.assertEqual(response["card"]["data"]["header"]["title"]["content"], "PoCo")
         projects = self.project_controller.list_projects()
         self.assertEqual(len(projects), 1)
+        self.assertEqual(projects[0].group_chat_id, f"oc_group_{projects[0].id}")
+        self.assertEqual(len(self.bootstrapper.calls), 1)
+
+    def test_project_create_rolls_back_when_group_bootstrap_fails(self) -> None:
+        failing_gateway = FeishuCardActionGateway(
+            dispatcher=CardActionDispatcher(
+                {
+                    "project.create": ProjectIntentHandler(
+                        self.project_controller,
+                        bootstrapper=FailingProjectBootstrapper(),
+                    ),
+                }
+            ),
+            renderer=FeishuCardRenderer(),
+            project_controller=self.project_controller,
+        )
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_card_fail_1"},
+                "action": {
+                    "value": {
+                        "intent_key": "project.create",
+                        "surface": "dm",
+                        "request_id": "req_project_create_fail_1",
+                    },
+                    "form_value": {
+                        "name": "PoCo",
+                    },
+                },
+            }
+        }
+
+        response = failing_gateway.handle_action(payload)
+
+        self.assertEqual(response["toast"]["type"], "warning")
+        self.assertEqual(response["instruction"]["refresh_mode"], "ack_only")
+        self.assertNotIn("card", response)
+        self.assertEqual(self.project_controller.list_projects(), [])
 
     def test_workspace_open_action_returns_workspace_card(self) -> None:
         project = self.project_controller.create_project(

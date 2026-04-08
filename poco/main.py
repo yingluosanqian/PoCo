@@ -20,7 +20,9 @@ from poco.platform.feishu.debug import FeishuDebugRecorder
 from poco.platform.feishu.cards import FeishuCardRenderer
 from poco.platform.feishu.gateway import FeishuGateway
 from poco.platform.feishu.longconn import FeishuLongconnListener
+from poco.platform.feishu.project_bootstrap import FeishuProjectBootstrapper
 from poco.platform.feishu.verification import FeishuRequestVerifier, FeishuVerificationError
+from poco.project.bootstrap import NullProjectBootstrapper
 from poco.project.controller import ProjectController
 from poco.storage.memory import InMemoryProjectStore, InMemoryTaskStore
 from poco.task.controller import TaskController, TaskNotFoundError
@@ -54,6 +56,7 @@ def create_app() -> FastAPI:
         encrypt_key=settings.feishu_encrypt_key,
     )
     message_client = None
+    project_bootstrapper = NullProjectBootstrapper()
     if settings.feishu_enabled:
         token_provider = FeishuAccessTokenProvider(
             base_url=settings.feishu_api_origin,
@@ -64,21 +67,30 @@ def create_app() -> FastAPI:
             base_url=settings.feishu_api_origin,
             token_provider=token_provider,
         )
+        project_bootstrapper = FeishuProjectBootstrapper(
+            message_client,
+            debug_recorder=feishu_debug,
+        )
     notifier = (
         FeishuTaskNotifier(message_client, debug_recorder=feishu_debug)
         if message_client is not None
         else NullTaskNotifier()
     )
     dispatcher = AsyncTaskDispatcher(controller, notifier=notifier)
+    project_intent_handler = ProjectIntentHandler(
+        project_controller,
+        bootstrapper=project_bootstrapper,
+    )
+    workspace_intent_handler = WorkspaceIntentHandler(project_controller)
     card_dispatcher = CardActionDispatcher(
         {
-            "project.list": ProjectIntentHandler(project_controller),
-            "project.create": ProjectIntentHandler(project_controller),
-            "project.open": ProjectIntentHandler(project_controller),
-            "project.bind_group": ProjectIntentHandler(project_controller),
-            "project.archive": ProjectIntentHandler(project_controller),
-            "workspace.open": WorkspaceIntentHandler(project_controller),
-            "workspace.refresh": WorkspaceIntentHandler(project_controller),
+            "project.list": project_intent_handler,
+            "project.create": project_intent_handler,
+            "project.open": project_intent_handler,
+            "project.bind_group": project_intent_handler,
+            "project.archive": project_intent_handler,
+            "workspace.open": workspace_intent_handler,
+            "workspace.refresh": workspace_intent_handler,
         }
     )
     card_gateway = FeishuCardActionGateway(

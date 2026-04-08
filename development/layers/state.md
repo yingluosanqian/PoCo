@@ -75,20 +75,20 @@
 - 已存在 card-first 的最小平台无关协议骨架和 dispatcher，可承接后续卡片交互实现
 - 已存在最小 DM card 链路，包括 project 内存模型、card handlers、Feishu card gateway、renderer 和 demo card 入口
 - 已存在真实 Feishu interactive card 发送能力，DM 消息当前可主动回发 project list card
-- 已存在 DM 首页卡片上的首批真实 callback 动作，当前至少可点击创建默认 project 并进入详情卡片
+- 已存在 DM 首页卡片上的首批真实 callback 动作，当前至少可点击创建 project，并在真实飞书模式下自动拉起对应工作群后进入详情卡片
 - 已有最小自动化验证，覆盖核心任务状态流、飞书 challenge 校验、签名校验、Codex runner、后台调度器和本地 demo 接口
 - 仓库当前结构仍较简单，尚无重型历史实现包袱
 
 ### 当前缺陷
 
 - 当前飞书接入已具备第一层真实协议支持，但仍未覆盖加密事件体和真实端到端联调
-- 当前长连接接入只覆盖消息事件接收，尚未扩展到卡片回调等更复杂交互
+- 当前长连接接入已覆盖消息事件和卡片回调，但真实飞书环境下的复杂卡片工作流仍未完成持续验证
 - 当前 agent 执行已优先接入 Codex CLI，但仍未具备长任务编排、后台队列和真实执行器事件回传
 - 当前后台调度仍基于进程内线程，不适合跨进程或重启后的任务追踪
 - 当前状态存储仅为内存实现，不适合跨进程或重启后的任务追踪
 - 当前系统仅维护 task state，尚未维护 session continuity 或产品级 handoff context
-- 当前系统尚未实现 project lifecycle、DM 管理入口与 group binding，正式交互模型仍停留在记录层
-- 当前 DM 已能主动下发首页卡片，并具备第一批真实 callback 动作，但 project 命名、建群、绑定群和完整工作区流程仍未形成完整正式工作流
+- 当前系统尚未实现完整 project lifecycle 与正式 workspace card 工作流，正式交互模型仍未闭环
+- 当前 DM 已能主动下发首页卡片，并具备第一批真实 callback 动作；但 project 命名、群内 workspace 卡片、session/task 正式交互仍未形成完整正式工作流
 - 当前正式实现仍是 DM 首屏卡片 + group 文本 fallback 的混合态，尚未形成完整 card-first 正式交互面
 - 当前虽已有 card callback HTTP 入口和真实 interactive renderer，但尚未接入完整 group workspace、session/task handlers 和真实飞书端到端验证
 - 当前权限模型、审计机制和敏感操作保护仍停留在约束层，没有落成实现

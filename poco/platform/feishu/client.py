@@ -7,6 +7,7 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+from uuid import uuid4
 
 
 class FeishuApiError(RuntimeError):
@@ -16,6 +17,13 @@ class FeishuApiError(RuntimeError):
 @dataclass(frozen=True, slots=True)
 class FeishuSendResult:
     message_id: str | None
+    raw_response: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class FeishuChatCreateResult:
+    chat_id: str
+    name: str | None
     raw_response: dict[str, Any]
 
 
@@ -85,6 +93,52 @@ class FeishuMessageClient:
             receive_id_type=receive_id_type,
             msg_type="interactive",
             content=card,
+        )
+
+    def create_group_chat(
+        self,
+        *,
+        name: str,
+        owner_open_id: str,
+    ) -> FeishuChatCreateResult:
+        token = self._token_provider.get_token()
+        query = urlencode(
+            {
+                "user_id_type": "open_id",
+                "set_bot_manager": "true",
+                "uuid": uuid4().hex,
+            }
+        )
+        response = _post_json(
+            url=f"{self._base_url}/open-apis/im/v1/chats?{query}",
+            payload={
+                "name": name,
+                "owner_id": owner_open_id,
+                "chat_mode": "group",
+                "chat_type": "private",
+                "group_message_type": "chat",
+                "membership_approval": "no_approval_required",
+            },
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json; charset=utf-8",
+            },
+        )
+
+        code = response.get("code", 0)
+        if code != 0:
+            raise FeishuApiError(
+                f"Failed to create Feishu group chat: code={code} msg={response.get('msg', 'unknown error')}"
+            )
+
+        data = response.get("data", {})
+        chat_id = data.get("chat_id")
+        if not isinstance(chat_id, str) or not chat_id.strip():
+            raise FeishuApiError("Feishu group create response did not include a chat_id.")
+        return FeishuChatCreateResult(
+            chat_id=chat_id,
+            name=data.get("name"),
+            raw_response=response,
         )
 
     def _send_message(

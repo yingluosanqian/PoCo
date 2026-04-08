@@ -24,6 +24,7 @@ class ProjectController:
         backend: str = "codex",
         repo: str | None = None,
         workdir: str | None = None,
+        group_chat_id: str | None = None,
     ) -> Project:
         with self._lock:
             project = Project(
@@ -33,6 +34,7 @@ class ProjectController:
                 backend=backend,
                 repo=repo,
                 workdir=workdir,
+                group_chat_id=group_chat_id,
             )
             self._store.save(project)
             return project
@@ -77,3 +79,10 @@ class ProjectController:
             project.archive()
             self._store.save(project)
             return project
+
+    def delete_project(self, project_id: str) -> None:
+        with self._lock:
+            project = self._store.get(project_id)
+            if project is None:
+                raise ProjectNotFoundError(f"Project not found: {project_id}")
+            self._store.delete(project_id)

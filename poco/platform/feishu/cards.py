@@ -20,10 +20,10 @@ def _render_project_list(data: dict[str, Any]) -> dict[str, Any]:
     projects = data.get("projects", [])
     elements: list[dict[str, Any]] = [
         _markdown(
-            "这是你的 DM 控制台。现在可以直接在卡片里创建一个默认 project，或打开现有 project。"
+            "这是你的 DM 控制台。现在可以直接在卡片里创建 project，并顺手自动拉起对应工作群。"
         ),
         _button(
-            label="Create Project",
+            label="Create Project + Group",
             intent_value={
                 "intent_key": "project.create",
                 "surface": "dm",
@@ -71,7 +71,8 @@ def _render_project_list(data: dict[str, Any]) -> dict[str, Any]:
 
 def _render_project_detail(data: dict[str, Any]) -> dict[str, Any]:
     project = data["project"]
-    group_hint = project.get("group_chat_id") or "未绑定群"
+    group_chat_id = project.get("group_chat_id")
+    group_hint = f"已创建 (`{group_chat_id}`)" if group_chat_id else "未绑定群"
     repo_hint = project.get("repo") or "未设置"
     workdir_hint = project.get("workdir") or "未设置"
     return _card_shell(

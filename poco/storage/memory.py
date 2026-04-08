@@ -42,3 +42,7 @@ class InMemoryProjectStore:
     def list_all(self) -> list[Project]:
         with self._lock:
             return list(self._projects.values())
+
+    def delete(self, project_id: str) -> None:
+        with self._lock:
+            self._projects.pop(project_id, None)

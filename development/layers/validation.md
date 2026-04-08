@@ -76,11 +76,13 @@
 - card-first 的最小平台无关骨架与 DM card 链路是否已经成立
 - DM 消息事件是否已经能触发真实 interactive card 下发
 - DM 首页卡片上的真实 callback 动作是否已经成立
+- `project.create` 是否已经能在真实飞书模式下同步建群并完成失败回滚
 
 ### 当前轮已知未验证区域
 
 - 真实飞书客户端是否已稳定看到 DM 首屏卡片
 - 飞书卡片回调更新与完整 renderer 工作流
+- 真实飞书环境里的建群权限、群名称策略和群内 workspace bootstrap
 - 群工作区卡片与 project/session/task 完整 handlers
 - 飞书加密事件体
 - 真实网络条件下的飞书端到端联调
