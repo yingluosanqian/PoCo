@@ -107,7 +107,13 @@ def _payload_to_action_intent(payload: dict[str, Any]) -> ActionIntent:
         surface=surface,
         actor_id=str(operator.get("open_id") or operator.get("user_id") or "anonymous"),
         source_message_id=str(context.get("open_message_id") or ""),
-        request_id=str(value.get("request_id") or payload.get("header", {}).get("event_id") or context.get("open_message_id") or ""),
+        request_id=str(
+            value.get("request_id")
+            or payload.get("event_id")
+            or payload.get("header", {}).get("event_id")
+            or context.get("open_message_id")
+            or ""
+        ),
         project_id=_optional_string(value.get("project_id")),
         session_id=_optional_string(value.get("session_id")),
         task_id=_optional_string(value.get("task_id")),

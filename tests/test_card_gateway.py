@@ -16,6 +16,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
         self.gateway = FeishuCardActionGateway(
             dispatcher=CardActionDispatcher(
                 {
+                    "project.list": ProjectIntentHandler(self.project_controller),
                     "project.create": ProjectIntentHandler(self.project_controller),
                     "project.open": ProjectIntentHandler(self.project_controller),
                     "project.bind_group": ProjectIntentHandler(self.project_controller),
@@ -33,6 +34,13 @@ class FeishuCardGatewayTest(unittest.TestCase):
         self.assertEqual(response["instruction"]["template_key"], "project_list")
         self.assertEqual(response["card"]["schema"], "2.0")
         self.assertEqual(response["card"]["header"]["title"]["content"], "PoCo Projects")
+        create_button = response["card"]["body"]["elements"][1]
+        self.assertEqual(create_button["tag"], "button")
+        self.assertEqual(create_button["behaviors"][0]["type"], "callback")
+        self.assertEqual(
+            create_button["behaviors"][0]["value"]["intent_key"],
+            "project.create",
+        )
 
     def test_project_create_action_returns_project_detail_card(self) -> None:
         payload = {
@@ -90,6 +98,52 @@ class FeishuCardGatewayTest(unittest.TestCase):
             response["card"]["data"]["header"]["title"]["content"],
             f"Workspace: {project.name}",
         )
+
+    def test_project_list_action_returns_project_list_card(self) -> None:
+        self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+        )
+        payload = {
+            "event_id": "evt_project_list_1",
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_card_3"},
+                "action": {
+                    "value": {
+                        "intent_key": "project.list",
+                        "surface": "dm",
+                    },
+                },
+            },
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        self.assertEqual(response["instruction"]["template_key"], "project_list")
+        self.assertEqual(response["card"]["data"]["header"]["title"]["content"], "PoCo Projects")
+
+    def test_write_action_uses_top_level_event_id_for_idempotency(self) -> None:
+        payload = {
+            "event_id": "evt_project_create_idempotent_1",
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_card_4"},
+                "action": {
+                    "value": {
+                        "intent_key": "project.create",
+                        "surface": "dm",
+                    },
+                },
+            },
+        }
+
+        self.gateway.handle_action(payload)
+        self.gateway.handle_action(payload)
+
+        projects = self.project_controller.list_projects()
+        self.assertEqual(len(projects), 1)
 
 
 if __name__ == "__main__":

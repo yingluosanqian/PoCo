@@ -18,6 +18,8 @@ class ProjectIntentHandler:
     project_controller: ProjectController
 
     def handle(self, intent: ActionIntent) -> IntentDispatchResult:
+        if intent.intent_key == "project.list":
+            return self._list_projects(intent)
         if intent.intent_key == "project.create":
             return self._create_project(intent)
         if intent.intent_key == "project.open":
@@ -33,6 +35,17 @@ class ProjectIntentHandler:
             view_model=None,
             refresh_mode=RefreshMode.ACK_ONLY,
             message=f"Unsupported project intent: {intent.intent_key}",
+        )
+
+    def _list_projects(self, intent: ActionIntent) -> IntentDispatchResult:
+        projects = self.project_controller.list_projects_for_user(intent.actor_id)
+        return IntentDispatchResult(
+            status=DispatchStatus.OK,
+            intent_key=intent.intent_key,
+            resource_refs=ResourceRefs(),
+            view_model=_project_list_view_model(projects),
+            refresh_mode=RefreshMode.REPLACE_CURRENT,
+            message="Projects loaded.",
         )
 
     def _create_project(self, intent: ActionIntent) -> IntentDispatchResult:

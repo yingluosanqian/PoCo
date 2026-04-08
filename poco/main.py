@@ -72,6 +72,7 @@ def create_app() -> FastAPI:
     dispatcher = AsyncTaskDispatcher(controller, notifier=notifier)
     card_dispatcher = CardActionDispatcher(
         {
+            "project.list": ProjectIntentHandler(project_controller),
             "project.create": ProjectIntentHandler(project_controller),
             "project.open": ProjectIntentHandler(project_controller),
             "project.bind_group": ProjectIntentHandler(project_controller),

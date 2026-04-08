@@ -75,6 +75,7 @@
 - 本地 demo 联调入口是否足以支撑脱离飞书的反复验证
 - card-first 的最小平台无关骨架与 DM card 链路是否已经成立
 - DM 消息事件是否已经能触发真实 interactive card 下发
+- DM 首页卡片上的真实 callback 动作是否已经成立
 
 ### 当前轮已知未验证区域
 

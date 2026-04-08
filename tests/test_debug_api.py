@@ -36,6 +36,25 @@ class DebugApiTest(unittest.TestCase):
         self.assertGreaterEqual(len(snapshot["inbound_events"]), 1)
         self.assertEqual(snapshot["inbound_events"][0]["user_id"], "ou_demo_user")
 
+    def test_card_action_event_appears_in_debug_snapshot(self) -> None:
+        payload = {
+            "event_id": "evt_demo_card_debug_1",
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_demo_card_debug"},
+                "action": {
+                    "value": {
+                        "intent_key": "project.create",
+                        "surface": "dm",
+                    },
+                },
+            },
+        }
+        self.client.post("/platform/feishu/card-actions", json=payload)
+        snapshot = self.client.get("/debug/feishu").json()
+        self.assertGreaterEqual(len(snapshot["inbound_events"]), 1)
+        self.assertEqual(snapshot["inbound_events"][0]["text"], "project.create")
+
 
 if __name__ == "__main__":
     unittest.main()

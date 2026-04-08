@@ -20,30 +20,46 @@ def _render_project_list(data: dict[str, Any]) -> dict[str, Any]:
     projects = data.get("projects", [])
     elements: list[dict[str, Any]] = [
         _markdown(
-            "这是你的 DM 控制台。当前先打通首页卡片下发，后续再把创建项目、建群和工作区动作接成完整交互。"
-        )
+            "这是你的 DM 控制台。现在可以直接在卡片里创建一个默认 project，或打开现有 project。"
+        ),
+        _button(
+            label="Create Project",
+            intent_value={
+                "intent_key": "project.create",
+                "surface": "dm",
+            },
+            style="primary",
+            name="create_project_button",
+        ),
     ]
 
     if not projects:
-        elements.append(
-            _markdown(
-                "**还没有 project**\n\n现在直接给这个 bot 发任意消息，就会刷新这张首页卡片。"
-            )
-        )
+        elements.append(_markdown("**还没有 project**"))
     else:
         for project in projects:
             group_hint = project.get("group_chat_id") or "未绑定群"
-            elements.append(
-                _markdown(
-                    "\n".join(
-                        [
-                            f"**{project['name']}**",
-                            f"- backend: `{project['backend']}`",
-                            f"- group: `{group_hint}`",
-                            f"- status: `{'archived' if project.get('archived') else 'active'}`",
-                        ]
-                    )
-                )
+            elements.extend(
+                [
+                    _markdown(
+                        "\n".join(
+                            [
+                                f"**{project['name']}**",
+                                f"- backend: `{project['backend']}`",
+                                f"- group: `{group_hint}`",
+                                f"- status: `{'archived' if project.get('archived') else 'active'}`",
+                            ]
+                        )
+                    ),
+                    _button(
+                        label=f"Open {project['name']}",
+                        intent_value={
+                            "intent_key": "project.open",
+                            "surface": "dm",
+                            "project_id": project["id"],
+                        },
+                        name=f"open_project_{project['id']}",
+                    ),
+                ]
             )
 
     return _card_shell(
@@ -72,7 +88,24 @@ def _render_project_detail(data: dict[str, Any]) -> dict[str, Any]:
                     ]
                 )
             ),
-            _markdown("项目管理动作已经进入 card-first 结构，但真实按钮回调链还会继续补全。"),
+            _button(
+                label="Open Workspace",
+                intent_value={
+                    "intent_key": "workspace.open",
+                    "surface": "dm",
+                    "project_id": project["id"],
+                },
+                style="primary",
+                name=f"open_workspace_{project['id']}",
+            ),
+            _button(
+                label="Back To Projects",
+                intent_value={
+                    "intent_key": "project.list",
+                    "surface": "dm",
+                },
+                name="back_to_projects_button",
+            ),
         ],
     )
 
@@ -91,6 +124,24 @@ def _render_workspace_overview(data: dict[str, Any]) -> dict[str, Any]:
             _markdown(f"**latest task status**: `{latest_status}`"),
             _markdown(f"**pending approvals**: `{pending_approvals}`"),
             _markdown(f"**latest result**\n{latest_result}"),
+            _button(
+                label="Refresh",
+                intent_value={
+                    "intent_key": "workspace.refresh",
+                    "surface": "dm",
+                    "project_id": project["id"],
+                },
+                name=f"refresh_workspace_{project['id']}",
+            ),
+            _button(
+                label="Back To Project",
+                intent_value={
+                    "intent_key": "project.open",
+                    "surface": "dm",
+                    "project_id": project["id"],
+                },
+                name=f"back_to_project_{project['id']}",
+            ),
         ],
     )
 
@@ -141,5 +192,32 @@ def _markdown(content: str) -> dict[str, Any]:
         "content": content,
         "text_align": "left",
         "text_size": "normal_v2",
+        "margin": "0px 0px 12px 0px",
+    }
+
+
+def _button(
+    *,
+    label: str,
+    intent_value: dict[str, str],
+    name: str,
+    style: str = "default",
+) -> dict[str, Any]:
+    return {
+        "tag": "button",
+        "text": {
+            "tag": "plain_text",
+            "content": label,
+        },
+        "type": style,
+        "width": "default",
+        "size": "medium",
+        "name": name,
+        "behaviors": [
+            {
+                "type": "callback",
+                "value": intent_value,
+            }
+        ],
         "margin": "0px 0px 12px 0px",
     }

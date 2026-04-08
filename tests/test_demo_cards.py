@@ -18,6 +18,10 @@ class DemoCardApiTest(unittest.TestCase):
         self.assertEqual(payload["mode"], "demo")
         self.assertEqual(payload["instruction"]["template_key"], "project_list")
         self.assertEqual(payload["card"]["schema"], "2.0")
+        self.assertEqual(
+            payload["card"]["body"]["elements"][1]["behaviors"][0]["value"]["intent_key"],
+            "project.create",
+        )
 
     def test_demo_card_action_creates_project(self) -> None:
         response = self.client.post(

@@ -75,6 +75,7 @@
 - card-first 的最小平台无关协议骨架，包括 `ActionIntent`、`IntentDispatchResult`、`PlatformRenderInstruction`、`CardActionDispatcher` 和最小幂等缓存
 - 最小 project 领域模型、DM card handlers、Feishu card gateway、card renderer 和本地 demo card 入口
 - DM 收到消息后主动回发 project list card 的最小 bootstrap 链路
+- DM 首页卡片上的首批真实 callback 动作，包括 `project.create`、`project.open`、`workspace.open` 和 `workspace.refresh`
 
 ### 当前明确未实现
 
