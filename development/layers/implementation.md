@@ -77,6 +77,7 @@
 - DM 收到消息后主动回发 project list card 的最小 bootstrap 链路
 - DM 首页卡片上的首批真实 callback 动作，包括 `project.create`、`project.open`、`workspace.open` 和 `workspace.refresh`
 - `project.create` 在真实飞书模式下会同时调用建群 API，并把返回的 `chat_id` 绑定回 project；失败时会回滚 project 创建
+- 建群绑定成功后，会 best-effort 向新群发送第一张 workspace overview card
 
 ### 当前明确未实现
 

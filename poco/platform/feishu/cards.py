@@ -10,9 +10,15 @@ class FeishuCardRenderer:
         if instruction.template_key == "project_list":
             return _render_project_list(instruction.template_data)
         if instruction.template_key == "project_detail":
-            return _render_project_detail(instruction.template_data)
+            return _render_project_detail(
+                instruction.template_data,
+                surface=instruction.surface.value,
+            )
         if instruction.template_key == "workspace_overview":
-            return _render_workspace_overview(instruction.template_data)
+            return _render_workspace_overview(
+                instruction.template_data,
+                surface=instruction.surface.value,
+            )
         return _render_fallback(instruction.template_key, instruction.template_data)
 
 
@@ -69,7 +75,11 @@ def _render_project_list(data: dict[str, Any]) -> dict[str, Any]:
     )
 
 
-def _render_project_detail(data: dict[str, Any]) -> dict[str, Any]:
+def _render_project_detail(
+    data: dict[str, Any],
+    *,
+    surface: str,
+) -> dict[str, Any]:
     project = data["project"]
     group_chat_id = project.get("group_chat_id")
     group_hint = f"已创建 (`{group_chat_id}`)" if group_chat_id else "未绑定群"
@@ -93,7 +103,7 @@ def _render_project_detail(data: dict[str, Any]) -> dict[str, Any]:
                 label="Open Workspace",
                 intent_value={
                     "intent_key": "workspace.open",
-                    "surface": "dm",
+                    "surface": surface,
                     "project_id": project["id"],
                 },
                 style="primary",
@@ -103,7 +113,7 @@ def _render_project_detail(data: dict[str, Any]) -> dict[str, Any]:
                 label="Back To Projects",
                 intent_value={
                     "intent_key": "project.list",
-                    "surface": "dm",
+                    "surface": surface,
                 },
                 name="back_to_projects_button",
             ),
@@ -111,7 +121,11 @@ def _render_project_detail(data: dict[str, Any]) -> dict[str, Any]:
     )
 
 
-def _render_workspace_overview(data: dict[str, Any]) -> dict[str, Any]:
+def _render_workspace_overview(
+    data: dict[str, Any],
+    *,
+    surface: str,
+) -> dict[str, Any]:
     project = data["project"]
     latest_status = data.get("latest_task_status") or "none"
     latest_result = data.get("latest_result_summary") or "No result yet."
@@ -129,7 +143,7 @@ def _render_workspace_overview(data: dict[str, Any]) -> dict[str, Any]:
                 label="Refresh",
                 intent_value={
                     "intent_key": "workspace.refresh",
-                    "surface": "dm",
+                    "surface": surface,
                     "project_id": project["id"],
                 },
                 name=f"refresh_workspace_{project['id']}",
@@ -138,7 +152,7 @@ def _render_workspace_overview(data: dict[str, Any]) -> dict[str, Any]:
                 label="Back To Project",
                 intent_value={
                     "intent_key": "project.open",
-                    "surface": "dm",
+                    "surface": surface,
                     "project_id": project["id"],
                 },
                 name=f"back_to_project_{project['id']}",

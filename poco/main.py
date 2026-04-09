@@ -69,6 +69,7 @@ def create_app() -> FastAPI:
         )
         project_bootstrapper = FeishuProjectBootstrapper(
             message_client,
+            renderer=FeishuCardRenderer(),
             debug_recorder=feishu_debug,
         )
     notifier = (

@@ -196,16 +196,18 @@ Real Feishu DM bootstrap is now also wired:
 - it replies with a real Feishu card JSON 2.0 project-list card
 - the project-list card now contains real callback buttons such as `Create Project + Group`
 - `Create Project + Group` now creates the project and, in real Feishu mode, bootstraps a dedicated group chat in the same action
+- after the group is created, PoCo also posts the first workspace overview card into that group
 - current group chats still keep the text-command fallback path
 
 That means the current interaction split is:
 
 - `DM`: control-plane card bootstrap and first project-management actions
-- `Group`: text-command task fallback until workspace cards are implemented
+- `Group`: first workspace overview card plus text-command task fallback
 
 Notes about project bootstrap:
 
 - in real Feishu mode, `project.create` now calls the Feishu group-create API and binds the returned `chat_id` to the new project
+- after binding the group, PoCo best-effort posts the first workspace overview card into the new group
 - if group bootstrap fails, PoCo rolls the project creation back instead of leaving a half-created project behind
 - in local/demo mode without Feishu credentials, `project.create` still works, but no group is created
 
@@ -247,6 +249,7 @@ Current interaction model:
 
 - DM messages currently bootstrap a project-list card instead of returning text help
 - DM project-list cards now support callback actions including `Create Project + Group`
+- newly created project groups now receive an initial workspace overview card
 - Group messages still return the current text fallback and can dispatch tasks
 - The webhook request returns quickly after acknowledging the command
 - Task execution happens in a background dispatcher

@@ -14,6 +14,7 @@ from poco.storage.memory import InMemoryProjectStore
 class FakeProjectBootstrapper:
     def __init__(self) -> None:
         self.calls: list[dict[str, str]] = []
+        self.workspace_notifications: list[dict[str, str]] = []
 
     def bootstrap_project(self, *, project, actor_id: str) -> ProjectBootstrapResult:
         self.calls.append(
@@ -25,10 +26,28 @@ class FakeProjectBootstrapper:
         )
         return ProjectBootstrapResult(group_chat_id=f"oc_group_{project.id}")
 
+    def notify_project_workspace(self, *, project, actor_id: str) -> None:
+        self.workspace_notifications.append(
+            {
+                "project_id": project.id,
+                "project_name": project.name,
+                "group_chat_id": project.group_chat_id or "",
+                "actor_id": actor_id,
+            }
+        )
+
 
 class FailingProjectBootstrapper:
     def bootstrap_project(self, *, project, actor_id: str) -> ProjectBootstrapResult:
         raise ProjectBootstrapError("simulated bootstrap failure")
+
+    def notify_project_workspace(self, *, project, actor_id: str) -> None:
+        return None
+
+
+class NotifyFailingProjectBootstrapper(FakeProjectBootstrapper):
+    def notify_project_workspace(self, *, project, actor_id: str) -> None:
+        raise RuntimeError("simulated workspace notification failure")
 
 
 class FeishuCardGatewayTest(unittest.TestCase):
@@ -97,6 +116,11 @@ class FeishuCardGatewayTest(unittest.TestCase):
         self.assertEqual(len(projects), 1)
         self.assertEqual(projects[0].group_chat_id, f"oc_group_{projects[0].id}")
         self.assertEqual(len(self.bootstrapper.calls), 1)
+        self.assertEqual(len(self.bootstrapper.workspace_notifications), 1)
+        self.assertEqual(
+            self.bootstrapper.workspace_notifications[0]["group_chat_id"],
+            f"oc_group_{projects[0].id}",
+        )
 
     def test_project_create_rolls_back_when_group_bootstrap_fails(self) -> None:
         failing_gateway = FeishuCardActionGateway(
@@ -135,6 +159,42 @@ class FeishuCardGatewayTest(unittest.TestCase):
         self.assertNotIn("card", response)
         self.assertEqual(self.project_controller.list_projects(), [])
 
+    def test_project_create_keeps_project_when_workspace_notification_fails(self) -> None:
+        gateway = FeishuCardActionGateway(
+            dispatcher=CardActionDispatcher(
+                {
+                    "project.create": ProjectIntentHandler(
+                        self.project_controller,
+                        bootstrapper=NotifyFailingProjectBootstrapper(),
+                    ),
+                }
+            ),
+            renderer=FeishuCardRenderer(),
+            project_controller=self.project_controller,
+        )
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_card_notify_fail_1"},
+                "action": {
+                    "value": {
+                        "intent_key": "project.create",
+                        "surface": "dm",
+                        "request_id": "req_project_create_notify_fail_1",
+                    },
+                    "form_value": {
+                        "name": "PoCo",
+                    },
+                },
+            }
+        }
+
+        response = gateway.handle_action(payload)
+
+        self.assertEqual(response["toast"]["type"], "success")
+        self.assertEqual(len(self.project_controller.list_projects()), 1)
+        self.assertIsNotNone(self.project_controller.list_projects()[0].group_chat_id)
+
     def test_workspace_open_action_returns_workspace_card(self) -> None:
         project = self.project_controller.create_project(
             name="PoCo",
@@ -163,6 +223,11 @@ class FeishuCardGatewayTest(unittest.TestCase):
         self.assertEqual(
             response["card"]["data"]["header"]["title"]["content"],
             f"Workspace: {project.name}",
+        )
+        refresh_button = response["card"]["data"]["body"]["elements"][4]
+        self.assertEqual(
+            refresh_button["behaviors"][0]["value"]["surface"],
+            "group",
         )
 
     def test_project_list_action_returns_project_list_card(self) -> None:

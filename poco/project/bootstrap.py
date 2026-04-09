@@ -23,6 +23,13 @@ class ProjectBootstrapper(Protocol):
         actor_id: str,
     ) -> ProjectBootstrapResult: ...
 
+    def notify_project_workspace(
+        self,
+        *,
+        project: Project,
+        actor_id: str,
+    ) -> None: ...
+
 
 class NullProjectBootstrapper:
     def bootstrap_project(
@@ -32,3 +39,11 @@ class NullProjectBootstrapper:
         actor_id: str,
     ) -> ProjectBootstrapResult:
         return ProjectBootstrapResult()
+
+    def notify_project_workspace(
+        self,
+        *,
+        project: Project,
+        actor_id: str,
+    ) -> None:
+        return None

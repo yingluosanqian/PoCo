@@ -77,6 +77,7 @@
 - DM 消息事件是否已经能触发真实 interactive card 下发
 - DM 首页卡片上的真实 callback 动作是否已经成立
 - `project.create` 是否已经能在真实飞书模式下同步建群并完成失败回滚
+- 建群成功后是否已经能向新群投递第一张 workspace overview card
 
 ### 当前轮已知未验证区域
 

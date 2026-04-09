@@ -74,6 +74,13 @@ class ProjectIntentHandler:
                     project.id,
                     bootstrap.group_chat_id,
                 )
+                try:
+                    self.bootstrapper.notify_project_workspace(
+                        project=project,
+                        actor_id=intent.actor_id,
+                    )
+                except Exception:
+                    pass
 
         message = f"Project created: {project.name}"
         if project.group_chat_id:
@@ -149,23 +156,7 @@ class WorkspaceIntentHandler:
             project = self.project_controller.get_project(project_id)
         except ProjectNotFoundError as exc:
             return _rejected(intent, str(exc))
-        return IntentDispatchResult(
-            status=DispatchStatus.OK,
-            intent_key=intent.intent_key,
-            resource_refs=ResourceRefs(project_id=project.id),
-            view_model=ViewModel(
-                "workspace_overview",
-                {
-                    "project": project.to_dict(),
-                    "active_session_summary": "No active session yet.",
-                    "latest_task_status": None,
-                    "pending_approvals": 0,
-                    "latest_result_summary": None,
-                },
-            ),
-            refresh_mode=RefreshMode.REPLACE_CURRENT,
-            message=f"Workspace ready for {project.name}",
-        )
+        return build_workspace_overview_result(project)
 
 
 def build_dm_project_list_result(
@@ -184,6 +175,26 @@ def build_dm_project_list_result(
         view_model=_project_list_view_model(projects),
         refresh_mode=RefreshMode.REPLACE_CURRENT,
         message="Projects loaded.",
+    )
+
+
+def build_workspace_overview_result(project) -> IntentDispatchResult:
+    return IntentDispatchResult(
+        status=DispatchStatus.OK,
+        intent_key="workspace.open",
+        resource_refs=ResourceRefs(project_id=project.id),
+        view_model=ViewModel(
+            "workspace_overview",
+            {
+                "project": project.to_dict(),
+                "active_session_summary": "No active session yet.",
+                "latest_task_status": None,
+                "pending_approvals": 0,
+                "latest_result_summary": None,
+            },
+        ),
+        refresh_mode=RefreshMode.REPLACE_CURRENT,
+        message=f"Workspace ready for {project.name}",
     )
 
 
