@@ -88,3 +88,9 @@
 同时，需要补出 `DM -> project lifecycle -> group workspace -> session -> task` 的正式交互模型，再进入具体实现。
 
 在交互协议已经转向 card-first 后，下一轮实现前设计应先围绕 DM 管理卡片和群工作区卡片的最小信息架构展开。
+
+在群工作区首卡已经落地后，下一轮设计与实现应优先围绕执行上下文配置展开：
+
+- 在 DM 中定义 project 级 `agent` 选择与默认 workdir 配置入口
+- 在群中定义 session 级 `working dir` 切换入口
+- 明确 `task` 只消费当前上下文，不再承担重配置职责

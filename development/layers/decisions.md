@@ -107,3 +107,21 @@ project 之下继续承载 session 和 task。
 PoCo 的正式交互主路径转向飞书卡片 2.0。
 
 文本命令不再作为正式用户协议，只在过渡期保留为开发、联调或故障回退路径。
+
+### 当前执行上下文配置决策
+
+PoCo 对 `agent` 和 `working dir` 采用分层 ownership：
+
+- `agent` 归 `project`
+- `working dir` 归 `session`
+- `task` 只消费当前上下文
+
+在交互面上：
+
+- `DM` 负责 project 级慢变量配置
+- `Group` 负责 session 级快变量调整
+
+也就是：
+
+- `agent = project identity`
+- `working dir = session stance`
