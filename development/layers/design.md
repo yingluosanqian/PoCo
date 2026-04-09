@@ -68,6 +68,7 @@
 - `project -> session -> task` 的执行上下文分层，其中 `agent` 归 project，`working dir` 归 session
 - card-first interaction model，正式交互由卡片驱动而不是文本命令驱动
 - 分层卡片信息架构：DM 管理卡片与群工作区卡片
+- 面向执行上下文配置的最小卡片 IA：`DM Project Config Card` 与 `Group Workdir Switcher Card`
 - 统一 card action intent 协议与固定 refresh mode
 - 统一 ActionIntent payload、资源级 handler ownership 与写操作幂等约束
 - `IntentDispatchResult -> PlatformRenderInstruction -> Renderer` 的平台解耦链路
@@ -95,3 +96,5 @@
 在正式交互面上，优先采用“少量分层卡片”而不是万能卡片或完整卡片体系。
 
 在执行上下文配置上，优先采用“慢变量放 DM，快变量放群”的结构，而不是单一配置面板或 task 级随意重配置。
+
+在卡片信息架构上，优先把 `agent` 配置收敛到 DM project config card，把 `working dir` 切换收敛到 group workdir switcher card，而不是让两者共享首屏。

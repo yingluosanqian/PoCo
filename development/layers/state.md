@@ -88,6 +88,7 @@
 - 当前状态存储仅为内存实现，不适合跨进程或重启后的任务追踪
 - 当前系统仅维护 task state，尚未维护 session continuity 或产品级 handoff context
 - 当前系统尚未把 `agent` 和 `working dir` 的 ownership 正式落到代码实现中；虽然方向已被定义，但用户还不能在正式卡片工作流里完成这两类配置
+- 当前 `agent` 与 `working dir` 的卡片信息架构已在记录层收敛为 DM 配置卡和群目录切换卡，但仍未进入实现
 - 当前系统尚未实现完整 project lifecycle 与正式 workspace card 工作流，正式交互模型仍未闭环
 - 当前 DM 已能主动下发首页卡片，并具备第一批真实 callback 动作；但 project 命名、群内 workspace 深层动作、session/task 正式交互仍未形成完整正式工作流
 - 当前正式实现仍是 DM 首屏卡片 + group 文本 fallback 的混合态，尚未形成完整 card-first 正式交互面

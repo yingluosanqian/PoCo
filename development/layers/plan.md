@@ -94,3 +94,8 @@
 - 在 DM 中定义 project 级 `agent` 选择与默认 workdir 配置入口
 - 在群中定义 session 级 `working dir` 切换入口
 - 明确 `task` 只消费当前上下文，不再承担重配置职责
+
+在进入实现前，还应继续把这两类入口细化为最小卡片 IA：
+
+- DM 的 `Project Config Card`
+- 群里的 `Workdir Switcher Card`
