@@ -90,6 +90,8 @@
 - `task_status` 已接入 notifier 回推链，等待确认和终态现在会发送 interactive card
 - `task.approve` / `task.reject` 已接入 card callback，并复用现有 confirmation / resume 主链
 - `Task` 已开始保存 `notification_message_id`，后续 notifier 会优先原位更新已有 task status card，失败时回退新发
+- `task.submit` 已开始把当前 composer card 直接替换为 `task_status`，并把当前 card message id 绑定到 task
+- `workspace_overview` 在存在 latest task 时已提供 `Open Latest Task`
 
 ### 当前明确未实现
 

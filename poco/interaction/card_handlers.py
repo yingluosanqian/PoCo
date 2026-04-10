@@ -12,7 +12,7 @@ from poco.interaction.card_models import (
 )
 from poco.project.bootstrap import ProjectBootstrapError, ProjectBootstrapper
 from poco.project.controller import ProjectConfigError, ProjectController, ProjectNotFoundError
-from poco.task.controller import TaskController
+from poco.task.controller import TaskController, TaskNotFoundError
 from poco.task.dispatcher import AsyncTaskDispatcher
 from poco.workspace.controller import WorkspaceContextController, WorkspaceContextError
 
@@ -229,6 +229,7 @@ class ProjectIntentHandler:
 class WorkspaceIntentHandler:
     project_controller: ProjectController
     workspace_controller: WorkspaceContextController
+    task_controller: TaskController | None = None
 
     def handle(self, intent: ActionIntent) -> IntentDispatchResult:
         if intent.intent_key == "workspace.open_workdir_switcher":
@@ -251,7 +252,11 @@ class WorkspaceIntentHandler:
         if isinstance(project, IntentDispatchResult):
             return project
         context = self.workspace_controller.get_context(project)
-        return build_workspace_overview_result(project, context=context)
+        return build_workspace_overview_result(
+            project,
+            context=context,
+            latest_task=_latest_project_task(self.task_controller, project.id),
+        )
 
     def _open_workdir_switcher(self, intent: ActionIntent) -> IntentDispatchResult:
         project = _get_project_or_reject(self.project_controller, intent)
@@ -373,6 +378,8 @@ class TaskIntentHandler:
             return self._open_composer(intent)
         if intent.intent_key == "task.submit":
             return self._submit_task(intent)
+        if intent.intent_key == "task.open":
+            return self._open_task(intent)
         if intent.intent_key == "task.approve":
             return self._approve_task(intent)
         if intent.intent_key == "task.reject":
@@ -413,17 +420,24 @@ class TaskIntentHandler:
             source="feishu_card",
             project_id=project.id,
             effective_workdir=context.active_workdir,
+            notification_message_id=_optional_string(intent.source_message_id),
             reply_receive_id=reply_receive_id,
             reply_receive_id_type=reply_receive_id_type,
         )
         if self.dispatcher is not None:
             self.dispatcher.dispatch_start(task.id)
-        return build_workspace_overview_result(
-            project,
-            context=context,
-            latest_task=task,
+        return build_task_status_result(
+            task,
             message=f"Task created for {project.name}",
         )
+
+    def _open_task(self, intent: ActionIntent) -> IntentDispatchResult:
+        task_id = _required_id(intent.task_id, "task_id")
+        try:
+            task = self.task_controller.get_task(task_id)
+        except TaskNotFoundError as exc:
+            return _rejected(intent, str(exc))
+        return build_task_status_result(task, message=f"Opened task: {task.id}")
 
     def _approve_task(self, intent: ActionIntent) -> IntentDispatchResult:
         task_id = _required_id(intent.task_id, "task_id")
@@ -715,6 +729,15 @@ def _resolve_task_reply_target(project, *, actor_id: str, surface: str) -> tuple
     if surface == "group" and project.group_chat_id:
         return project.group_chat_id, "chat_id"
     return actor_id, "open_id"
+
+
+def _latest_project_task(task_controller: TaskController | None, project_id: str):
+    if task_controller is None:
+        return None
+    tasks = task_controller.list_tasks_for_project(project_id)
+    if not tasks:
+        return None
+    return max(tasks, key=lambda task: task.updated_at)
 
 
 def _required_id(value: str | None, label: str) -> str:

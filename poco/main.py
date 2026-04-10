@@ -93,6 +93,7 @@ def create_app() -> FastAPI:
     workspace_intent_handler = WorkspaceIntentHandler(
         project_controller,
         workspace_controller,
+        controller,
     )
     task_intent_handler = TaskIntentHandler(
         project_controller,
@@ -122,6 +123,7 @@ def create_app() -> FastAPI:
             "workspace.enter_path": workspace_intent_handler,
             "workspace.apply_entered_path": workspace_intent_handler,
             "task.open_composer": task_intent_handler,
+            "task.open": task_intent_handler,
             "task.submit": task_intent_handler,
             "task.approve": task_intent_handler,
             "task.reject": task_intent_handler,

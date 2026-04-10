@@ -81,6 +81,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
         self.workspace_handler = WorkspaceIntentHandler(
             self.project_controller,
             self.workspace_controller,
+            self.task_controller,
         )
         self.task_handler = TaskIntentHandler(
             self.project_controller,
@@ -110,6 +111,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
                     "workspace.enter_path": self.workspace_handler,
                     "workspace.apply_entered_path": self.workspace_handler,
                     "task.open_composer": self.task_handler,
+                    "task.open": self.task_handler,
                     "task.submit": self.task_handler,
                     "task.approve": self.task_handler,
                     "task.reject": self.task_handler,
@@ -291,6 +293,41 @@ class FeishuCardGatewayTest(unittest.TestCase):
             "group",
         )
 
+    def test_workspace_open_shows_latest_task_button_when_task_exists(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+            group_chat_id="oc_group_proj_1",
+        )
+        task = self.task_controller.create_task(
+            requester_id="ou_demo_user",
+            prompt="Summarize the current API module",
+            source="feishu_card",
+            project_id=project.id,
+            effective_workdir="/srv/poco/api",
+        )
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_card_2b"},
+                "action": {
+                    "value": {
+                        "intent_key": "workspace.open",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "request_id": "req_workspace_open_2",
+                    },
+                },
+            }
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        latest_button = response["card"]["data"]["body"]["elements"][6]
+        self.assertEqual(latest_button["behaviors"][0]["value"]["intent_key"], "task.open")
+        self.assertEqual(latest_button["behaviors"][0]["value"]["task_id"], task.id)
+
     def test_task_composer_opens_from_workspace_card(self) -> None:
         project = self.project_controller.create_project(
             name="PoCo",
@@ -363,17 +400,51 @@ class FeishuCardGatewayTest(unittest.TestCase):
 
         response = self.gateway.handle_action(payload)
 
-        self.assertEqual(response["instruction"]["template_key"], "workspace_overview")
-        overview = response["card"]["data"]["body"]["elements"][3]["content"]
-        self.assertIn("created", overview)
+        self.assertEqual(response["instruction"]["template_key"], "task_status")
         tasks = self.task_controller.list_tasks()
         self.assertEqual(len(tasks), 1)
         task = tasks[0]
         self.assertEqual(task.project_id, project.id)
         self.assertEqual(task.effective_workdir, "/srv/poco/api")
+        self.assertEqual(task.notification_message_id, "om_task_submit_1")
         self.assertEqual(task.reply_receive_id, "oc_group_proj_1")
         self.assertEqual(task.reply_receive_id_type, "chat_id")
         self.assertEqual(self.task_dispatcher.actions, [("start", task.id)])
+        self.assertEqual(response["card"]["data"]["header"]["title"]["content"], f"Task: {task.id}")
+
+    def test_task_open_returns_existing_task_status_card(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+        )
+        task = self.task_controller.create_task(
+            requester_id="ou_demo_user",
+            prompt="Summarize the current API module",
+            source="feishu_card",
+            project_id=project.id,
+            effective_workdir="/srv/poco/api",
+        )
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_task_open_1"},
+                "action": {
+                    "value": {
+                        "intent_key": "task.open",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "task_id": task.id,
+                        "request_id": "req_task_open_1",
+                    },
+                },
+            }
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        self.assertEqual(response["instruction"]["template_key"], "task_status")
+        self.assertEqual(response["card"]["data"]["header"]["title"]["content"], f"Task: {task.id}")
 
     def test_task_submit_rejects_empty_prompt(self) -> None:
         project = self.project_controller.create_project(

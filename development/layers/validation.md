@@ -90,6 +90,8 @@
 - notifier 是否已经发送 `task_status` interactive card
 - `task.approve` / `task.reject` 是否已经接入 card callback 主链
 - notifier 是否已经优先原位更新已有 task status card
+- `task.submit` 是否已经直接替换当前 composer card 为 `task_status`
+- workspace 是否已经提供 latest task 入口
 
 ### 当前轮已知未验证区域
 

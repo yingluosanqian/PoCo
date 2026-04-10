@@ -260,11 +260,13 @@ Current interaction model:
 - Group text `/run` now resolves the bound project and current workspace workdir, then stamps that into task execution context
 - Codex execution now prefers the task's `effective_workdir` over the global fallback directory
 - group card `task.submit` now reuses the same task-execution path and inherits the current workspace workdir
+- `task.submit` now replaces the current composer card with a `task_status` card and binds that message to the task flow
 - The webhook request returns quickly after acknowledging the command
 - Task execution happens in a background dispatcher
 - When a task waits for confirmation, completes, fails, or is cancelled, PoCo now pushes a `task_status` card to the stored Feishu reply target
 - Waiting task cards now include `Approve` / `Reject` actions that resume or cancel the task through card callbacks
 - Once a task status card has been sent, later task-state notifications now try to update that same card in place before falling back to a new message
+- workspace cards now expose `Open Latest Task` when a latest project task exists
 
 If `POCO_FEISHU_DELIVERY_MODE=longconn` is enabled:
 

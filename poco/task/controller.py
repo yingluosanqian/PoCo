@@ -34,6 +34,7 @@ class TaskController:
         *,
         project_id: str | None = None,
         effective_workdir: str | None = None,
+        notification_message_id: str | None = None,
         reply_receive_id: str | None = None,
         reply_receive_id_type: str | None = None,
     ) -> Task:
@@ -46,6 +47,7 @@ class TaskController:
                 agent_backend=self._runner.name,
                 project_id=project_id,
                 effective_workdir=effective_workdir,
+                notification_message_id=notification_message_id,
                 reply_receive_id=reply_receive_id,
                 reply_receive_id_type=reply_receive_id_type,
             )
@@ -63,6 +65,14 @@ class TaskController:
     def list_tasks(self) -> list[Task]:
         with self._lock:
             return self._store.list_all()
+
+    def list_tasks_for_project(self, project_id: str) -> list[Task]:
+        with self._lock:
+            return [
+                task
+                for task in self._store.list_all()
+                if task.project_id == project_id
+            ]
 
     def resolve_confirmation(self, task_id: str, approved: bool) -> Task:
         with self._lock:

@@ -324,16 +324,29 @@ def _render_workspace_overview(
     latest_task_line = f"**latest task status**: `{latest_status}`"
     if latest_task_id:
         latest_task_line = f"**latest task**: `{latest_status}` (`{latest_task_id}`)"
-    return _card_shell(
-        title=f"Workspace: {project['name']}",
-        template="orange",
-        elements=[
-            _markdown(f"**active session**\n{active_session}"),
-            _markdown(f"**current workdir**\n`{current_workdir}`"),
-            _markdown(f"**workdir source**: `{workdir_source}`"),
-            _markdown(latest_task_line),
-            _markdown(f"**pending approvals**: `{pending_approvals}`"),
-            _markdown(f"**latest result**\n{latest_result}"),
+    elements: list[dict[str, Any]] = [
+        _markdown(f"**active session**\n{active_session}"),
+        _markdown(f"**current workdir**\n`{current_workdir}`"),
+        _markdown(f"**workdir source**: `{workdir_source}`"),
+        _markdown(latest_task_line),
+        _markdown(f"**pending approvals**: `{pending_approvals}`"),
+        _markdown(f"**latest result**\n{latest_result}"),
+    ]
+    if latest_task_id:
+        elements.append(
+            _button(
+                label="Open Latest Task",
+                intent_value={
+                    "intent_key": "task.open",
+                    "surface": surface,
+                    "project_id": project["id"],
+                    "task_id": latest_task_id,
+                },
+                name=f"open_latest_task_{project['id']}",
+            )
+        )
+    elements.extend(
+        [
             _button(
                 label="Run Task",
                 intent_value={
@@ -371,7 +384,12 @@ def _render_workspace_overview(
                 },
                 name=f"back_to_project_{project['id']}",
             ),
-        ],
+        ]
+    )
+    return _card_shell(
+        title=f"Workspace: {project['name']}",
+        template="orange",
+        elements=elements,
     )
 
 
