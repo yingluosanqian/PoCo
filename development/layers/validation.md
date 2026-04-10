@@ -94,6 +94,8 @@
 - `task.submit` 是否已经直接替换当前 composer card 为 `task_status`
 - workspace 是否已经提供 latest task 入口
 - task 状态变化时 workspace latest task 区块是否也会同步刷新
+- task status 是否已经优先展示原始结果而不是摘要
+- 超长原始结果是否已经支持分页
 
 ### 当前轮已知未验证区域
 

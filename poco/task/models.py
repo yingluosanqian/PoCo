@@ -47,6 +47,7 @@ class Task:
     status: TaskStatus = TaskStatus.CREATED
     events: list[TaskEvent] = field(default_factory=list)
     awaiting_confirmation_reason: str | None = None
+    raw_result: str | None = None
     result_summary: str | None = None
     created_at: datetime = field(default_factory=utc_now)
     updated_at: datetime = field(default_factory=utc_now)
@@ -63,6 +64,11 @@ class Task:
         self.notification_message_id = message_id
         self.updated_at = utc_now()
 
+    def set_result(self, raw_result: str | None) -> None:
+        self.raw_result = raw_result
+        self.result_summary = _result_preview(raw_result)
+        self.updated_at = utc_now()
+
     def to_dict(self) -> dict[str, object]:
         return {
             "id": self.id,
@@ -77,8 +83,17 @@ class Task:
             "reply_receive_id_type": self.reply_receive_id_type,
             "status": self.status.value,
             "awaiting_confirmation_reason": self.awaiting_confirmation_reason,
+            "raw_result": self.raw_result,
             "result_summary": self.result_summary,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
             "events": [event.to_dict() for event in self.events],
         }
+
+
+def _result_preview(raw_result: str | None, *, limit: int = 240) -> str | None:
+    if not raw_result:
+        return None
+    if len(raw_result) <= limit:
+        return raw_result
+    return f"{raw_result[: limit - 3]}..."

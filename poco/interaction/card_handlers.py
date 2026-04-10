@@ -443,7 +443,11 @@ class TaskIntentHandler:
             task = self.task_controller.get_task(task_id)
         except TaskNotFoundError as exc:
             return _rejected(intent, str(exc))
-        return build_task_status_result(task, message=f"Opened task: {task.id}")
+        return build_task_status_result(
+            task,
+            message=f"Opened task: {task.id}",
+            result_page=_positive_int(intent.payload.get("page"), default=1),
+        )
 
     def _approve_task(self, intent: ActionIntent) -> IntentDispatchResult:
         task_id = _required_id(intent.task_id, "task_id")
@@ -506,11 +510,9 @@ def build_workspace_overview_result(
         workdir_source = "default"
     latest_task_status = None
     latest_task_id = None
-    latest_result_summary = None
     if latest_task is not None:
         latest_task_status = latest_task.status.value
         latest_task_id = latest_task.id
-        latest_result_summary = latest_task.result_summary
     return IntentDispatchResult(
         status=DispatchStatus.OK,
         intent_key="workspace.open",
@@ -523,7 +525,6 @@ def build_workspace_overview_result(
                 "latest_task_status": latest_task_status,
                 "latest_task_id": latest_task_id,
                 "pending_approvals": 0,
-                "latest_result_summary": latest_result_summary,
                 "current_workdir": current_workdir,
                 "workdir_source": workdir_source,
             },
@@ -533,7 +534,12 @@ def build_workspace_overview_result(
     )
 
 
-def build_task_status_result(task, *, message: str | None = None) -> IntentDispatchResult:
+def build_task_status_result(
+    task,
+    *,
+    message: str | None = None,
+    result_page: int = 1,
+) -> IntentDispatchResult:
     return IntentDispatchResult(
         status=DispatchStatus.OK,
         intent_key="task.status",
@@ -545,6 +551,7 @@ def build_task_status_result(task, *, message: str | None = None) -> IntentDispa
             "task_status",
             {
                 "task": task.to_dict(),
+                "result_page": result_page,
             },
         ),
         refresh_mode=RefreshMode.REPLACE_CURRENT,
@@ -729,6 +736,16 @@ def _extract_prompt(payload: dict[str, object]) -> str:
         if nested is not None:
             return nested
     return ""
+
+
+def _positive_int(value: object, *, default: int) -> int:
+    if value is None:
+        return default
+    try:
+        parsed = int(str(value))
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
 
 
 def _resolve_task_reply_target(project, *, actor_id: str, surface: str) -> tuple[str | None, str | None]:

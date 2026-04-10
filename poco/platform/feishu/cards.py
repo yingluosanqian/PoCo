@@ -316,7 +316,6 @@ def _render_workspace_overview(
     project = data["project"]
     latest_status = data.get("latest_task_status") or "none"
     latest_task_id = data.get("latest_task_id")
-    latest_result = data.get("latest_result_summary") or "No result yet."
     active_session = data.get("active_session_summary") or "No active session yet."
     pending_approvals = data.get("pending_approvals") or 0
     current_workdir = data.get("current_workdir") or "未设置"
@@ -330,7 +329,6 @@ def _render_workspace_overview(
         _markdown(f"**workdir source**: `{workdir_source}`"),
         _markdown(latest_task_line),
         _markdown(f"**pending approvals**: `{pending_approvals}`"),
-        _markdown(f"**latest result**\n{latest_result}"),
     ]
     if latest_task_id:
         elements.append(
@@ -632,7 +630,9 @@ def _render_task_status(
     status = task.get("status") or "unknown"
     prompt = task.get("prompt") or ""
     workdir = task.get("effective_workdir") or "未设置"
-    result = task.get("result_summary") or "No result yet."
+    raw_result = task.get("raw_result") or task.get("result_summary") or "No result yet."
+    requested_page = _normalize_page(data.get("result_page"))
+    result_chunk, page, total_pages = _paginate_text(raw_result, page=requested_page)
     elements: list[dict[str, Any]] = [
         _markdown(f"**Task ID**\n`{task['id']}`"),
         _markdown(f"**Status**\n`{status}`"),
@@ -670,7 +670,39 @@ def _render_task_status(
             )
         )
     else:
-        elements.append(_markdown(f"**Result**\n{result}"))
+        elements.append(_markdown("**Result**"))
+        if total_pages > 1:
+            elements.append(_markdown(f"Page `{page}` / `{total_pages}`"))
+        elements.append(_plain_text(result_chunk))
+        if total_pages > 1:
+            if page > 1:
+                elements.append(
+                    _button(
+                        label="Previous Page",
+                        intent_value={
+                            "intent_key": "task.open",
+                            "surface": surface,
+                            "project_id": task.get("project_id") or "",
+                            "task_id": task["id"],
+                            "page": str(page - 1),
+                        },
+                        name=f"task_prev_page_{task['id']}_{page}",
+                    )
+                )
+            if page < total_pages:
+                elements.append(
+                    _button(
+                        label="Next Page",
+                        intent_value={
+                            "intent_key": "task.open",
+                            "surface": surface,
+                            "project_id": task.get("project_id") or "",
+                            "task_id": task["id"],
+                            "page": str(page + 1),
+                        },
+                        name=f"task_next_page_{task['id']}_{page}",
+                    )
+                )
 
     if task.get("project_id"):
         elements.append(
@@ -796,6 +828,17 @@ def _markdown(content: str) -> dict[str, Any]:
     }
 
 
+def _plain_text(content: str) -> dict[str, Any]:
+    return {
+        "tag": "div",
+        "text": {
+            "tag": "plain_text",
+            "content": content,
+        },
+        "margin": "0px 0px 12px 0px",
+    }
+
+
 def _button(
     *,
     label: str,
@@ -849,3 +892,26 @@ def _task_template_for_status(status: str) -> str:
     if status in {"failed", "cancelled"}:
         return "red"
     return "blue"
+
+
+def _normalize_page(value: Any) -> int:
+    try:
+        page = int(value)
+    except (TypeError, ValueError):
+        return 1
+    return page if page > 0 else 1
+
+
+def _paginate_text(
+    content: str,
+    *,
+    page: int,
+    page_chars: int = 2400,
+) -> tuple[str, int, int]:
+    if len(content) <= page_chars:
+        return content, 1, 1
+    total_pages = (len(content) + page_chars - 1) // page_chars
+    normalized_page = min(max(page, 1), total_pages)
+    start = (normalized_page - 1) * page_chars
+    end = start + page_chars
+    return content[start:end], normalized_page, total_pages

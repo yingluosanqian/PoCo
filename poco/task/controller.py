@@ -139,7 +139,7 @@ class TaskController:
                 task.set_status(TaskStatus.WAITING_FOR_CONFIRMATION)
                 task.add_event("confirmation_required", update.message)
             elif update.kind == "completed":
-                task.result_summary = update.result_summary
+                task.set_result(update.raw_result)
                 task.set_status(TaskStatus.COMPLETED)
                 task.add_event("task_completed", update.message)
             elif update.kind == "failed":

@@ -277,17 +277,17 @@ class FeishuCardGatewayTest(unittest.TestCase):
             response["card"]["data"]["header"]["title"]["content"],
             f"Workspace: {project.name}",
         )
-        run_task_button = response["card"]["data"]["body"]["elements"][6]
+        run_task_button = response["card"]["data"]["body"]["elements"][5]
         self.assertEqual(
             run_task_button["behaviors"][0]["value"]["intent_key"],
             "task.open_composer",
         )
-        workdir_button = response["card"]["data"]["body"]["elements"][7]
+        workdir_button = response["card"]["data"]["body"]["elements"][6]
         self.assertEqual(
             workdir_button["behaviors"][0]["value"]["intent_key"],
             "workspace.open_workdir_switcher",
         )
-        refresh_button = response["card"]["data"]["body"]["elements"][8]
+        refresh_button = response["card"]["data"]["body"]["elements"][7]
         self.assertEqual(
             refresh_button["behaviors"][0]["value"]["surface"],
             "group",
@@ -326,7 +326,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
 
         response = self.gateway.handle_action(payload)
 
-        latest_button = response["card"]["data"]["body"]["elements"][6]
+        latest_button = response["card"]["data"]["body"]["elements"][5]
         self.assertEqual(latest_button["behaviors"][0]["value"]["intent_key"], "task.open")
         self.assertEqual(latest_button["behaviors"][0]["value"]["task_id"], task.id)
 

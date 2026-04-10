@@ -102,10 +102,10 @@ class FeishuClientTest(unittest.TestCase):
 
         card = FeishuCardRenderer().render(instruction)
 
-        run_task_button = card["body"]["elements"][6]
-        change_workdir_button = card["body"]["elements"][7]
-        refresh_button = card["body"]["elements"][8]
-        back_button = card["body"]["elements"][9]
+        run_task_button = card["body"]["elements"][5]
+        change_workdir_button = card["body"]["elements"][6]
+        refresh_button = card["body"]["elements"][7]
+        back_button = card["body"]["elements"][8]
         self.assertEqual(
             run_task_button["behaviors"][0]["value"]["surface"],
             "group",
@@ -353,7 +353,7 @@ class FeishuClientTest(unittest.TestCase):
             "prompt": "summarize",
             "status": "completed",
             "awaiting_confirmation_reason": None,
-            "result_summary": "Done.",
+            "raw_result": "Done.",
         }
         card = FeishuCardRenderer().render(
             build_render_instruction(
@@ -373,8 +373,46 @@ class FeishuClientTest(unittest.TestCase):
             )
         )
 
-        result_block = card["body"]["elements"][5]
-        self.assertIn("Done.", result_block["content"])
+        result_heading = card["body"]["elements"][5]
+        result_block = card["body"]["elements"][6]
+        self.assertIn("Result", result_heading["content"])
+        self.assertIn("Done.", result_block["text"]["content"])
+
+    def test_task_status_card_adds_pagination_for_long_raw_result(self) -> None:
+        task = {
+            "id": "task_3",
+            "project_id": "proj_1",
+            "agent_backend": "codex",
+            "effective_workdir": "/srv/poco/api",
+            "prompt": "summarize",
+            "status": "completed",
+            "awaiting_confirmation_reason": None,
+            "raw_result": "A" * 5000,
+        }
+        card = FeishuCardRenderer().render(
+            build_render_instruction(
+                IntentDispatchResult(
+                    status=DispatchStatus.OK,
+                    intent_key="task.status",
+                    resource_refs=ResourceRefs(project_id="proj_1", task_id="task_3"),
+                    view_model=ViewModel(
+                        "task_status",
+                        {
+                            "task": task,
+                            "result_page": 1,
+                        },
+                    ),
+                    refresh_mode=RefreshMode.REPLACE_CURRENT,
+                ),
+                surface=Surface.GROUP,
+            )
+        )
+
+        page_info = card["body"]["elements"][6]
+        next_button = card["body"]["elements"][8]
+        self.assertIn("Page", page_info["content"])
+        self.assertEqual(next_button["behaviors"][0]["value"]["intent_key"], "task.open")
+        self.assertEqual(next_button["behaviors"][0]["value"]["page"], "2")
 
 
 if __name__ == "__main__":

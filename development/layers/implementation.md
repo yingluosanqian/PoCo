@@ -94,6 +94,9 @@
 - `task.submit` 已开始把当前 composer card 直接替换为 `task_status`，并把当前 card message id 绑定到 task
 - `workspace_overview` 在存在 latest task 时已提供 `Open Latest Task`
 - `Project` 已开始保存 `workspace_message_id`，workspace 打开和 bootstrap 首卡都会绑定它，task 状态变化时 notifier 会顺手刷新这张 workspace card
+- `Task` 已新增 `raw_result`，当前完成态结果会优先保存原始输出；`result_summary` 仅作为兼容 preview 保留
+- `task_status` 已开始优先展示原始结果；超长结果使用最小分页，而不是默认摘要替代
+- `workspace_overview` 已移除 latest result preview，开始只承担项目状态面板职责
 
 ### 当前明确未实现
 

@@ -17,7 +17,11 @@ UpdateKind = Literal["progress", "confirmation_required", "completed", "failed"]
 class AgentRunUpdate:
     kind: UpdateKind
     message: str
-    result_summary: str | None = None
+    raw_result: str | None = None
+
+    @property
+    def result_summary(self) -> str | None:
+        return self.raw_result
 
 
 class AgentRunner(Protocol):
@@ -61,7 +65,7 @@ class StubAgentRunner:
             AgentRunUpdate(
                 kind="completed",
                 message="Task completed by the stub runner.",
-                result_summary=f"Stub result for: {_normalized_prompt(task.prompt)}",
+                raw_result=f"Stub result for: {_normalized_prompt(task.prompt)}",
             )
         )
         return updates
@@ -75,7 +79,7 @@ class StubAgentRunner:
             AgentRunUpdate(
                 kind="completed",
                 message="Task completed after approval.",
-                result_summary=f"Approved stub result for: {_normalized_prompt(task.prompt)}",
+                raw_result=f"Approved stub result for: {_normalized_prompt(task.prompt)}",
             ),
         ]
 
@@ -207,13 +211,13 @@ class CodexCliRunner:
                 )
                 return [AgentRunUpdate(kind="failed", message=detail)]
 
-            result_summary = self._read_output_file(output_file_path)
+            raw_result = self._read_output_file(output_file_path)
             message = "Task completed by the codex runner."
             return [
                 AgentRunUpdate(
                     kind="completed",
                     message=message,
-                    result_summary=result_summary or "Codex completed without a final response body.",
+                    raw_result=raw_result or "Codex completed without a final response body.",
                 )
             ]
         except subprocess.TimeoutExpired:

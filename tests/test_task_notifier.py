@@ -105,7 +105,7 @@ class FeishuTaskNotifierTest(unittest.TestCase):
             reply_receive_id="oc_group_1",
             reply_receive_id_type="chat_id",
             status=TaskStatus.COMPLETED,
-            result_summary="Done.",
+            raw_result="Done.",
         )
 
         notifier.notify_task(task)
@@ -113,8 +113,8 @@ class FeishuTaskNotifierTest(unittest.TestCase):
         self.assertEqual(len(client.sent_cards), 1)
         card = client.sent_cards[0]["card"]
         self.assertEqual(card["header"]["title"]["content"], "Task: task_done")
-        result_block = card["body"]["elements"][5]
-        self.assertIn("Done.", result_block["content"])
+        result_block = card["body"]["elements"][6]
+        self.assertIn("Done.", result_block["text"]["content"])
 
     def test_second_notification_updates_existing_task_card(self) -> None:
         client = FakeMessageClient()
@@ -137,7 +137,7 @@ class FeishuTaskNotifierTest(unittest.TestCase):
         notifier.notify_task(task)
         task.awaiting_confirmation_reason = None
         task.set_status(TaskStatus.COMPLETED)
-        task.result_summary = "Done."
+        task.set_result("Done.")
         notifier.notify_task(task)
 
         self.assertEqual(len(client.sent_cards), 1)

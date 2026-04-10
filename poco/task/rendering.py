@@ -22,8 +22,9 @@ def render_task_text(task: Task, *, headline: str, result_limit: int = 1200) -> 
     if task.awaiting_confirmation_reason:
         lines.append(f"awaiting_confirmation={task.awaiting_confirmation_reason}")
 
-    if task.result_summary:
-        lines.append(f"result={_truncate(task.result_summary, limit=result_limit)}")
+    result = task.raw_result or task.result_summary
+    if result:
+        lines.append(f"result={_truncate(result, limit=result_limit)}")
 
     if task.events:
         lines.append(f"latest_event={task.events[-1].message}")
