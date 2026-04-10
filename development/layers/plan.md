@@ -99,3 +99,9 @@
 
 - DM 的 `Project Config Card`
 - 群里的 `Workdir Switcher Card`
+
+在群正式工作流上，下一轮实现应优先调整默认消息语义：
+
+- 已绑定 project 的群里，普通文本消息直接创建 task
+- DM 继续保持 control plane 语义
+- `Run Task` 卡片收缩为辅助输入入口，而不是唯一正式入口

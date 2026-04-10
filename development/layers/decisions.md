@@ -125,3 +125,12 @@ PoCo 对 `agent` 和 `working dir` 采用分层 ownership：
 
 - `agent = project identity`
 - `working dir = session stance`
+
+### 当前群消息入口决策
+
+PoCo 在正式交互模型上进一步收敛为：
+
+- `DM` 的普通消息不默认创建 task
+- 已绑定 project 的 `Group` 中，普通文本消息默认直接作为 task prompt
+
+卡片继续保留，但主要承担状态、确认、配置和导航，而不再承担唯一发任务入口。
