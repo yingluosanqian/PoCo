@@ -11,7 +11,7 @@ from poco.interaction.card_models import (
     ViewModel,
 )
 from poco.project.bootstrap import ProjectBootstrapError, ProjectBootstrapper
-from poco.project.controller import ProjectController, ProjectNotFoundError
+from poco.project.controller import ProjectConfigError, ProjectController, ProjectNotFoundError
 from poco.workspace.controller import WorkspaceContextController, WorkspaceContextError
 
 
@@ -35,6 +35,8 @@ class ProjectIntentHandler:
             return self._open_default_dir_config(intent)
         if intent.intent_key == "project.manage_dir_presets":
             return self._open_dir_presets(intent)
+        if intent.intent_key == "project.add_dir_preset":
+            return self._add_dir_preset(intent)
         if intent.intent_key == "project.bind_group":
             return self._bind_group(intent)
         if intent.intent_key == "project.archive":
@@ -170,6 +172,22 @@ class ProjectIntentHandler:
             message=f"Dir presets for {project.name}",
         )
 
+    def _add_dir_preset(self, intent: ActionIntent) -> IntentDispatchResult:
+        project_id = _required_id(intent.project_id, "project_id")
+        preset = _extract_workdir_path(intent.payload)
+        try:
+            project = self.project_controller.add_dir_preset(project_id, preset)
+        except (ProjectNotFoundError, ProjectConfigError) as exc:
+            return _rejected(intent, str(exc))
+        return IntentDispatchResult(
+            status=DispatchStatus.OK,
+            intent_key=intent.intent_key,
+            resource_refs=ResourceRefs(project_id=project.id),
+            view_model=_project_dir_presets_view_model(project),
+            refresh_mode=RefreshMode.REPLACE_CURRENT,
+            message=f"Added preset for {project.name}",
+        )
+
     def _bind_group(self, intent: ActionIntent) -> IntentDispatchResult:
         project_id = _required_id(intent.project_id, "project_id")
         group_chat_id = _required_id(
@@ -221,6 +239,8 @@ class WorkspaceIntentHandler:
             return self._open_use_recent_dir(intent)
         if intent.intent_key == "workspace.enter_path":
             return self._open_enter_path(intent)
+        if intent.intent_key == "workspace.apply_preset_dir":
+            return self._apply_preset_dir(intent)
         if intent.intent_key == "workspace.apply_entered_path":
             return self._apply_entered_path(intent)
         if intent.intent_key not in {"workspace.open", "workspace.refresh"}:
@@ -273,6 +293,24 @@ class WorkspaceIntentHandler:
             view_model=_workspace_choose_preset_view_model(project),
             refresh_mode=RefreshMode.REPLACE_CURRENT,
             message=f"Preset dirs for {project.name}",
+        )
+
+    def _apply_preset_dir(self, intent: ActionIntent) -> IntentDispatchResult:
+        project = _get_project_or_reject(self.project_controller, intent)
+        if isinstance(project, IntentDispatchResult):
+            return project
+        preset = _extract_workdir_path(intent.payload)
+        try:
+            context = self.workspace_controller.use_preset_workdir(project, preset)
+        except WorkspaceContextError as exc:
+            return _rejected(intent, str(exc))
+        return IntentDispatchResult(
+            status=DispatchStatus.OK,
+            intent_key=intent.intent_key,
+            resource_refs=ResourceRefs(project_id=project.id),
+            view_model=_workspace_workdir_switcher_view_model(project, context=context),
+            refresh_mode=RefreshMode.REPLACE_CURRENT,
+            message=f"Using preset dir for {project.name}",
         )
 
     def _open_use_recent_dir(self, intent: ActionIntent) -> IntentDispatchResult:
@@ -427,8 +465,8 @@ def _project_dir_presets_view_model(project) -> ViewModel:
         "project_dir_presets",
         {
             "project": project.to_dict(),
-            "presets": [],
-            "note": "Dir preset management is not implemented yet. This card reserves the DM management surface.",
+            "presets": list(project.workdir_presets),
+            "note": "Dir presets are project-level defaults managed from DM. They can be applied later from group workdir switcher cards.",
         },
     )
 
@@ -463,8 +501,8 @@ def _workspace_choose_preset_view_model(project) -> ViewModel:
         "workspace_choose_preset",
         {
             "project": project.to_dict(),
-            "presets": [],
-            "note": "Preset switching is not implemented yet. Presets remain a DM-managed project-level list.",
+            "presets": list(project.workdir_presets),
+            "note": "Choose one of the DM-managed presets to update the current workspace context.",
         },
     )
 

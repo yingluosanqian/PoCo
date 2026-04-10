@@ -82,6 +82,7 @@
 - Group `Workdir Switcher Card` 是否已经从 workspace 首卡进入，并提供只读目录切换入口
 - `workspace.use_default_dir` 是否已经成为第一条真实可写的群侧 workdir 路径
 - `workspace.apply_entered_path` 是否已经成为第二条真实可写的群侧 workdir 路径
+- `project.add_dir_preset` / `workspace.apply_preset_dir` 是否已经形成最小 preset 写链路
 
 ### 当前轮已知未验证区域
 

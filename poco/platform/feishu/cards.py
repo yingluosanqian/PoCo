@@ -256,13 +256,45 @@ def _render_project_dir_presets(
 ) -> dict[str, Any]:
     project = data["project"]
     presets = data.get("presets") or []
-    preset_text = "\n".join(f"- `{preset}`" for preset in presets) if presets else "还没有 preset"
-    return _config_subcard(
+    elements: list[dict[str, Any]] = [
+        _markdown("**Current Presets**"),
+    ]
+    if presets:
+        elements.extend(_markdown(f"- `{preset}`") for preset in presets)
+    else:
+        elements.append(_markdown("还没有 preset"))
+    elements.extend(
+        [
+            _input(
+                name="workdir",
+                placeholder="Add preset path",
+            ),
+            _markdown(data["note"]),
+            _button(
+                label="Add Preset",
+                intent_value={
+                    "intent_key": "project.add_dir_preset",
+                    "surface": surface,
+                    "project_id": project["id"],
+                },
+                style="primary",
+                name=f"add_dir_preset_{project['id']}",
+            ),
+            _button(
+                label="Back To Project",
+                intent_value={
+                    "intent_key": "project.open",
+                    "surface": surface,
+                    "project_id": project["id"],
+                },
+                name=f"back_to_project_{project['id']}",
+            ),
+        ]
+    )
+    return _card_shell(
         title=f"Dir Presets: {project['name']}",
-        summary=f"**Current Presets**\n{preset_text}",
-        note=data["note"],
-        surface=surface,
-        project_id=project["id"],
+        template="wathet",
+        elements=elements,
     )
 
 
@@ -407,13 +439,45 @@ def _render_workspace_choose_preset(
 ) -> dict[str, Any]:
     project = data["project"]
     presets = data.get("presets") or []
-    preset_text = "\n".join(f"- `{preset}`" for preset in presets) if presets else "还没有 preset"
-    return _workspace_subcard(
+    elements: list[dict[str, Any]] = [
+        _markdown("**Available Presets**"),
+    ]
+    if presets:
+        for index, preset in enumerate(presets):
+            elements.append(_markdown(f"- `{preset}`"))
+            elements.append(
+                _button(
+                    label=f"Use Preset {index + 1}",
+                    intent_value={
+                        "intent_key": "workspace.apply_preset_dir",
+                        "surface": surface,
+                        "project_id": project["id"],
+                        "workdir": preset,
+                    },
+                    style="primary",
+                    name=f"use_preset_{project['id']}_{index}",
+                )
+            )
+    else:
+        elements.append(_markdown("还没有 preset"))
+    elements.extend(
+        [
+            _markdown(data["note"]),
+            _button(
+                label="Back To Workdir",
+                intent_value={
+                    "intent_key": "workspace.open_workdir_switcher",
+                    "surface": surface,
+                    "project_id": project["id"],
+                },
+                name=f"back_to_workdir_{project['id']}",
+            ),
+        ]
+    )
+    return _card_shell(
         title=f"Presets: {project['name']}",
-        summary=f"**Available Presets**\n{preset_text}",
-        note=data["note"],
-        surface=surface,
-        project_id=project["id"],
+        template="blue",
+        elements=elements,
     )
 
 

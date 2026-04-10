@@ -255,6 +255,7 @@ Current interaction model:
 - group workspace cards now include a `Change Workdir` path that opens a dedicated workdir switcher card
 - `Use Default` now updates the in-memory workspace context and becomes the first real write path for group-side workdir state
 - `Enter Path` now updates the same in-memory workspace context and becomes the second real write path, using manual source
+- DM `Manage Dir Presets` can now add project-level presets, and group `Choose Preset` can apply them into the current in-memory workspace context
 - Group messages still return the current text fallback and can dispatch tasks
 - The webhook request returns quickly after acknowledging the command
 - Task execution happens in a background dispatcher

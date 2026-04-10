@@ -11,6 +11,10 @@ class ProjectNotFoundError(ValueError):
     pass
 
 
+class ProjectConfigError(ValueError):
+    pass
+
+
 class ProjectController:
     def __init__(self, store: InMemoryProjectStore) -> None:
         self._store = store
@@ -77,6 +81,16 @@ class ProjectController:
         with self._lock:
             project = self.get_project(project_id)
             project.archive()
+            self._store.save(project)
+            return project
+
+    def add_dir_preset(self, project_id: str, preset: str) -> Project:
+        normalized = preset.strip()
+        if not normalized:
+            raise ProjectConfigError("Preset path cannot be empty.")
+        with self._lock:
+            project = self.get_project(project_id)
+            project.add_workdir_preset(normalized)
             self._store.save(project)
             return project
 

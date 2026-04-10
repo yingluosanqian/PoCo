@@ -171,6 +171,71 @@ class FeishuClientTest(unittest.TestCase):
         self.assertEqual(apply_button["behaviors"][0]["value"]["intent_key"], "workspace.apply_entered_path")
         self.assertEqual(apply_button["behaviors"][0]["value"]["surface"], "group")
 
+    def test_project_dir_presets_card_contains_input_and_add(self) -> None:
+        project = Project(
+            id="proj_1",
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+        )
+        card = FeishuCardRenderer().render(
+            build_render_instruction(
+                IntentDispatchResult(
+                    status=DispatchStatus.OK,
+                    intent_key="project.manage_dir_presets",
+                    resource_refs=ResourceRefs(project_id=project.id),
+                    view_model=ViewModel(
+                        "project_dir_presets",
+                        {
+                            "project": project.to_dict(),
+                            "presets": ["/srv/poco/api"],
+                            "note": "Dir presets are managed from DM.",
+                        },
+                    ),
+                    refresh_mode=RefreshMode.REPLACE_CURRENT,
+                ),
+                surface=Surface.DM,
+            )
+        )
+
+        input_box = card["body"]["elements"][2]
+        add_button = card["body"]["elements"][4]
+        self.assertEqual(input_box["tag"], "input")
+        self.assertEqual(input_box["name"], "workdir")
+        self.assertEqual(add_button["behaviors"][0]["value"]["intent_key"], "project.add_dir_preset")
+
+    def test_workspace_choose_preset_card_contains_apply_buttons(self) -> None:
+        project = Project(
+            id="proj_1",
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+            workdir_presets=["/srv/poco/api"],
+        )
+        card = FeishuCardRenderer().render(
+            build_render_instruction(
+                IntentDispatchResult(
+                    status=DispatchStatus.OK,
+                    intent_key="workspace.choose_preset",
+                    resource_refs=ResourceRefs(project_id=project.id),
+                    view_model=ViewModel(
+                        "workspace_choose_preset",
+                        {
+                            "project": project.to_dict(),
+                            "presets": list(project.workdir_presets),
+                            "note": "Choose a preset.",
+                        },
+                    ),
+                    refresh_mode=RefreshMode.REPLACE_CURRENT,
+                ),
+                surface=Surface.GROUP,
+            )
+        )
+
+        use_button = card["body"]["elements"][2]
+        self.assertEqual(use_button["behaviors"][0]["value"]["intent_key"], "workspace.apply_preset_dir")
+        self.assertEqual(use_button["behaviors"][0]["value"]["workdir"], "/srv/poco/api")
+
 
 if __name__ == "__main__":
     unittest.main()

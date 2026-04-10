@@ -16,6 +16,7 @@ class Project:
     backend: str = "codex"
     repo: str | None = None
     workdir: str | None = None
+    workdir_presets: list[str] = field(default_factory=list)
     group_chat_id: str | None = None
     archived: bool = False
     created_at: datetime = field(default_factory=utc_now)
@@ -29,6 +30,12 @@ class Project:
         self.archived = True
         self.updated_at = utc_now()
 
+    def add_workdir_preset(self, preset: str) -> None:
+        normalized = preset.strip()
+        if normalized and normalized not in self.workdir_presets:
+            self.workdir_presets.append(normalized)
+            self.updated_at = utc_now()
+
     def to_dict(self) -> dict[str, object]:
         return {
             "id": self.id,
@@ -37,9 +44,9 @@ class Project:
             "backend": self.backend,
             "repo": self.repo,
             "workdir": self.workdir,
+            "workdir_presets": list(self.workdir_presets),
             "group_chat_id": self.group_chat_id,
             "archived": self.archived,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
         }
-

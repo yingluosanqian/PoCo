@@ -74,12 +74,14 @@ class FeishuCardGatewayTest(unittest.TestCase):
                     "project.configure_repo": self.project_handler,
                     "project.configure_default_dir": self.project_handler,
                     "project.manage_dir_presets": self.project_handler,
+                    "project.add_dir_preset": self.project_handler,
                     "project.bind_group": self.project_handler,
                     "workspace.open": self.workspace_handler,
                     "workspace.refresh": self.workspace_handler,
                     "workspace.open_workdir_switcher": self.workspace_handler,
                     "workspace.use_default_dir": self.workspace_handler,
                     "workspace.choose_preset": self.workspace_handler,
+                    "workspace.apply_preset_dir": self.workspace_handler,
                     "workspace.use_recent_dir": self.workspace_handler,
                     "workspace.enter_path": self.workspace_handler,
                     "workspace.apply_entered_path": self.workspace_handler,
@@ -444,6 +446,117 @@ class FeishuCardGatewayTest(unittest.TestCase):
                     },
                     "form_value": {
                         "workdir": "   ",
+                    },
+                },
+            }
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        self.assertEqual(response["toast"]["type"], "warning")
+        self.assertEqual(response["instruction"]["refresh_mode"], "ack_only")
+
+    def test_project_add_dir_preset_updates_project(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+        )
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_card_preset_1"},
+                "action": {
+                    "value": {
+                        "intent_key": "project.add_dir_preset",
+                        "surface": "dm",
+                        "project_id": project.id,
+                        "request_id": "req_project_add_preset_1",
+                    },
+                    "form_value": {
+                        "workdir": "/srv/poco/api",
+                    },
+                },
+            }
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        self.assertEqual(response["instruction"]["template_key"], "project_dir_presets")
+        updated = self.project_controller.get_project(project.id)
+        self.assertEqual(updated.workdir_presets, ["/srv/poco/api"])
+        add_button = response["card"]["data"]["body"]["elements"][-2]
+        self.assertEqual(add_button["behaviors"][0]["value"]["intent_key"], "project.add_dir_preset")
+
+    def test_workspace_choose_preset_lists_and_applies_presets(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+        )
+        self.project_controller.add_dir_preset(project.id, "/srv/poco/api")
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_card_workdir_preset_1"},
+                "action": {
+                    "value": {
+                        "intent_key": "workspace.choose_preset",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "request_id": "req_workspace_choose_preset_1",
+                    },
+                },
+            }
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        self.assertEqual(response["instruction"]["template_key"], "workspace_choose_preset")
+        use_button = response["card"]["data"]["body"]["elements"][2]
+        self.assertEqual(use_button["behaviors"][0]["value"]["intent_key"], "workspace.apply_preset_dir")
+        self.assertEqual(use_button["behaviors"][0]["value"]["workdir"], "/srv/poco/api")
+
+        apply_payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_card_workdir_preset_2"},
+                "action": {
+                    "value": {
+                        "intent_key": "workspace.apply_preset_dir",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "request_id": "req_workspace_apply_preset_1",
+                        "workdir": "/srv/poco/api",
+                    },
+                },
+            }
+        }
+
+        applied = self.gateway.handle_action(apply_payload)
+
+        self.assertEqual(applied["instruction"]["template_key"], "workspace_workdir_switcher")
+        context = self.workspace_controller.get_context(project)
+        self.assertEqual(context.active_workdir, "/srv/poco/api")
+        self.assertEqual(context.workdir_source, "preset")
+
+    def test_workspace_apply_preset_rejects_unknown_preset(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+        )
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_card_workdir_preset_3"},
+                "action": {
+                    "value": {
+                        "intent_key": "workspace.apply_preset_dir",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "request_id": "req_workspace_apply_preset_2",
+                        "workdir": "/srv/poco/missing",
                     },
                 },
             }

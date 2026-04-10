@@ -62,3 +62,17 @@ class WorkspaceContextController:
             workdir=normalized,
             source="manual",
         )
+
+    def use_preset_workdir(self, project: Project, preset: str) -> WorkspaceContext:
+        normalized = preset.strip()
+        if not normalized:
+            raise WorkspaceContextError("Preset path cannot be empty.")
+        if normalized not in project.workdir_presets:
+            raise WorkspaceContextError(
+                f"Preset path is not configured for project {project.name}: {normalized}"
+            )
+        return self.set_active_workdir(
+            project,
+            workdir=normalized,
+            source="preset",
+        )
