@@ -12,7 +12,7 @@ from poco.agent.runner import create_agent_runner
 from poco.config import Settings
 from poco.demo import DemoCommandRequest
 from poco.interaction.card_dispatcher import CardActionDispatcher
-from poco.interaction.card_handlers import ProjectIntentHandler, WorkspaceIntentHandler
+from poco.interaction.card_handlers import ProjectIntentHandler, TaskIntentHandler, WorkspaceIntentHandler
 from poco.interaction.service import InteractionService
 from poco.platform.feishu.client import FeishuAccessTokenProvider, FeishuApiError, FeishuMessageClient
 from poco.platform.feishu.card_gateway import FeishuCardActionGateway
@@ -89,6 +89,12 @@ def create_app() -> FastAPI:
         project_controller,
         workspace_controller,
     )
+    task_intent_handler = TaskIntentHandler(
+        project_controller,
+        workspace_controller,
+        controller,
+        dispatcher=dispatcher,
+    )
     card_dispatcher = CardActionDispatcher(
         {
             "project.list": project_intent_handler,
@@ -110,6 +116,8 @@ def create_app() -> FastAPI:
             "workspace.use_recent_dir": workspace_intent_handler,
             "workspace.enter_path": workspace_intent_handler,
             "workspace.apply_entered_path": workspace_intent_handler,
+            "task.open_composer": task_intent_handler,
+            "task.submit": task_intent_handler,
         }
     )
     card_gateway = FeishuCardActionGateway(

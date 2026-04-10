@@ -3,12 +3,14 @@ from __future__ import annotations
 import unittest
 
 from poco.interaction.card_dispatcher import CardActionDispatcher
-from poco.interaction.card_handlers import ProjectIntentHandler, WorkspaceIntentHandler
+from poco.interaction.card_handlers import ProjectIntentHandler, TaskIntentHandler, WorkspaceIntentHandler
 from poco.platform.feishu.card_gateway import FeishuCardActionGateway
 from poco.platform.feishu.cards import FeishuCardRenderer
 from poco.project.bootstrap import ProjectBootstrapError, ProjectBootstrapResult
 from poco.project.controller import ProjectController
-from poco.storage.memory import InMemoryProjectStore, InMemoryWorkspaceContextStore
+from poco.storage.memory import InMemoryProjectStore, InMemoryTaskStore, InMemoryWorkspaceContextStore
+from poco.task.controller import TaskController
+from poco.agent.runner import StubAgentRunner
 from poco.workspace.controller import WorkspaceContextController
 
 
@@ -51,10 +53,23 @@ class NotifyFailingProjectBootstrapper(FakeProjectBootstrapper):
         raise RuntimeError("simulated workspace notification failure")
 
 
+class FakeTaskDispatcher:
+    def __init__(self) -> None:
+        self.actions: list[tuple[str, str]] = []
+
+    def dispatch_start(self, task_id: str) -> None:
+        self.actions.append(("start", task_id))
+
+
 class FeishuCardGatewayTest(unittest.TestCase):
     def setUp(self) -> None:
         self.project_controller = ProjectController(InMemoryProjectStore())
         self.workspace_controller = WorkspaceContextController(InMemoryWorkspaceContextStore())
+        self.task_controller = TaskController(
+            store=InMemoryTaskStore(),
+            runner=StubAgentRunner(),
+        )
+        self.task_dispatcher = FakeTaskDispatcher()
         self.bootstrapper = FakeProjectBootstrapper()
         self.project_handler = ProjectIntentHandler(
             self.project_controller,
@@ -63,6 +78,12 @@ class FeishuCardGatewayTest(unittest.TestCase):
         self.workspace_handler = WorkspaceIntentHandler(
             self.project_controller,
             self.workspace_controller,
+        )
+        self.task_handler = TaskIntentHandler(
+            self.project_controller,
+            self.workspace_controller,
+            self.task_controller,
+            dispatcher=self.task_dispatcher,  # type: ignore[arg-type]
         )
         self.gateway = FeishuCardActionGateway(
             dispatcher=CardActionDispatcher(
@@ -85,6 +106,8 @@ class FeishuCardGatewayTest(unittest.TestCase):
                     "workspace.use_recent_dir": self.workspace_handler,
                     "workspace.enter_path": self.workspace_handler,
                     "workspace.apply_entered_path": self.workspace_handler,
+                    "task.open_composer": self.task_handler,
+                    "task.submit": self.task_handler,
                 }
             ),
             renderer=FeishuCardRenderer(),
@@ -247,16 +270,135 @@ class FeishuCardGatewayTest(unittest.TestCase):
             response["card"]["data"]["header"]["title"]["content"],
             f"Workspace: {project.name}",
         )
-        workdir_button = response["card"]["data"]["body"]["elements"][6]
+        run_task_button = response["card"]["data"]["body"]["elements"][6]
+        self.assertEqual(
+            run_task_button["behaviors"][0]["value"]["intent_key"],
+            "task.open_composer",
+        )
+        workdir_button = response["card"]["data"]["body"]["elements"][7]
         self.assertEqual(
             workdir_button["behaviors"][0]["value"]["intent_key"],
             "workspace.open_workdir_switcher",
         )
-        refresh_button = response["card"]["data"]["body"]["elements"][7]
+        refresh_button = response["card"]["data"]["body"]["elements"][8]
         self.assertEqual(
             refresh_button["behaviors"][0]["value"]["surface"],
             "group",
         )
+
+    def test_task_composer_opens_from_workspace_card(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+            workdir="/srv/poco/default",
+            group_chat_id="oc_group_proj_1",
+        )
+        self.workspace_controller.set_active_workdir(
+            project,
+            workdir="/srv/poco/api",
+            source="preset",
+        )
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_task_composer_1"},
+                "action": {
+                    "value": {
+                        "intent_key": "task.open_composer",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "request_id": "req_task_composer_1",
+                    },
+                },
+            }
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        self.assertEqual(response["instruction"]["template_key"], "task_composer")
+        card = response["card"]["data"]
+        self.assertEqual(card["header"]["title"]["content"], "Run Task: PoCo")
+        prompt_input = card["body"]["elements"][2]
+        self.assertEqual(prompt_input["tag"], "input")
+        self.assertEqual(prompt_input["name"], "prompt")
+        submit_button = card["body"]["elements"][4]
+        self.assertEqual(submit_button["behaviors"][0]["value"]["intent_key"], "task.submit")
+
+    def test_task_submit_creates_task_and_inherits_active_workdir(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+            workdir="/srv/poco/default",
+            group_chat_id="oc_group_proj_1",
+        )
+        self.workspace_controller.set_active_workdir(
+            project,
+            workdir="/srv/poco/api",
+            source="preset",
+        )
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_task_submit_1"},
+                "action": {
+                    "value": {
+                        "intent_key": "task.submit",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "request_id": "req_task_submit_1",
+                    },
+                    "form_value": {
+                        "prompt": "Summarize the current API module",
+                    },
+                },
+            }
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        self.assertEqual(response["instruction"]["template_key"], "workspace_overview")
+        overview = response["card"]["data"]["body"]["elements"][3]["content"]
+        self.assertIn("created", overview)
+        tasks = self.task_controller.list_tasks()
+        self.assertEqual(len(tasks), 1)
+        task = tasks[0]
+        self.assertEqual(task.project_id, project.id)
+        self.assertEqual(task.effective_workdir, "/srv/poco/api")
+        self.assertEqual(task.reply_receive_id, "oc_group_proj_1")
+        self.assertEqual(task.reply_receive_id_type, "chat_id")
+        self.assertEqual(self.task_dispatcher.actions, [("start", task.id)])
+
+    def test_task_submit_rejects_empty_prompt(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+        )
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_task_submit_2"},
+                "action": {
+                    "value": {
+                        "intent_key": "task.submit",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "request_id": "req_task_submit_2",
+                    },
+                    "form_value": {
+                        "prompt": "   ",
+                    },
+                },
+            }
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        self.assertEqual(response["toast"]["type"], "warning")
+        self.assertEqual(response["instruction"]["refresh_mode"], "ack_only")
+        self.assertEqual(self.task_controller.list_tasks(), [])
 
     def test_workspace_switcher_card_opens_from_group(self) -> None:
         project = self.project_controller.create_project(

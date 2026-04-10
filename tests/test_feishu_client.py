@@ -76,9 +76,14 @@ class FeishuClientTest(unittest.TestCase):
 
         card = FeishuCardRenderer().render(instruction)
 
-        change_workdir_button = card["body"]["elements"][6]
-        refresh_button = card["body"]["elements"][7]
-        back_button = card["body"]["elements"][8]
+        run_task_button = card["body"]["elements"][6]
+        change_workdir_button = card["body"]["elements"][7]
+        refresh_button = card["body"]["elements"][8]
+        back_button = card["body"]["elements"][9]
+        self.assertEqual(
+            run_task_button["behaviors"][0]["value"]["surface"],
+            "group",
+        )
         self.assertEqual(
             change_workdir_button["behaviors"][0]["value"]["surface"],
             "group",
@@ -132,7 +137,7 @@ class FeishuClientTest(unittest.TestCase):
         self.assertEqual(sent["receive_id_type"], "chat_id")
         card = sent["card"]
         self.assertEqual(card["header"]["title"]["content"], "Workspace: PoCo")
-        refresh_button = card["body"]["elements"][7]
+        refresh_button = card["body"]["elements"][8]
         self.assertEqual(refresh_button["behaviors"][0]["value"]["surface"], "group")
         snapshot = recorder.snapshot()
         self.assertEqual(snapshot["outbound_attempts"][0]["source"], "project_workspace_bootstrap")
@@ -235,6 +240,41 @@ class FeishuClientTest(unittest.TestCase):
         use_button = card["body"]["elements"][2]
         self.assertEqual(use_button["behaviors"][0]["value"]["intent_key"], "workspace.apply_preset_dir")
         self.assertEqual(use_button["behaviors"][0]["value"]["workdir"], "/srv/poco/api")
+
+    def test_task_composer_card_contains_prompt_input_and_submit(self) -> None:
+        project = Project(
+            id="proj_1",
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+        )
+        card = FeishuCardRenderer().render(
+            build_render_instruction(
+                IntentDispatchResult(
+                    status=DispatchStatus.OK,
+                    intent_key="task.open_composer",
+                    resource_refs=ResourceRefs(project_id=project.id),
+                    view_model=ViewModel(
+                        "task_composer",
+                        {
+                            "project": project.to_dict(),
+                            "current_agent": "codex",
+                            "current_workdir": "/srv/poco/api",
+                            "note": "Task submit inherits the current workspace workdir.",
+                        },
+                    ),
+                    refresh_mode=RefreshMode.REPLACE_CURRENT,
+                ),
+                surface=Surface.GROUP,
+            )
+        )
+
+        prompt_input = card["body"]["elements"][2]
+        submit_button = card["body"]["elements"][4]
+        self.assertEqual(prompt_input["tag"], "input")
+        self.assertEqual(prompt_input["name"], "prompt")
+        self.assertEqual(submit_button["behaviors"][0]["value"]["intent_key"], "task.submit")
+        self.assertEqual(submit_button["behaviors"][0]["value"]["surface"], "group")
 
 
 if __name__ == "__main__":

@@ -64,6 +64,11 @@ class FeishuCardRenderer:
                 instruction.template_data,
                 surface=instruction.surface.value,
             )
+        if instruction.template_key == "task_composer":
+            return _render_task_composer(
+                instruction.template_data,
+                surface=instruction.surface.value,
+            )
         return _render_fallback(instruction.template_key, instruction.template_data)
 
 
@@ -305,11 +310,15 @@ def _render_workspace_overview(
 ) -> dict[str, Any]:
     project = data["project"]
     latest_status = data.get("latest_task_status") or "none"
+    latest_task_id = data.get("latest_task_id")
     latest_result = data.get("latest_result_summary") or "No result yet."
     active_session = data.get("active_session_summary") or "No active session yet."
     pending_approvals = data.get("pending_approvals") or 0
     current_workdir = data.get("current_workdir") or "未设置"
     workdir_source = data.get("workdir_source") or "unset"
+    latest_task_line = f"**latest task status**: `{latest_status}`"
+    if latest_task_id:
+        latest_task_line = f"**latest task**: `{latest_status}` (`{latest_task_id}`)"
     return _card_shell(
         title=f"Workspace: {project['name']}",
         template="orange",
@@ -317,9 +326,19 @@ def _render_workspace_overview(
             _markdown(f"**active session**\n{active_session}"),
             _markdown(f"**current workdir**\n`{current_workdir}`"),
             _markdown(f"**workdir source**: `{workdir_source}`"),
-            _markdown(f"**latest task status**: `{latest_status}`"),
+            _markdown(latest_task_line),
             _markdown(f"**pending approvals**: `{pending_approvals}`"),
             _markdown(f"**latest result**\n{latest_result}"),
+            _button(
+                label="Run Task",
+                intent_value={
+                    "intent_key": "task.open_composer",
+                    "surface": surface,
+                    "project_id": project["id"],
+                },
+                style="primary",
+                name=f"open_task_composer_{project['id']}",
+            ),
             _button(
                 label="Change Workdir",
                 intent_value={
@@ -534,6 +553,48 @@ def _render_workspace_enter_path(
                     "project_id": project["id"],
                 },
                 name=f"back_to_workdir_{project['id']}",
+            ),
+        ],
+    )
+
+
+def _render_task_composer(
+    data: dict[str, Any],
+    *,
+    surface: str,
+) -> dict[str, Any]:
+    project = data["project"]
+    current_agent = data.get("current_agent") or project["backend"]
+    current_workdir = data.get("current_workdir") or "未设置"
+    return _card_shell(
+        title=f"Run Task: {project['name']}",
+        template="carmine",
+        elements=[
+            _markdown(f"**Current Agent**\n`{current_agent}`"),
+            _markdown(f"**Current Workdir**\n`{current_workdir}`"),
+            _input(
+                name="prompt",
+                placeholder="Describe the task for the agent",
+            ),
+            _markdown(data["note"]),
+            _button(
+                label="Submit Task",
+                intent_value={
+                    "intent_key": "task.submit",
+                    "surface": surface,
+                    "project_id": project["id"],
+                },
+                style="primary",
+                name=f"submit_task_{project['id']}",
+            ),
+            _button(
+                label="Back To Workspace",
+                intent_value={
+                    "intent_key": "workspace.open",
+                    "surface": surface,
+                    "project_id": project["id"],
+                },
+                name=f"back_to_workspace_{project['id']}",
             ),
         ],
     )

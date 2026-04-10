@@ -12,6 +12,8 @@ from poco.interaction.card_models import (
 )
 from poco.project.bootstrap import ProjectBootstrapError, ProjectBootstrapper
 from poco.project.controller import ProjectConfigError, ProjectController, ProjectNotFoundError
+from poco.task.controller import TaskController
+from poco.task.dispatcher import AsyncTaskDispatcher
 from poco.workspace.controller import WorkspaceContextController, WorkspaceContextError
 
 
@@ -359,6 +361,67 @@ class WorkspaceIntentHandler:
         )
 
 
+@dataclass(slots=True)
+class TaskIntentHandler:
+    project_controller: ProjectController
+    workspace_controller: WorkspaceContextController
+    task_controller: TaskController
+    dispatcher: AsyncTaskDispatcher | None = None
+
+    def handle(self, intent: ActionIntent) -> IntentDispatchResult:
+        if intent.intent_key == "task.open_composer":
+            return self._open_composer(intent)
+        if intent.intent_key == "task.submit":
+            return self._submit_task(intent)
+        return _rejected(intent, f"Unsupported task intent: {intent.intent_key}")
+
+    def _open_composer(self, intent: ActionIntent) -> IntentDispatchResult:
+        project = _get_project_or_reject(self.project_controller, intent)
+        if isinstance(project, IntentDispatchResult):
+            return project
+        context = self.workspace_controller.get_context(project)
+        return IntentDispatchResult(
+            status=DispatchStatus.OK,
+            intent_key=intent.intent_key,
+            resource_refs=ResourceRefs(project_id=project.id),
+            view_model=_task_composer_view_model(project, context=context),
+            refresh_mode=RefreshMode.REPLACE_CURRENT,
+            message=f"Task composer for {project.name}",
+        )
+
+    def _submit_task(self, intent: ActionIntent) -> IntentDispatchResult:
+        project = _get_project_or_reject(self.project_controller, intent)
+        if isinstance(project, IntentDispatchResult):
+            return project
+        prompt = _extract_prompt(intent.payload)
+        if not prompt:
+            return _rejected(intent, "Task prompt cannot be empty.")
+
+        context = self.workspace_controller.get_context(project)
+        reply_receive_id, reply_receive_id_type = _resolve_task_reply_target(
+            project,
+            actor_id=intent.actor_id,
+            surface=intent.surface.value,
+        )
+        task = self.task_controller.create_task(
+            requester_id=intent.actor_id,
+            prompt=prompt,
+            source="feishu_card",
+            project_id=project.id,
+            effective_workdir=context.active_workdir,
+            reply_receive_id=reply_receive_id,
+            reply_receive_id_type=reply_receive_id_type,
+        )
+        if self.dispatcher is not None:
+            self.dispatcher.dispatch_start(task.id)
+        return build_workspace_overview_result(
+            project,
+            context=context,
+            latest_task=task,
+            message=f"Task created for {project.name}",
+        )
+
+
 def build_dm_project_list_result(
     project_controller: ProjectController,
     *,
@@ -378,7 +441,13 @@ def build_dm_project_list_result(
     )
 
 
-def build_workspace_overview_result(project, *, context=None) -> IntentDispatchResult:
+def build_workspace_overview_result(
+    project,
+    *,
+    context=None,
+    latest_task=None,
+    message: str | None = None,
+) -> IntentDispatchResult:
     current_workdir = None
     workdir_source = "unset"
     if context is not None:
@@ -387,6 +456,13 @@ def build_workspace_overview_result(project, *, context=None) -> IntentDispatchR
     elif project.workdir:
         current_workdir = project.workdir
         workdir_source = "default"
+    latest_task_status = None
+    latest_task_id = None
+    latest_result_summary = None
+    if latest_task is not None:
+        latest_task_status = latest_task.status.value
+        latest_task_id = latest_task.id
+        latest_result_summary = latest_task.result_summary
     return IntentDispatchResult(
         status=DispatchStatus.OK,
         intent_key="workspace.open",
@@ -396,15 +472,16 @@ def build_workspace_overview_result(project, *, context=None) -> IntentDispatchR
             {
                 "project": project.to_dict(),
                 "active_session_summary": "No active session yet.",
-                "latest_task_status": None,
+                "latest_task_status": latest_task_status,
+                "latest_task_id": latest_task_id,
                 "pending_approvals": 0,
-                "latest_result_summary": None,
+                "latest_result_summary": latest_result_summary,
                 "current_workdir": current_workdir,
                 "workdir_source": workdir_source,
             },
         ),
         refresh_mode=RefreshMode.REPLACE_CURRENT,
-        message=f"Workspace ready for {project.name}",
+        message=message or f"Workspace ready for {project.name}",
     )
 
 
@@ -529,6 +606,18 @@ def _workspace_enter_path_view_model(project, *, context) -> ViewModel:
     )
 
 
+def _task_composer_view_model(project, *, context) -> ViewModel:
+    return ViewModel(
+        "task_composer",
+        {
+            "project": project.to_dict(),
+            "current_agent": project.backend,
+            "current_workdir": context.active_workdir,
+            "note": "Task submit now inherits the current workspace workdir and dispatches asynchronously.",
+        },
+    )
+
+
 def _get_project_or_reject(
     project_controller: ProjectController,
     intent: ActionIntent,
@@ -559,6 +648,26 @@ def _extract_workdir_path(payload: dict[str, object]) -> str:
         if nested is not None:
             return nested
     return ""
+
+
+def _extract_prompt(payload: dict[str, object]) -> str:
+    direct = _optional_string(payload.get("prompt"))
+    if direct is not None:
+        return direct
+    input_value = payload.get("input_value")
+    if isinstance(input_value, str) and input_value.strip():
+        return input_value.strip()
+    if isinstance(input_value, dict):
+        nested = _optional_string(input_value.get("prompt"))
+        if nested is not None:
+            return nested
+    return ""
+
+
+def _resolve_task_reply_target(project, *, actor_id: str, surface: str) -> tuple[str | None, str | None]:
+    if surface == "group" and project.group_chat_id:
+        return project.group_chat_id, "chat_id"
+    return actor_id, "open_id"
 
 
 def _required_id(value: str | None, label: str) -> str:

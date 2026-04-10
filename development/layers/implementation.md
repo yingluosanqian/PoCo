@@ -85,11 +85,13 @@
 - `project.add_dir_preset` 与 `workspace.apply_preset_dir` 已升级为真实写路径，允许在 DM 管理 project-level presets，并在群工作面应用 `source=preset`
 - group 文本 `/run` 已开始解析 `chat_id -> project`，并把当前 workspace context 固化到 task 的 `project_id` / `effective_workdir`
 - Codex runner 已开始优先消费 task 的 `effective_workdir`，而不是只使用全局 `POCO_CODEX_WORKDIR`
+- group `workspace_overview` 已新增 `Run Task` 入口，并可进入最小 `task_composer`
+- `task.submit` 已接入 card-first 主链，当前会创建 task、继承当前 workdir，并异步派发执行
 
 ### 当前明确未实现
 
 - 飞书卡片 2.0 驱动的完整正式交互面
-- 飞书卡片端到端正式工作流，以及 project/session/task/group 的完整 card handlers
+- 飞书卡片端到端正式工作流，以及 approval/result 等完整 task card handlers
 - 飞书加密事件体处理
 - Claude Code 与 Cursor Agent 执行适配
 - 跨进程可恢复的任务队列
