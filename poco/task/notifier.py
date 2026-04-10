@@ -9,6 +9,7 @@ from poco.platform.feishu.client import FeishuMessageClient
 from poco.platform.feishu.cards import FeishuCardRenderer
 from poco.platform.feishu.debug import FeishuDebugRecorder
 from poco.project.controller import ProjectController
+from poco.session.controller import SessionController
 from poco.task.models import Task, TaskStatus
 from poco.task.rendering import headline_for_notification, render_task_text
 from poco.workspace.controller import WorkspaceContextController
@@ -31,12 +32,14 @@ class FeishuTaskNotifier:
         *,
         renderer: FeishuCardRenderer | None = None,
         project_controller: ProjectController | None = None,
+        session_controller: SessionController | None = None,
         workspace_controller: WorkspaceContextController | None = None,
         debug_recorder: FeishuDebugRecorder | None = None,
     ) -> None:
         self._message_client = message_client
         self._renderer = renderer or FeishuCardRenderer()
         self._project_controller = project_controller
+        self._session_controller = session_controller
         self._workspace_controller = workspace_controller
         self._debug_recorder = debug_recorder
         self._last_running_update_at: dict[str, float] = {}
@@ -187,6 +190,11 @@ class FeishuTaskNotifier:
             build_workspace_overview_result(
                 project,
                 context=context,
+                active_session=(
+                    self._session_controller.get_active_session(project.id)
+                    if self._session_controller is not None
+                    else None
+                ),
                 latest_task=task,
                 message=f"Workspace synced for {project.name}",
             ),

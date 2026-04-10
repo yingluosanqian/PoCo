@@ -3,6 +3,7 @@ from __future__ import annotations
 from threading import RLock
 
 from poco.project.models import Project
+from poco.session.models import Session
 from poco.task.models import Task
 from poco.workspace.models import WorkspaceContext
 
@@ -62,3 +63,22 @@ class InMemoryWorkspaceContextStore:
     def get(self, project_id: str) -> WorkspaceContext | None:
         with self._lock:
             return self._contexts.get(project_id)
+
+
+class InMemorySessionStore:
+    def __init__(self) -> None:
+        self._sessions: dict[str, Session] = {}
+        self._lock = RLock()
+
+    def save(self, session: Session) -> Session:
+        with self._lock:
+            self._sessions[session.id] = session
+            return session
+
+    def get(self, session_id: str) -> Session | None:
+        with self._lock:
+            return self._sessions.get(session_id)
+
+    def list_all(self) -> list[Session]:
+        with self._lock:
+            return list(self._sessions.values())

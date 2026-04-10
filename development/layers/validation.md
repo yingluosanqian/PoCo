@@ -102,6 +102,8 @@
 - running 中的 task card 在更新失败时是否避免回退成多张新卡
 - sqlite 状态后端是否已经保住重启后的 `project/workspace/task` 最小跟踪能力
 - 启动恢复是否已经把被重启打断的运行中 task 收敛到明确状态
+- task 是否已经自动挂到 active session
+- workspace card 是否已经展示真实 active session
 
 ### 当前轮已知未验证区域
 
@@ -115,3 +117,4 @@
 - 真实网络条件下的飞书端到端联调
 - 真实 agent 执行与长任务管理
 - 服务重启后的后台任务断点续跑
+- 显式 session lifecycle 与 richer session timeline

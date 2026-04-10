@@ -68,6 +68,7 @@
 - group workspace 中“普通文本默认即 prompt”的对话式任务入口
 - `project -> session -> task` 的执行上下文分层，其中 `agent` 归 project，`working dir` 归 session
 - 最小运行态持久化层：`project / workspace context / task -> sqlite`
+- 最小 `session/handoff` 运行态层：`project -> active session -> task`
 - card-first interaction model，正式交互由卡片驱动而不是文本命令驱动
 - 分层卡片信息架构：DM 管理卡片与群工作区卡片
 - 面向执行上下文配置的最小卡片 IA：`DM Project Config Card` 与 `Group Workdir Switcher Card`
@@ -107,3 +108,5 @@
 在卡片信息架构上，优先把 `agent` 配置收敛到 DM project config card，把 `working dir` 切换收敛到 group workdir switcher card，而不是让两者共享首屏。
 
 在状态恢复上，优先保证“重启后还能识别既有 workspace 和当前工作面”，而不是提前承诺完整 session 恢复。
+
+在 session 设计上，优先采用“单 project 单 active session”的最小连续性模型，而不是一开始就进入多 session 分叉。

@@ -16,7 +16,8 @@ from poco.platform.feishu.verification import (
     FeishuVerificationError,
 )
 from poco.project.controller import ProjectController
-from poco.storage.memory import InMemoryProjectStore, InMemoryTaskStore, InMemoryWorkspaceContextStore
+from poco.session.controller import SessionController
+from poco.storage.memory import InMemoryProjectStore, InMemorySessionStore, InMemoryTaskStore, InMemoryWorkspaceContextStore
 from poco.task.controller import TaskController
 from poco.task.dispatcher import AsyncTaskDispatcher
 from poco.agent.runner import StubAgentRunner
@@ -71,11 +72,13 @@ class FakeDispatcher(AsyncTaskDispatcher):
 
 class FeishuGatewayTest(unittest.TestCase):
     def setUp(self) -> None:
+        self.session_controller = SessionController(InMemorySessionStore())
         self.controller = TaskController(
             store=InMemoryTaskStore(),
             runner=StubAgentRunner(),
+            session_controller=self.session_controller,
         )
-        interaction = InteractionService(self.controller)
+        interaction = InteractionService(self.controller, session_controller=self.session_controller)
         self.message_client = FakeMessageClient()
         self.dispatcher = FakeDispatcher()
         self.debug_recorder = FeishuDebugRecorder()
@@ -84,6 +87,7 @@ class FeishuGatewayTest(unittest.TestCase):
         workspace_handler = WorkspaceIntentHandler(
             self.project_controller,
             self.workspace_controller,
+            session_controller=self.session_controller,
         )
         self.card_gateway = FeishuCardActionGateway(
             dispatcher=CardActionDispatcher(

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+from poco.session.controller import SessionController
 from poco.task.controller import TaskController, TaskNotFoundError, TaskStateError
 from poco.task.rendering import render_task_text
 
@@ -18,8 +19,13 @@ class InteractionResponse:
 
 
 class InteractionService:
-    def __init__(self, controller: TaskController) -> None:
+    def __init__(
+        self,
+        controller: TaskController,
+        session_controller: SessionController | None = None,
+    ) -> None:
         self._controller = controller
+        self._session_controller = session_controller
 
     def handle_text(
         self,
@@ -118,6 +124,7 @@ class InteractionService:
             prompt=prompt,
             source=source,
             project_id=project_id,
+            session_id=self._resolve_session_id(project_id=project_id, requester_id=requester_id),
             effective_workdir=effective_workdir,
             reply_receive_id=reply_receive_id,
             reply_receive_id_type=reply_receive_id_type,
@@ -175,3 +182,17 @@ class InteractionService:
             ]
         )
         return "\n".join(lines)
+
+    def _resolve_session_id(
+        self,
+        *,
+        project_id: str | None,
+        requester_id: str,
+    ) -> str | None:
+        if project_id is None or self._session_controller is None:
+            return None
+        session = self._session_controller.get_or_create_active_session(
+            project_id=project_id,
+            created_by=requester_id,
+        )
+        return session.id

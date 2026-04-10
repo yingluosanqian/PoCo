@@ -140,3 +140,9 @@ PoCo 在正式交互模型上进一步收敛为：
 PoCo 默认采用 `sqlite` 作为运行态状态后端，先持久化 `project / workspace context / task`，以解决服务重启后丢失 group workspace 跟踪的问题。
 
 这轮不把该能力表述为完整 `session continuity`。
+
+### 当前最小 Session 决策
+
+PoCo 当前采用“每个 project 一个当前 active session”的最小模型。
+
+新 task 默认挂到当前 active session；session 负责沉淀最小 handoff 信息，但不承担完整多分支会话能力。

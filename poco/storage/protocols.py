@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from poco.project.models import Project
+from poco.session.models import Session
 from poco.task.models import Task
 from poco.workspace.models import WorkspaceContext
 
@@ -37,4 +38,15 @@ class WorkspaceContextStore(Protocol):
         ...
 
     def get(self, project_id: str) -> WorkspaceContext | None:
+        ...
+
+
+class SessionStore(Protocol):
+    def save(self, session: Session) -> Session:
+        ...
+
+    def get(self, session_id: str) -> Session | None:
+        ...
+
+    def list_all(self) -> list[Session]:
         ...

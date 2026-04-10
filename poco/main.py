@@ -24,8 +24,9 @@ from poco.platform.feishu.project_bootstrap import FeishuProjectBootstrapper
 from poco.platform.feishu.verification import FeishuRequestVerifier, FeishuVerificationError
 from poco.project.bootstrap import NullProjectBootstrapper
 from poco.project.controller import ProjectController
-from poco.storage.memory import InMemoryProjectStore, InMemoryTaskStore, InMemoryWorkspaceContextStore
-from poco.storage.sqlite import SqliteProjectStore, SqliteTaskStore, SqliteWorkspaceContextStore
+from poco.session.controller import SessionController
+from poco.storage.memory import InMemoryProjectStore, InMemorySessionStore, InMemoryTaskStore, InMemoryWorkspaceContextStore
+from poco.storage.sqlite import SqliteProjectStore, SqliteSessionStore, SqliteTaskStore, SqliteWorkspaceContextStore
 from poco.task.controller import TaskController, TaskNotFoundError
 from poco.task.dispatcher import AsyncTaskDispatcher
 from poco.task.notifier import FeishuTaskNotifier, NullTaskNotifier
@@ -42,10 +43,12 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
         store = SqliteTaskStore(settings.state_db_path)
         project_store = SqliteProjectStore(settings.state_db_path)
         workspace_store = SqliteWorkspaceContextStore(settings.state_db_path)
+        session_store = SqliteSessionStore(settings.state_db_path)
     else:
         store = InMemoryTaskStore()
         project_store = InMemoryProjectStore()
         workspace_store = InMemoryWorkspaceContextStore()
+        session_store = InMemorySessionStore()
     card_renderer = FeishuCardRenderer()
     runner = create_agent_runner(
         backend=settings.agent_backend,
@@ -56,11 +59,12 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
         codex_approval_policy=settings.codex_approval_policy,
         codex_timeout_seconds=settings.codex_timeout_seconds,
     )
-    controller = TaskController(store=store, runner=runner)
+    session_controller = SessionController(session_store)
+    controller = TaskController(store=store, runner=runner, session_controller=session_controller)
     controller.recover_interrupted_tasks()
     project_controller = ProjectController(project_store)
     workspace_controller = WorkspaceContextController(workspace_store)
-    interaction = InteractionService(controller)
+    interaction = InteractionService(controller, session_controller=session_controller)
     feishu_debug = FeishuDebugRecorder()
     request_verifier = FeishuRequestVerifier(
         verification_token=settings.feishu_verification_token,
@@ -89,6 +93,7 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
             message_client,
             renderer=card_renderer,
             project_controller=project_controller,
+            session_controller=session_controller,
             workspace_controller=workspace_controller,
             debug_recorder=feishu_debug,
         )
@@ -104,11 +109,13 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
         project_controller,
         workspace_controller,
         controller,
+        session_controller=session_controller,
     )
     task_intent_handler = TaskIntentHandler(
         project_controller,
         workspace_controller,
         controller,
+        session_controller=session_controller,
         dispatcher=dispatcher,
     )
     card_dispatcher = CardActionDispatcher(
@@ -175,6 +182,7 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
     app.state.task_controller = controller
     app.state.project_controller = project_controller
+    app.state.session_controller = session_controller
     app.state.workspace_controller = workspace_controller
     app.state.feishu_gateway = gateway
     app.state.feishu_card_gateway = card_gateway

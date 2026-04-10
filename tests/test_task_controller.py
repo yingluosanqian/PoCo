@@ -3,16 +3,19 @@ from __future__ import annotations
 import unittest
 
 from poco.agent.runner import StubAgentRunner
-from poco.storage.memory import InMemoryTaskStore
+from poco.session.controller import SessionController
+from poco.storage.memory import InMemorySessionStore, InMemoryTaskStore
 from poco.task.controller import TaskController
 from poco.task.models import TaskStatus
 
 
 class TaskControllerTest(unittest.TestCase):
     def setUp(self) -> None:
+        self.session_controller = SessionController(InMemorySessionStore())
         self.controller = TaskController(
             store=InMemoryTaskStore(),
             runner=StubAgentRunner(),
+            session_controller=self.session_controller,
         )
 
     def test_run_command_without_confirmation_completes(self) -> None:
@@ -36,6 +39,22 @@ class TaskControllerTest(unittest.TestCase):
         )
         self.assertEqual(task.project_id, "proj_demo")
         self.assertEqual(task.effective_workdir, "/srv/poco/api")
+
+    def test_task_creation_updates_session_summary(self) -> None:
+        session = self.session_controller.create_session(
+            project_id="proj_demo",
+            created_by="ou_demo",
+        )
+        task = self.controller.create_task(
+            requester_id="ou_demo",
+            prompt="summarize the repository",
+            source="feishu",
+            project_id="proj_demo",
+            session_id=session.id,
+        )
+        updated = self.session_controller.get_session(session.id)
+        self.assertEqual(task.session_id, session.id)
+        self.assertEqual(updated.latest_task_id, task.id)
 
     def test_confirm_prefix_moves_task_to_waiting_state(self) -> None:
         task = self.controller.create_task(

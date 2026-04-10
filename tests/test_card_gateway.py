@@ -8,7 +8,8 @@ from poco.platform.feishu.card_gateway import FeishuCardActionGateway
 from poco.platform.feishu.cards import FeishuCardRenderer
 from poco.project.bootstrap import ProjectBootstrapError, ProjectBootstrapResult
 from poco.project.controller import ProjectController
-from poco.storage.memory import InMemoryProjectStore, InMemoryTaskStore, InMemoryWorkspaceContextStore
+from poco.session.controller import SessionController
+from poco.storage.memory import InMemoryProjectStore, InMemorySessionStore, InMemoryTaskStore, InMemoryWorkspaceContextStore
 from poco.task.controller import TaskController
 from poco.agent.runner import StubAgentRunner
 from poco.workspace.controller import WorkspaceContextController
@@ -68,9 +69,11 @@ class FeishuCardGatewayTest(unittest.TestCase):
     def setUp(self) -> None:
         self.project_controller = ProjectController(InMemoryProjectStore())
         self.workspace_controller = WorkspaceContextController(InMemoryWorkspaceContextStore())
+        self.session_controller = SessionController(InMemorySessionStore())
         self.task_controller = TaskController(
             store=InMemoryTaskStore(),
             runner=StubAgentRunner(),
+            session_controller=self.session_controller,
         )
         self.task_dispatcher = FakeTaskDispatcher()
         self.bootstrapper = FakeProjectBootstrapper()
@@ -82,11 +85,13 @@ class FeishuCardGatewayTest(unittest.TestCase):
             self.project_controller,
             self.workspace_controller,
             self.task_controller,
+            self.session_controller,
         )
         self.task_handler = TaskIntentHandler(
             self.project_controller,
             self.workspace_controller,
             self.task_controller,
+            self.session_controller,
             dispatcher=self.task_dispatcher,  # type: ignore[arg-type]
         )
         self.gateway = FeishuCardActionGateway(
@@ -290,6 +295,47 @@ class FeishuCardGatewayTest(unittest.TestCase):
         updated_project = self.project_controller.get_project(project.id)
         self.assertEqual(updated_project.workspace_message_id, "om_card_2")
 
+    def test_workspace_open_shows_active_session_summary(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+        )
+        session = self.session_controller.create_session(
+            project_id=project.id,
+            created_by="ou_demo_user",
+        )
+        task = self.task_controller.create_task(
+            requester_id="ou_demo_user",
+            prompt="review the release plan",
+            source="feishu_group_message",
+            project_id=project.id,
+            session_id=session.id,
+        )
+        task.set_status(task.status.COMPLETED)
+        task.set_result("done")
+        self.task_controller._store.save(task)  # type: ignore[attr-defined]
+        self.session_controller.sync_from_task(task)
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_card_session_1"},
+                "action": {
+                    "value": {
+                        "intent_key": "workspace.open",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "request_id": "req_workspace_session_1",
+                    },
+                },
+            }
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        session_block = response["card"]["data"]["body"]["elements"][0]
+        self.assertIn(session.id, session_block["content"])
+
     def test_workspace_open_shows_latest_task_button_when_task_exists(self) -> None:
         project = self.project_controller.create_project(
             name="PoCo",
@@ -407,6 +453,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
         self.assertEqual(len(tasks), 1)
         task = tasks[0]
         self.assertEqual(task.project_id, project.id)
+        self.assertIsNotNone(task.session_id)
         self.assertEqual(task.effective_workdir, "/srv/poco/api")
         self.assertEqual(task.notification_message_id, "om_task_submit_1")
         self.assertEqual(task.reply_receive_id, "oc_group_proj_1")

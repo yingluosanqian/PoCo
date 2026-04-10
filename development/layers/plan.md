@@ -111,3 +111,9 @@
 - 真正的 `session/handoff` 持久化模型
 - 跨进程可恢复 worker
 - 重启后的进行中 task 恢复或重放策略
+
+在最小 session/handoff 已落地后，下一轮可继续补：
+
+- 显式 `continue/new session/close session` 动作
+- richer handoff summary
+- session timeline

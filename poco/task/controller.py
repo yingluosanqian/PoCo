@@ -5,6 +5,7 @@ from threading import RLock
 from uuid import uuid4
 
 from poco.agent.runner import AgentRunner
+from poco.session.controller import SessionController
 from poco.storage.protocols import TaskStore
 from poco.task.models import Task, TaskStatus
 
@@ -22,9 +23,11 @@ class TaskController:
         self,
         store: TaskStore,
         runner: AgentRunner,
+        session_controller: SessionController | None = None,
     ) -> None:
         self._store = store
         self._runner = runner
+        self._session_controller = session_controller
         self._lock = RLock()
 
     def create_task(
@@ -34,6 +37,7 @@ class TaskController:
         source: str,
         *,
         project_id: str | None = None,
+        session_id: str | None = None,
         effective_workdir: str | None = None,
         notification_message_id: str | None = None,
         reply_receive_id: str | None = None,
@@ -47,6 +51,7 @@ class TaskController:
                 source=source,
                 agent_backend=self._runner.name,
                 project_id=project_id,
+                session_id=session_id,
                 effective_workdir=effective_workdir,
                 notification_message_id=notification_message_id,
                 reply_receive_id=reply_receive_id,
@@ -54,6 +59,7 @@ class TaskController:
             )
             task.add_event("task_created", f"Task created from {source}.")
             self._store.save(task)
+            self._sync_session(task)
             return task
 
     def get_task(self, task_id: str) -> Task:
@@ -88,12 +94,14 @@ class TaskController:
                 task.set_status(TaskStatus.CANCELLED)
                 task.add_event("confirmation_rejected", "User rejected the checkpoint.")
                 self._store.save(task)
+                self._sync_session(task)
                 return task
 
             task.awaiting_confirmation_reason = None
             task.set_status(TaskStatus.RUNNING)
             task.add_event("confirmation_approved", "User approved the checkpoint.")
             self._store.save(task)
+            self._sync_session(task)
             return task
 
     def start_task_execution(self, task_id: str) -> Task:
@@ -124,6 +132,7 @@ class TaskController:
             task.set_status(TaskStatus.FAILED)
             task.add_event("task_failed", message)
             self._store.save(task)
+            self._sync_session(task)
             return task
 
     def recover_interrupted_tasks(self) -> list[Task]:
@@ -139,6 +148,7 @@ class TaskController:
                     "Task execution was interrupted by a server restart.",
                 )
                 self._store.save(task)
+                self._sync_session(task)
                 recovered.append(task)
         return recovered
 
@@ -193,8 +203,14 @@ class TaskController:
                 else:
                     raise TaskStateError(f"Unsupported runner update kind: {update.kind}")
                 self._store.save(task)
+                self._sync_session(task)
             if on_update is not None:
                 on_update(task)
 
         with self._lock:
             return self.get_task(task_id)
+
+    def _sync_session(self, task: Task) -> None:
+        if self._session_controller is None:
+            return
+        self._session_controller.sync_from_task(task)

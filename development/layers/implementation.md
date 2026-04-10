@@ -101,6 +101,9 @@
 - 运行态状态后端已默认切到 `sqlite`，当前 `project`、`workspace context` 和 `task` 会持久化到本地 db 文件
 - `create_app()` 已支持 `memory/sqlite` 状态后端切换，默认运行态会在启动时恢复最小持久化状态
 - 启动阶段已增加最小恢复逻辑，`created/running` task 会被标记为因服务重启而中断
+- 已新增最小 `Session` 模型与持久化 store，当前 task 会保存 `session_id`
+- 文本消息和 card 提交两条 task 创建路径都会自动解析并复用当前 active session
+- task 生命周期会同步刷新 session handoff，workspace card 已开始展示真实 active session summary
 
 ### 当前明确未实现
 
@@ -110,4 +113,5 @@
 - Claude Code 与 Cursor Agent 执行适配
 - 跨进程可恢复的任务队列
 - 完整 session 持久化
+- 多 session 分叉与 session lifecycle 动作
 - 跨进程可恢复 worker

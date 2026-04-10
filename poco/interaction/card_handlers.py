@@ -13,6 +13,7 @@ from poco.interaction.card_models import (
 )
 from poco.project.bootstrap import ProjectBootstrapError, ProjectBootstrapper
 from poco.project.controller import ProjectConfigError, ProjectController, ProjectNotFoundError
+from poco.session.controller import SessionController
 from poco.task.controller import TaskController, TaskNotFoundError
 from poco.task.dispatcher import AsyncTaskDispatcher
 from poco.workspace.controller import WorkspaceContextController, WorkspaceContextError
@@ -231,6 +232,7 @@ class WorkspaceIntentHandler:
     project_controller: ProjectController
     workspace_controller: WorkspaceContextController
     task_controller: TaskController | None = None
+    session_controller: SessionController | None = None
 
     def handle(self, intent: ActionIntent) -> IntentDispatchResult:
         if intent.intent_key == "workspace.open_workdir_switcher":
@@ -261,6 +263,7 @@ class WorkspaceIntentHandler:
         return build_workspace_overview_result(
             project,
             context=context,
+            active_session=_active_project_session(self.session_controller, project.id),
             latest_task=_latest_project_task(self.task_controller, project.id),
         )
 
@@ -377,6 +380,7 @@ class TaskIntentHandler:
     project_controller: ProjectController
     workspace_controller: WorkspaceContextController
     task_controller: TaskController
+    session_controller: SessionController | None = None
     dispatcher: AsyncTaskDispatcher | None = None
 
     def handle(self, intent: ActionIntent) -> IntentDispatchResult:
@@ -425,6 +429,11 @@ class TaskIntentHandler:
             prompt=prompt,
             source="feishu_card",
             project_id=project.id,
+            session_id=_resolve_active_session_id(
+                self.session_controller,
+                project_id=project.id,
+                actor_id=intent.actor_id,
+            ),
             effective_workdir=context.active_workdir,
             notification_message_id=_optional_string(intent.source_message_id),
             reply_receive_id=reply_receive_id,
@@ -497,6 +506,7 @@ def build_workspace_overview_result(
     project,
     *,
     context=None,
+    active_session=None,
     latest_task=None,
     message: str | None = None,
 ) -> IntentDispatchResult:
@@ -513,15 +523,21 @@ def build_workspace_overview_result(
     if latest_task is not None:
         latest_task_status = latest_task.status.value
         latest_task_id = latest_task.id
+    active_session_summary = "No active session yet."
+    if active_session is not None:
+        active_session_summary = active_session.summary_text()
     return IntentDispatchResult(
         status=DispatchStatus.OK,
         intent_key="workspace.open",
-        resource_refs=ResourceRefs(project_id=project.id),
+        resource_refs=ResourceRefs(
+            project_id=project.id,
+            session_id=getattr(active_session, "id", None),
+        ),
         view_model=ViewModel(
             "workspace_overview",
             {
                 "project": project.to_dict(),
-                "active_session_summary": "No active session yet.",
+                "active_session_summary": active_session_summary,
                 "latest_task_status": latest_task_status,
                 "latest_task_id": latest_task_id,
                 "pending_approvals": 0,
@@ -545,6 +561,7 @@ def build_task_status_result(
         intent_key="task.status",
         resource_refs=ResourceRefs(
             project_id=task.project_id,
+            session_id=task.session_id,
             task_id=task.id,
         ),
         view_model=ViewModel(
@@ -761,6 +778,27 @@ def _latest_project_task(task_controller: TaskController | None, project_id: str
     if not tasks:
         return None
     return max(tasks, key=lambda task: task.updated_at)
+
+
+def _active_project_session(session_controller: SessionController | None, project_id: str):
+    if session_controller is None:
+        return None
+    return session_controller.get_active_session(project_id)
+
+
+def _resolve_active_session_id(
+    session_controller: SessionController | None,
+    *,
+    project_id: str,
+    actor_id: str,
+) -> str | None:
+    if session_controller is None:
+        return None
+    session = session_controller.get_or_create_active_session(
+        project_id=project_id,
+        created_by=actor_id,
+    )
+    return session.id
 
 
 def _required_id(value: str | None, label: str) -> str:
