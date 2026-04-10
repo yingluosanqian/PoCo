@@ -43,7 +43,7 @@ class FakeMessageClient:
         receive_id: str,
         receive_id_type: str,
         card: dict[str, object],
-    ) -> None:
+    ):
         self.sent_cards.append(
             {
                 "receive_id": receive_id,
@@ -51,6 +51,11 @@ class FakeMessageClient:
                 "card": card,
             }
         )
+        return type(
+            "SendResult",
+            (),
+            {"message_id": f"om_{len(self.sent_cards)}"},
+        )()
 
 
 class FakeDispatcher(AsyncTaskDispatcher):
@@ -99,6 +104,8 @@ class FeishuGatewayTest(unittest.TestCase):
             message_client=self.message_client,
             dispatcher=self.dispatcher,
             card_gateway=self.card_gateway,
+            task_controller=self.controller,
+            card_renderer=FeishuCardRenderer(),
             debug_recorder=self.debug_recorder,
             project_controller=self.project_controller,
             workspace_controller=self.workspace_controller,
@@ -240,6 +247,8 @@ class FeishuGatewayTest(unittest.TestCase):
             interaction,
             request_verifier=FeishuRequestVerifier(verification_token="verify-token"),
             message_client=RaisingMessageClient(),
+            task_controller=controller,
+            card_renderer=FeishuCardRenderer(),
             debug_recorder=recorder,
         )
         payload = {
@@ -296,6 +305,8 @@ class FeishuGatewayTest(unittest.TestCase):
         )
 
         self.assertTrue(response["ok"])
+        self.assertEqual(len(self.message_client.sent_messages), 0)
+        self.assertEqual(len(self.message_client.sent_cards), 1)
         self.assertEqual(len(self.dispatcher.actions), 1)
         action, task_id = self.dispatcher.actions[0]
         self.assertEqual(action, "start")
@@ -303,7 +314,8 @@ class FeishuGatewayTest(unittest.TestCase):
         task = self.controller.get_task(task_id)
         self.assertEqual(task.project_id, project.id)
         self.assertEqual(task.effective_workdir, "/srv/poco/api")
-        self.assertIn("effective_workdir=/srv/poco/api", response["reply_preview"])
+        self.assertIsNotNone(task.notification_message_id)
+        self.assertEqual(response["reply_preview"], "[card] task_status:created")
 
     def test_plain_group_message_dispatches_background_start(self) -> None:
         project = self.project_controller.create_project(
@@ -336,6 +348,8 @@ class FeishuGatewayTest(unittest.TestCase):
         )
 
         self.assertTrue(response["ok"])
+        self.assertEqual(len(self.message_client.sent_messages), 0)
+        self.assertEqual(len(self.message_client.sent_cards), 1)
         self.assertEqual(len(self.dispatcher.actions), 1)
         action, task_id = self.dispatcher.actions[0]
         self.assertEqual(action, "start")
@@ -344,7 +358,8 @@ class FeishuGatewayTest(unittest.TestCase):
         self.assertEqual(task.prompt, "summarize the repository")
         self.assertEqual(task.project_id, project.id)
         self.assertEqual(task.effective_workdir, "/srv/poco/api")
-        self.assertIn("prompt=summarize the repository", response["reply_preview"])
+        self.assertIsNotNone(task.notification_message_id)
+        self.assertEqual(response["reply_preview"], "[card] task_status:created")
 
     def test_unknown_slash_command_in_group_returns_help_instead_of_task(self) -> None:
         self.project_controller.create_project(

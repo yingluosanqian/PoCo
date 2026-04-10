@@ -83,7 +83,7 @@
 - 已存在最小 preset 存储与应用链路，当前可在 DM 中新增 project-level presets，并在群工作面应用为 `source=preset`
 - 已存在从群工作面到 task 执行参数的最小落地链，当前群文本 `/run` 会解析绑定 project，并把当前 `active_workdir` 固化到 task 的 `effective_workdir`
 - 已存在最小按-task 工作目录执行能力，当前 Codex runner 会优先在 task 指定目录下运行
-- 已存在最小 card-first 发任务链，当前 group workspace card 可进入 `task_composer`，并通过 `task.submit` 创建 task、继承当前 workdir、触发异步 dispatch
+- 已存在最小 card-first 发任务链，当前系统仍保留 `task_composer` / `task.submit` 这条内部任务创建路径，并可继承当前 workdir、触发异步 dispatch
 - 已存在最小 task status card 链，当前等待确认和终态会发送 `task_status` card，并可通过卡片执行 `Approve` / `Reject`
 - 已存在最小 task card 原位更新链，当前 notifier 首次发送 task status card 后会记录 message id，并在后续状态变化时优先更新同一张卡
 - 已存在最小 task card 绑定链，当前 `task.submit` 会直接把当前 composer card 替换为 `task_status`，workspace 首卡也可打开 latest task
@@ -92,6 +92,7 @@
 - 已存在群对话式 task intake，当前绑定 project 的群普通文本消息也会默认创建 task，并继承当前 workdir
 - 已存在最小结果保真链，当前 `Task` 已保存 `raw_result`，task status card 会优先展示原始结果，超长结果可分页查看
 - 已存在最小运行期透明链，当前 running task 可携带 `live_output`，并驱动节流后的 task card 原位更新
+- 已存在 group 文本直达单卡链，当前群文本创建 task 时会先收到一张初始 task card，后续状态与 live output 都会更新这张卡
 - 已有最小自动化验证，覆盖核心任务状态流、飞书 challenge 校验、签名校验、Codex runner、后台调度器和本地 demo 接口
 - 仓库当前结构仍较简单，尚无重型历史实现包袱
 
@@ -105,7 +106,7 @@
 - 当前系统仅维护 task state，尚未维护 session continuity 或产品级 handoff context
 - 当前系统已开始把 `agent` 与 `working dir` 的 ownership 落到实现里，真实写路径已覆盖 `Use Default`、`Enter Path` 和 `Choose Preset`
 - 当前 workdir 已开始进入文本和 card 两条 task 创建路径，approval/result 也已有最小 card 链、原位更新和 task-card 绑定能力，但仍未形成完整 timeline 或 richer progress 视图
-- 当前 group workspace 已开始转向“普通文本默认即 prompt”的正式语义，但 `Run Task` 卡片仍作为补充输入路径保留
+- 当前 group workspace 已开始转向“普通文本默认即 prompt”的正式语义，workspace 首卡不再承担发任务入口职责
 - 当前 `agent` 与 `working dir` 的卡片信息架构已部分进入实现：DM 配置卡和群目录切换卡都已具备入口，但 `Use Recent` 仍未接入真实目录切换
 - 当前系统尚未实现完整 project lifecycle 与正式 workspace card 工作流，正式交互模型仍未闭环
 - 当前 DM 已能主动下发首页卡片，并具备第一批真实 callback 动作；但 project 命名、timeline、session/task 正式交互仍未形成完整正式工作流

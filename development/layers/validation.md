@@ -86,7 +86,6 @@
 - group 文本 `/run` 是否已经把当前 workspace context 固化到 task 的 `effective_workdir`
 - 已绑定 project 的 group 普通文本消息是否也已经默认创建 task
 - Codex runner 是否已经优先使用 task 级 workdir
-- group workspace card 是否已经具备 `Run Task` 入口
 - `task.submit` 是否已经继承当前 workspace workdir 并触发异步派发
 - notifier 是否已经发送 `task_status` interactive card
 - `task.approve` / `task.reject` 是否已经接入 card callback 主链
@@ -98,6 +97,7 @@
 - 超长原始结果是否已经支持分页
 - running task 是否已经展示 live output
 - running 中的 task card 是否已经按节流策略原位刷新
+- group 文本创建 task 时是否先回单张初始 task card，而不是文本回执加多张卡
 
 ### 当前轮已知未验证区域
 

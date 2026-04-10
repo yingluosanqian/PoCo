@@ -4,13 +4,18 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
+from poco.interaction.card_dispatcher import build_render_instruction
+from poco.interaction.card_handlers import build_task_status_result
+from poco.interaction.card_models import Surface
 from poco.interaction.service import InteractionService
 from poco.platform.feishu.client import FeishuMessageClient
 from poco.platform.feishu.card_gateway import FeishuCardActionGateway
+from poco.platform.feishu.cards import FeishuCardRenderer
 from poco.platform.feishu.debug import FeishuDebugRecorder
 from poco.platform.feishu.verification import FeishuRequestVerifier
 from poco.project.models import Project
 from poco.project.controller import ProjectController
+from poco.task.controller import TaskController
 from poco.task.dispatcher import AsyncTaskDispatcher
 from poco.workspace.controller import WorkspaceContextController
 
@@ -24,6 +29,8 @@ class FeishuGateway:
         message_client: FeishuMessageClient | None = None,
         dispatcher: AsyncTaskDispatcher | None = None,
         card_gateway: FeishuCardActionGateway | None = None,
+        task_controller: TaskController | None = None,
+        card_renderer: FeishuCardRenderer | None = None,
         debug_recorder: FeishuDebugRecorder | None = None,
         project_controller: ProjectController | None = None,
         workspace_controller: WorkspaceContextController | None = None,
@@ -33,6 +40,8 @@ class FeishuGateway:
         self._message_client = message_client
         self._dispatcher = dispatcher
         self._card_gateway = card_gateway
+        self._task_controller = task_controller
+        self._card_renderer = card_renderer or FeishuCardRenderer()
         self._debug_recorder = debug_recorder
         self._project_controller = project_controller
         self._workspace_controller = workspace_controller
@@ -121,20 +130,52 @@ class FeishuGateway:
         )
 
         delivered = False
+        reply_preview = response.text
         if self._message_client is not None:
-            self._record_outbound_attempt(
-                source="gateway_reply",
-                receive_id=target["receive_id"],
-                receive_id_type=target["receive_id_type"],
-                text=response.text,
-                task_id=response.task_id,
-            )
             try:
-                self._message_client.send_text(
-                    receive_id=target["receive_id"],
-                    receive_id_type=target["receive_id_type"],
-                    text=response.text,
-                )
+                if (
+                    response.task_id
+                    and self._task_controller is not None
+                    and target["receive_id_type"] in {"chat_id", "open_id"}
+                ):
+                    task = self._task_controller.get_task(response.task_id)
+                    surface = (
+                        Surface.GROUP
+                        if target["receive_id_type"] == "chat_id"
+                        else Surface.DM
+                    )
+                    instruction = build_render_instruction(
+                        build_task_status_result(task, message=response.text),
+                        surface=surface,
+                    )
+                    card = self._card_renderer.render(instruction)
+                    self._record_outbound_attempt(
+                        source="gateway_task_card",
+                        receive_id=target["receive_id"],
+                        receive_id_type=target["receive_id_type"],
+                        text=f"[card] task_status:{task.status.value}",
+                        task_id=response.task_id,
+                    )
+                    result = self._message_client.send_interactive(
+                        receive_id=target["receive_id"],
+                        receive_id_type=target["receive_id_type"],
+                        card=card,
+                    )
+                    task.set_notification_message_id(result.message_id)
+                    reply_preview = f"[card] task_status:{task.status.value}"
+                else:
+                    self._record_outbound_attempt(
+                        source="gateway_reply",
+                        receive_id=target["receive_id"],
+                        receive_id_type=target["receive_id_type"],
+                        text=response.text,
+                        task_id=response.task_id,
+                    )
+                    self._message_client.send_text(
+                        receive_id=target["receive_id"],
+                        receive_id_type=target["receive_id_type"],
+                        text=response.text,
+                    )
                 delivered = True
             except Exception as exc:
                 self._record_error(
@@ -157,7 +198,7 @@ class FeishuGateway:
         return {
             "ok": True,
             "delivered": delivered,
-            "reply_preview": response.text,
+            "reply_preview": reply_preview,
             "task_id": response.task_id,
         }
 

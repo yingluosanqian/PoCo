@@ -85,8 +85,8 @@
 - `project.add_dir_preset` 与 `workspace.apply_preset_dir` 已升级为真实写路径，允许在 DM 管理 project-level presets，并在群工作面应用 `source=preset`
 - group 文本 `/run` 已开始解析 `chat_id -> project`，并把当前 workspace context 固化到 task 的 `project_id` / `effective_workdir`
 - 已绑定 project 的 group 普通文本消息现在也会直接创建 task，`/run` 降级为兼容命令路径
+- group 文本创建 task 时，gateway 会先回一张初始 `task_status` card，并把该 message id 绑定为后续流式更新目标
 - Codex runner 已开始优先消费 task 的 `effective_workdir`，而不是只使用全局 `POCO_CODEX_WORKDIR`
-- group `workspace_overview` 已新增 `Run Task` 入口，并可进入最小 `task_composer`，但该入口现在是补充路径而不是主输入路径
 - `task.submit` 已接入 card-first 主链，当前会创建 task、继承当前 workdir，并异步派发执行
 - `task_status` 已接入 notifier 回推链，等待确认和终态现在会发送 interactive card
 - `task.approve` / `task.reject` 已接入 card callback，并复用现有 confirmation / resume 主链

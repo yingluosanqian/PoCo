@@ -346,16 +346,6 @@ def _render_workspace_overview(
     elements.extend(
         [
             _button(
-                label="Run Task",
-                intent_value={
-                    "intent_key": "task.open_composer",
-                    "surface": surface,
-                    "project_id": project["id"],
-                },
-                style="primary",
-                name=f"open_task_composer_{project['id']}",
-            ),
-            _button(
                 label="Change Workdir",
                 intent_value={
                     "intent_key": "workspace.open_workdir_switcher",

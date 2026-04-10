@@ -145,6 +145,8 @@ def create_app() -> FastAPI:
         message_client=message_client,
         dispatcher=dispatcher,
         card_gateway=card_gateway,
+        task_controller=controller,
+        card_renderer=card_renderer,
         debug_recorder=feishu_debug,
         project_controller=project_controller,
         workspace_controller=workspace_controller,
