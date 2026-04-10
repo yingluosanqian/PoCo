@@ -126,6 +126,8 @@ def create_app() -> FastAPI:
         dispatcher=dispatcher,
         card_gateway=card_gateway,
         debug_recorder=feishu_debug,
+        project_controller=project_controller,
+        workspace_controller=workspace_controller,
     )
     longconn_listener = FeishuLongconnListener(
         app_id=settings.feishu_app_id,

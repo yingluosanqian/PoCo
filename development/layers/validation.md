@@ -83,6 +83,8 @@
 - `workspace.use_default_dir` 是否已经成为第一条真实可写的群侧 workdir 路径
 - `workspace.apply_entered_path` 是否已经成为第二条真实可写的群侧 workdir 路径
 - `project.add_dir_preset` / `workspace.apply_preset_dir` 是否已经形成最小 preset 写链路
+- group 文本 `/run` 是否已经把当前 workspace context 固化到 task 的 `effective_workdir`
+- Codex runner 是否已经优先使用 task 级 workdir
 
 ### 当前轮已知未验证区域
 
@@ -90,6 +92,7 @@
 - 飞书卡片回调更新与完整 renderer 工作流
 - 真实飞书环境里的建群权限、群名称策略和群内 workspace bootstrap
 - 群内 workdir switcher card 与真实目录切换
+- card-first task submit 与 task 级 workdir 继承
 - 群工作区卡片与 project/session/task 完整 handlers
 - 飞书加密事件体
 - 真实网络条件下的飞书端到端联调

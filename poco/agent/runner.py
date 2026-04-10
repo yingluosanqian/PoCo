@@ -139,7 +139,7 @@ class CodexCliRunner:
             )
             return updates
 
-        updates.extend(self._execute_prompt(_normalized_prompt(task.prompt)))
+        updates.extend(self._execute_prompt(task, _normalized_prompt(task.prompt)))
         return updates
 
     def resume_after_confirmation(self, task: Task) -> list[AgentRunUpdate]:
@@ -149,13 +149,17 @@ class CodexCliRunner:
                 message="Approval received. Invoking codex.",
             )
         ]
-        updates.extend(self._execute_prompt(_normalized_prompt(task.prompt)))
+        updates.extend(self._execute_prompt(task, _normalized_prompt(task.prompt)))
         return updates
 
-    def _execute_prompt(self, prompt: str) -> list[AgentRunUpdate]:
-        ready, reason = self.is_ready()
-        if not ready:
-            return [AgentRunUpdate(kind="failed", message=reason)]
+    def _execute_prompt(self, task: Task, prompt: str) -> list[AgentRunUpdate]:
+        executable = shutil.which(self._command)
+        if not executable:
+            return [AgentRunUpdate(kind="failed", message=f"Codex CLI not found: {self._command}")]
+
+        workdir = task.effective_workdir or self._workdir
+        if not Path(workdir).exists():
+            return [AgentRunUpdate(kind="failed", message=f"Codex workdir does not exist: {workdir}")]
 
         output_file_path: str | None = None
         try:
@@ -169,7 +173,7 @@ class CodexCliRunner:
                 [
                     "exec",
                     "-C",
-                    self._workdir,
+                    workdir,
                     "-s",
                     self._sandbox,
                     "--skip-git-repo-check",
@@ -188,7 +192,7 @@ class CodexCliRunner:
 
             completed = subprocess.run(
                 command,
-                cwd=self._workdir,
+                cwd=workdir,
                 env=os.environ.copy(),
                 capture_output=True,
                 text=True,

@@ -66,11 +66,11 @@ class FakeDispatcher(AsyncTaskDispatcher):
 
 class FeishuGatewayTest(unittest.TestCase):
     def setUp(self) -> None:
-        controller = TaskController(
+        self.controller = TaskController(
             store=InMemoryTaskStore(),
             runner=StubAgentRunner(),
         )
-        interaction = InteractionService(controller)
+        interaction = InteractionService(self.controller)
         self.message_client = FakeMessageClient()
         self.dispatcher = FakeDispatcher()
         self.debug_recorder = FeishuDebugRecorder()
@@ -100,6 +100,8 @@ class FeishuGatewayTest(unittest.TestCase):
             dispatcher=self.dispatcher,
             card_gateway=self.card_gateway,
             debug_recorder=self.debug_recorder,
+            project_controller=self.project_controller,
+            workspace_controller=self.workspace_controller,
         )
 
     def test_challenge_round_trip_requires_valid_token(self) -> None:
@@ -264,6 +266,17 @@ class FeishuGatewayTest(unittest.TestCase):
         self.assertEqual(snapshot["errors"][0]["stage"], "gateway_reply")
 
     def test_run_command_dispatches_background_start(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+            group_chat_id="oc_demo_chat",
+        )
+        self.workspace_controller.set_active_workdir(
+            project,
+            workdir="/srv/poco/api",
+            source="manual",
+        )
         payload = {
             "token": "verify-token",
             "event": {
@@ -287,6 +300,10 @@ class FeishuGatewayTest(unittest.TestCase):
         action, task_id = self.dispatcher.actions[0]
         self.assertEqual(action, "start")
         self.assertEqual(task_id, response["task_id"])
+        task = self.controller.get_task(task_id)
+        self.assertEqual(task.project_id, project.id)
+        self.assertEqual(task.effective_workdir, "/srv/poco/api")
+        self.assertIn("effective_workdir=/srv/poco/api", response["reply_preview"])
 
 
 class FeishuRequestVerifierTest(unittest.TestCase):

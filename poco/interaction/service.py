@@ -23,6 +23,8 @@ class InteractionService:
         text: str,
         source: str,
         *,
+        project_id: str | None = None,
+        effective_workdir: str | None = None,
         reply_receive_id: str | None = None,
         reply_receive_id_type: str | None = None,
     ) -> InteractionResponse:
@@ -41,6 +43,8 @@ class InteractionService:
                 requester_id=user_id,
                 prompt=prompt,
                 source=source,
+                project_id=project_id,
+                effective_workdir=effective_workdir,
                 reply_receive_id=reply_receive_id,
                 reply_receive_id_type=reply_receive_id_type,
             )

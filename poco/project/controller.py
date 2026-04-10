@@ -77,6 +77,13 @@ class ProjectController:
             self._store.save(project)
             return project
 
+    def get_project_by_group_chat_id(self, group_chat_id: str) -> Project | None:
+        with self._lock:
+            for project in self._store.list_all():
+                if project.group_chat_id == group_chat_id:
+                    return project
+            return None
+
     def archive_project(self, project_id: str) -> Project:
         with self._lock:
             project = self.get_project(project_id)

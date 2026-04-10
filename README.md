@@ -256,7 +256,8 @@ Current interaction model:
 - `Use Default` now updates the in-memory workspace context and becomes the first real write path for group-side workdir state
 - `Enter Path` now updates the same in-memory workspace context and becomes the second real write path, using manual source
 - DM `Manage Dir Presets` can now add project-level presets, and group `Choose Preset` can apply them into the current in-memory workspace context
-- Group messages still return the current text fallback and can dispatch tasks
+- Group text `/run` now resolves the bound project and current workspace workdir, then stamps that into task execution context
+- Codex execution now prefers the task's `effective_workdir` over the global fallback directory
 - The webhook request returns quickly after acknowledging the command
 - Task execution happens in a background dispatcher
 - When a task waits for confirmation, completes, fails, or is cancelled, PoCo pushes a follow-up message to the stored Feishu reply target

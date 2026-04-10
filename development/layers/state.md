@@ -81,6 +81,8 @@
 - 已存在最小 in-memory workspace context，当前 `Use Default` 已可把 `active_workdir` 和 `source=default` 写入当前群工作面的上下文状态
 - 已存在第二条真实 workdir 写路径，当前 `Enter Path` 已可把手工输入目录写入 in-memory workspace context，并标记 `source=manual`
 - 已存在最小 preset 存储与应用链路，当前可在 DM 中新增 project-level presets，并在群工作面应用为 `source=preset`
+- 已存在从群工作面到 task 执行参数的最小落地链，当前群文本 `/run` 会解析绑定 project，并把当前 `active_workdir` 固化到 task 的 `effective_workdir`
+- 已存在最小按-task 工作目录执行能力，当前 Codex runner 会优先在 task 指定目录下运行
 - 已有最小自动化验证，覆盖核心任务状态流、飞书 challenge 校验、签名校验、Codex runner、后台调度器和本地 demo 接口
 - 仓库当前结构仍较简单，尚无重型历史实现包袱
 
@@ -93,6 +95,7 @@
 - 当前状态存储仅为内存实现，不适合跨进程或重启后的任务追踪
 - 当前系统仅维护 task state，尚未维护 session continuity 或产品级 handoff context
 - 当前系统已开始把 `agent` 与 `working dir` 的 ownership 落到实现里，真实写路径已覆盖 `Use Default`、`Enter Path` 和 `Choose Preset`
+- 当前 workdir 虽已开始进入真实执行链，但目前只覆盖群文本 fallback 的 task 创建路径，card-first task submit 还未接上
 - 当前 `agent` 与 `working dir` 的卡片信息架构已部分进入实现：DM 配置卡和群目录切换卡都已具备入口，但 `Use Recent` 仍未接入真实目录切换
 - 当前系统尚未实现完整 project lifecycle 与正式 workspace card 工作流，正式交互模型仍未闭环
 - 当前 DM 已能主动下发首页卡片，并具备第一批真实 callback 动作；但 project 命名、群内 workspace 深层动作、session/task 正式交互仍未形成完整正式工作流

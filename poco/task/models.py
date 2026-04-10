@@ -39,6 +39,8 @@ class Task:
     requester_id: str
     prompt: str
     agent_backend: str = "unknown"
+    project_id: str | None = None
+    effective_workdir: str | None = None
     reply_receive_id: str | None = None
     reply_receive_id_type: str | None = None
     status: TaskStatus = TaskStatus.CREATED
@@ -63,6 +65,8 @@ class Task:
             "requester_id": self.requester_id,
             "prompt": self.prompt,
             "agent_backend": self.agent_backend,
+            "project_id": self.project_id,
+            "effective_workdir": self.effective_workdir,
             "reply_receive_id": self.reply_receive_id,
             "reply_receive_id_type": self.reply_receive_id_type,
             "status": self.status.value,

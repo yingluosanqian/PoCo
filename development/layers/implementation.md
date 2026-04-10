@@ -83,6 +83,8 @@
 - `workspace.use_default_dir` 已升级为真实写路径，会更新当前 in-memory workspace context 中的 `active_workdir`
 - `workspace.apply_entered_path` 已升级为真实写路径，会把手工输入目录写入当前 in-memory workspace context，并标记 `source=manual`
 - `project.add_dir_preset` 与 `workspace.apply_preset_dir` 已升级为真实写路径，允许在 DM 管理 project-level presets，并在群工作面应用 `source=preset`
+- group 文本 `/run` 已开始解析 `chat_id -> project`，并把当前 workspace context 固化到 task 的 `project_id` / `effective_workdir`
+- Codex runner 已开始优先消费 task 的 `effective_workdir`，而不是只使用全局 `POCO_CODEX_WORKDIR`
 
 ### 当前明确未实现
 

@@ -26,6 +26,17 @@ class TaskControllerTest(unittest.TestCase):
         self.assertEqual(task.status, TaskStatus.COMPLETED)
         self.assertIsNotNone(task.result_summary)
 
+    def test_task_creation_preserves_project_workdir_context(self) -> None:
+        task = self.controller.create_task(
+            requester_id="ou_demo",
+            prompt="summarize the repository",
+            source="feishu",
+            project_id="proj_demo",
+            effective_workdir="/srv/poco/api",
+        )
+        self.assertEqual(task.project_id, "proj_demo")
+        self.assertEqual(task.effective_workdir, "/srv/poco/api")
+
     def test_confirm_prefix_moves_task_to_waiting_state(self) -> None:
         task = self.controller.create_task(
             requester_id="ou_demo",

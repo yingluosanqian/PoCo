@@ -9,7 +9,10 @@ from poco.platform.feishu.client import FeishuMessageClient
 from poco.platform.feishu.card_gateway import FeishuCardActionGateway
 from poco.platform.feishu.debug import FeishuDebugRecorder
 from poco.platform.feishu.verification import FeishuRequestVerifier
+from poco.project.models import Project
+from poco.project.controller import ProjectController
 from poco.task.dispatcher import AsyncTaskDispatcher
+from poco.workspace.controller import WorkspaceContextController
 
 
 class FeishuGateway:
@@ -22,6 +25,8 @@ class FeishuGateway:
         dispatcher: AsyncTaskDispatcher | None = None,
         card_gateway: FeishuCardActionGateway | None = None,
         debug_recorder: FeishuDebugRecorder | None = None,
+        project_controller: ProjectController | None = None,
+        workspace_controller: WorkspaceContextController | None = None,
     ) -> None:
         self._interaction_service = interaction_service
         self._request_verifier = request_verifier
@@ -29,6 +34,8 @@ class FeishuGateway:
         self._dispatcher = dispatcher
         self._card_gateway = card_gateway
         self._debug_recorder = debug_recorder
+        self._project_controller = project_controller
+        self._workspace_controller = workspace_controller
 
     def handle_event(
         self,
@@ -106,6 +113,8 @@ class FeishuGateway:
             user_id=user_id,
             text=text,
             source="feishu",
+            project_id=self._resolve_project_id(event),
+            effective_workdir=self._resolve_effective_workdir(event),
             reply_receive_id=target["receive_id"],
             reply_receive_id_type=target["receive_id_type"],
         )
@@ -262,3 +271,28 @@ class FeishuGateway:
             message=message,
             context=context,
         )
+
+    def _resolve_project_id(self, event: dict[str, Any]) -> str | None:
+        project = self._resolve_group_project(event)
+        if project is None:
+            return None
+        return project.id
+
+    def _resolve_effective_workdir(self, event: dict[str, Any]) -> str | None:
+        project = self._resolve_group_project(event)
+        if project is None:
+            return None
+        if self._workspace_controller is None:
+            return project.workdir
+        context = self._workspace_controller.get_context(project)
+        return context.active_workdir
+
+    def _resolve_group_project(self, event: dict[str, Any]) -> Project | None:
+        if self._project_controller is None:
+            return None
+        message = event.get("message", {})
+        chat_id = message.get("chat_id")
+        chat_type = message.get("chat_type") or event.get("chat_type")
+        if not chat_id or str(chat_type).lower() not in {"group", "chat", "group_chat"}:
+            return None
+        return self._project_controller.get_project_by_group_chat_id(str(chat_id))

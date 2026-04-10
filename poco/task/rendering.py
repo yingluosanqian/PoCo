@@ -13,6 +13,12 @@ def render_task_text(task: Task, *, headline: str, result_limit: int = 1200) -> 
         f"prompt={task.prompt}",
     ]
 
+    if task.project_id:
+        lines.append(f"project_id={task.project_id}")
+
+    if task.effective_workdir:
+        lines.append(f"effective_workdir={task.effective_workdir}")
+
     if task.awaiting_confirmation_reason:
         lines.append(f"awaiting_confirmation={task.awaiting_confirmation_reason}")
 
