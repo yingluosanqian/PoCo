@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import unittest
 
-from poco.agent.runner import StubAgentRunner
+from poco.agent.runner import AgentRunUpdate, StubAgentRunner
 from poco.storage.memory import InMemoryTaskStore
 from poco.task.controller import TaskController
 from poco.task.dispatcher import AsyncTaskDispatcher
@@ -14,12 +15,34 @@ class FakeNotifier:
         self.tasks: list[Task] = []
 
     def notify_task(self, task: Task) -> None:
-        self.tasks.append(task)
+        self.tasks.append(deepcopy(task))
 
 
 class InlineDispatcher(AsyncTaskDispatcher):
     def _launch(self, target) -> None:  # type: ignore[no-untyped-def]
         target()
+
+
+class StreamingRunner:
+    name = "codex"
+
+    def is_ready(self) -> tuple[bool, str]:
+        return True, "ready"
+
+    def start(self, task: Task):
+        yield AgentRunUpdate(
+            kind="progress",
+            message="streaming",
+            output_chunk="line 1\n",
+        )
+        yield AgentRunUpdate(
+            kind="completed",
+            message="done",
+            raw_result="line 1\nfinal result",
+        )
+
+    def resume_after_confirmation(self, task: Task):
+        return iter(())
 
 
 class TaskDispatcherTest(unittest.TestCase):
@@ -72,6 +95,29 @@ class TaskDispatcherTest(unittest.TestCase):
         updated = self.controller.get_task(task.id)
         self.assertEqual(updated.status.value, "completed")
         self.assertEqual(len(self.notifier.tasks), 2)
+
+    def test_dispatch_start_notifies_running_stream_updates(self) -> None:
+        controller = TaskController(
+            store=InMemoryTaskStore(),
+            runner=StreamingRunner(),
+        )
+        notifier = FakeNotifier()
+        dispatcher = InlineDispatcher(controller, notifier=notifier)
+        task = controller.create_task(
+            requester_id="ou_demo",
+            prompt="stream output",
+            source="feishu",
+            reply_receive_id="oc_demo_chat",
+            reply_receive_id_type="chat_id",
+        )
+
+        dispatcher.dispatch_start(task.id)
+
+        updated = controller.get_task(task.id)
+        self.assertEqual(updated.status.value, "completed")
+        self.assertEqual(len(notifier.tasks), 2)
+        self.assertEqual(notifier.tasks[0].status.value, "running")
+        self.assertIn("line 1", notifier.tasks[0].live_output or "")
 
 
 if __name__ == "__main__":

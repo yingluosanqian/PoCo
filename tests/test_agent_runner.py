@@ -10,6 +10,45 @@ from poco.task.models import Task, TaskStatus
 
 
 class CodexCliRunnerTest(unittest.TestCase):
+    def _fake_popen_factory(
+        self,
+        *,
+        output_text: str,
+        stream_lines: list[str] | None = None,
+        returncode: int = 0,
+        captured: dict[str, object] | None = None,
+    ):
+        class FakeStdout:
+            def __init__(self, lines: list[str]) -> None:
+                self._lines = iter(lines)
+
+            def __iter__(self):
+                return self
+
+            def __next__(self) -> str:
+                return next(self._lines)
+
+            def close(self) -> None:
+                return None
+
+        class FakePopen:
+            def __init__(self, command, **kwargs):  # type: ignore[no-untyped-def]
+                if captured is not None:
+                    captured["command"] = command
+                    captured["cwd"] = kwargs.get("cwd")
+                output_index = command.index("-o") + 1
+                Path(command[output_index]).write_text(output_text, encoding="utf-8")
+                self.stdout = FakeStdout(stream_lines or [])
+                self._returncode = returncode
+
+            def wait(self, timeout=None):  # type: ignore[no-untyped-def]
+                return self._returncode
+
+            def kill(self) -> None:
+                return None
+
+        return FakePopen
+
     def test_is_ready_fails_when_binary_is_missing(self) -> None:
         runner = CodexCliRunner(command="missing-codex", workdir="/tmp")
         with patch("poco.agent.runner.shutil.which", return_value=None):
@@ -27,7 +66,7 @@ class CodexCliRunnerTest(unittest.TestCase):
             status=TaskStatus.RUNNING,
             agent_backend="codex",
         )
-        updates = runner.start(task)
+        updates = list(runner.start(task))
         self.assertEqual(updates[-1].kind, "confirmation_required")
 
     def test_codex_success_reads_output_file(self) -> None:
@@ -42,21 +81,18 @@ class CodexCliRunnerTest(unittest.TestCase):
                 agent_backend="codex",
             )
 
-            def fake_run(command, **kwargs):  # type: ignore[no-untyped-def]
-                output_index = command.index("-o") + 1
-                Path(command[output_index]).write_text("codex final answer", encoding="utf-8")
-
-                class Result:
-                    returncode = 0
-                    stdout = "stdout"
-                    stderr = ""
-
-                return Result()
-
             with patch("poco.agent.runner.shutil.which", return_value="/opt/homebrew/bin/codex"):
-                with patch("poco.agent.runner.subprocess.run", side_effect=fake_run):
-                    updates = runner.start(task)
+                with patch(
+                    "poco.agent.runner.subprocess.Popen",
+                    self._fake_popen_factory(
+                        output_text="codex final answer",
+                        stream_lines=["step 1\n", "step 2\n"],
+                    ),
+                ):
+                    updates = list(runner.start(task))
 
+            self.assertEqual(updates[1].kind, "progress")
+            self.assertEqual(updates[1].output_chunk, "step 1\n")
             self.assertEqual(updates[-1].kind, "completed")
             self.assertEqual(updates[-1].result_summary, "codex final answer")
 
@@ -74,22 +110,15 @@ class CodexCliRunnerTest(unittest.TestCase):
             )
             captured: dict[str, object] = {}
 
-            def fake_run(command, **kwargs):  # type: ignore[no-untyped-def]
-                captured["command"] = command
-                captured["cwd"] = kwargs.get("cwd")
-                output_index = command.index("-o") + 1
-                Path(command[output_index]).write_text("codex final answer", encoding="utf-8")
-
-                class Result:
-                    returncode = 0
-                    stdout = "stdout"
-                    stderr = ""
-
-                return Result()
-
             with patch("poco.agent.runner.shutil.which", return_value="/opt/homebrew/bin/codex"):
-                with patch("poco.agent.runner.subprocess.run", side_effect=fake_run):
-                    updates = runner.start(task)
+                with patch(
+                    "poco.agent.runner.subprocess.Popen",
+                    self._fake_popen_factory(
+                        output_text="codex final answer",
+                        captured=captured,
+                    ),
+                ):
+                    updates = list(runner.start(task))
 
             self.assertEqual(updates[-1].kind, "completed")
             self.assertEqual(captured["cwd"], task_tmpdir)
@@ -107,14 +136,16 @@ class CodexCliRunnerTest(unittest.TestCase):
                 agent_backend="codex",
             )
 
-            class Result:
-                returncode = 1
-                stdout = ""
-                stderr = "codex failed"
-
             with patch("poco.agent.runner.shutil.which", return_value="/opt/homebrew/bin/codex"):
-                with patch("poco.agent.runner.subprocess.run", return_value=Result()):
-                    updates = runner.start(task)
+                with patch(
+                    "poco.agent.runner.subprocess.Popen",
+                    self._fake_popen_factory(
+                        output_text="",
+                        stream_lines=["codex failed\n"],
+                        returncode=1,
+                    ),
+                ):
+                    updates = list(runner.start(task))
 
             self.assertEqual(updates[-1].kind, "failed")
             self.assertIn("codex failed", updates[-1].message)

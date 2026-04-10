@@ -71,6 +71,7 @@
 - 分层卡片信息架构：DM 管理卡片与群工作区卡片
 - 面向执行上下文配置的最小卡片 IA：`DM Project Config Card` 与 `Group Workdir Switcher Card`
 - task 结果保真展示链：`raw_result` 为主，卡片分页为辅
+- task 运行期透明链：runner 增量输出 -> `live_output` tail -> 节流后的 task card 原位更新
 - 统一 card action intent 协议与固定 refresh mode
 - 统一 ActionIntent payload、资源级 handler ownership 与写操作幂等约束
 - `IntentDispatchResult -> PlatformRenderInstruction -> Renderer` 的平台解耦链路

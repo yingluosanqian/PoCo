@@ -47,6 +47,7 @@ class Task:
     status: TaskStatus = TaskStatus.CREATED
     events: list[TaskEvent] = field(default_factory=list)
     awaiting_confirmation_reason: str | None = None
+    live_output: str | None = None
     raw_result: str | None = None
     result_summary: str | None = None
     created_at: datetime = field(default_factory=utc_now)
@@ -69,6 +70,19 @@ class Task:
         self.result_summary = _result_preview(raw_result)
         self.updated_at = utc_now()
 
+    def append_live_output(self, chunk: str, *, limit: int = 4000) -> None:
+        if not chunk:
+            return
+        combined = f"{self.live_output or ''}{chunk}"
+        if len(combined) > limit:
+            combined = combined[-limit:]
+        self.live_output = combined
+        self.updated_at = utc_now()
+
+    def clear_live_output(self) -> None:
+        self.live_output = None
+        self.updated_at = utc_now()
+
     def to_dict(self) -> dict[str, object]:
         return {
             "id": self.id,
@@ -83,6 +97,7 @@ class Task:
             "reply_receive_id_type": self.reply_receive_id_type,
             "status": self.status.value,
             "awaiting_confirmation_reason": self.awaiting_confirmation_reason,
+            "live_output": self.live_output,
             "raw_result": self.raw_result,
             "result_summary": self.result_summary,
             "created_at": self.created_at.isoformat(),

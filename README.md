@@ -271,6 +271,7 @@ Current interaction model:
 - workspace cards now keep a bound message id and will also be refreshed with latest-task changes when task state changes
 - task status cards now prefer the agent's raw result over summary text, and long results are paginated instead of being replaced by a summary
 - workspace cards no longer try to show latest-result body; they now only keep latest-task status and navigation
+- running task cards now show throttled live output updates from the agent, instead of staying at a coarse `running` state
 
 If `POCO_FEISHU_DELIVERY_MODE=longconn` is enabled:
 

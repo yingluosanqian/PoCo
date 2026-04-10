@@ -97,6 +97,7 @@
 - `Task` 已新增 `raw_result`，当前完成态结果会优先保存原始输出；`result_summary` 仅作为兼容 preview 保留
 - `task_status` 已开始优先展示原始结果；超长结果使用最小分页，而不是默认摘要替代
 - `workspace_overview` 已移除 latest result preview，开始只承担项目状态面板职责
+- `CodexCliRunner` 已开始流式读取进程输出，`Task` 会保存 `live_output` tail，running 中的 task card 会按节流策略原位刷新
 
 ### 当前明确未实现
 

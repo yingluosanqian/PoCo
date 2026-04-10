@@ -96,6 +96,8 @@
 - task 状态变化时 workspace latest task 区块是否也会同步刷新
 - task status 是否已经优先展示原始结果而不是摘要
 - 超长原始结果是否已经支持分页
+- running task 是否已经展示 live output
+- running 中的 task card 是否已经按节流策略原位刷新
 
 ### 当前轮已知未验证区域
 

@@ -630,6 +630,7 @@ def _render_task_status(
     status = task.get("status") or "unknown"
     prompt = task.get("prompt") or ""
     workdir = task.get("effective_workdir") or "未设置"
+    live_output = task.get("live_output") or ""
     raw_result = task.get("raw_result") or task.get("result_summary") or "No result yet."
     requested_page = _normalize_page(data.get("result_page"))
     result_chunk, page, total_pages = _paginate_text(raw_result, page=requested_page)
@@ -669,6 +670,9 @@ def _render_task_status(
                 name=f"reject_task_{task['id']}",
             )
         )
+    elif status == "running":
+        elements.append(_markdown("**Live Output**"))
+        elements.append(_plain_text(live_output or "Waiting for agent output..."))
     else:
         elements.append(_markdown("**Result**"))
         if total_pages > 1:

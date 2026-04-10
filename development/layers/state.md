@@ -91,6 +91,7 @@
 - 已存在群文本直达 task 的底层主链，当前绑定 project 的群消息在 `/run ...` 形式下已经可直接创建 task，并继承当前 workdir
 - 已存在群对话式 task intake，当前绑定 project 的群普通文本消息也会默认创建 task，并继承当前 workdir
 - 已存在最小结果保真链，当前 `Task` 已保存 `raw_result`，task status card 会优先展示原始结果，超长结果可分页查看
+- 已存在最小运行期透明链，当前 running task 可携带 `live_output`，并驱动节流后的 task card 原位更新
 - 已有最小自动化验证，覆盖核心任务状态流、飞书 challenge 校验、签名校验、Codex runner、后台调度器和本地 demo 接口
 - 仓库当前结构仍较简单，尚无重型历史实现包袱
 

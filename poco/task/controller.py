@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable
 from threading import RLock
 from uuid import uuid4
 
@@ -96,25 +97,26 @@ class TaskController:
             return task
 
     def start_task_execution(self, task_id: str) -> Task:
-        with self._lock:
-            task = self.get_task(task_id)
-            if task.status != TaskStatus.CREATED:
-                raise TaskStateError(
-                    f"Task {task_id} is not in a startable state."
-                )
-            return self._start_task_locked(task)
+        return self._start_or_resume(task_id, mode="start")
 
     def resume_task_execution(self, task_id: str) -> Task:
-        with self._lock:
-            task = self.get_task(task_id)
-            if task.status != TaskStatus.RUNNING:
-                raise TaskStateError(
-                    f"Task {task_id} is not in a resumable state."
-                )
-            return self._apply_runner_updates_locked(
-                task,
-                self._runner.resume_after_confirmation(task),
-            )
+        return self._start_or_resume(task_id, mode="resume")
+
+    def start_task_execution_with_callback(
+        self,
+        task_id: str,
+        *,
+        on_update: Callable[[Task], None] | None = None,
+    ) -> Task:
+        return self._start_or_resume(task_id, mode="start", on_update=on_update)
+
+    def resume_task_execution_with_callback(
+        self,
+        task_id: str,
+        *,
+        on_update: Callable[[Task], None] | None = None,
+    ) -> Task:
+        return self._start_or_resume(task_id, mode="resume", on_update=on_update)
 
     def mark_task_failed(self, task_id: str, message: str) -> Task:
         with self._lock:
@@ -124,29 +126,59 @@ class TaskController:
             self._store.save(task)
             return task
 
-    def _start_task_locked(self, task: Task) -> Task:
-        task.set_status(TaskStatus.RUNNING)
-        task.add_event("task_started", "Task dispatched to the server-side runner.")
-        self._store.save(task)
-        return self._apply_runner_updates_locked(task, self._runner.start(task))
+    def _start_or_resume(
+        self,
+        task_id: str,
+        *,
+        mode: str,
+        on_update: Callable[[Task], None] | None = None,
+    ) -> Task:
+        with self._lock:
+            task = self.get_task(task_id)
+            if mode == "start" and task.status != TaskStatus.CREATED:
+                raise TaskStateError(f"Task {task_id} is not in a startable state.")
+            if mode == "resume" and task.status != TaskStatus.RUNNING:
+                raise TaskStateError(f"Task {task_id} is not in a resumable state.")
+            if mode == "start":
+                task.set_status(TaskStatus.RUNNING)
+                task.add_event("task_started", "Task dispatched to the server-side runner.")
+                self._store.save(task)
 
-    def _apply_runner_updates_locked(self, task: Task, updates: list) -> Task:
+        updates = self._runner.start(task) if mode == "start" else self._runner.resume_after_confirmation(task)
+        return self._apply_runner_updates(task_id, updates, on_update=on_update)
+
+    def _apply_runner_updates(
+        self,
+        task_id: str,
+        updates: Iterable,
+        *,
+        on_update: Callable[[Task], None] | None = None,
+    ) -> Task:
         for update in updates:
-            if update.kind == "progress":
-                task.add_event("runner_progress", update.message)
-            elif update.kind == "confirmation_required":
-                task.awaiting_confirmation_reason = update.message
-                task.set_status(TaskStatus.WAITING_FOR_CONFIRMATION)
-                task.add_event("confirmation_required", update.message)
-            elif update.kind == "completed":
-                task.set_result(update.raw_result)
-                task.set_status(TaskStatus.COMPLETED)
-                task.add_event("task_completed", update.message)
-            elif update.kind == "failed":
-                task.set_status(TaskStatus.FAILED)
-                task.add_event("task_failed", update.message)
-            else:
-                raise TaskStateError(f"Unsupported runner update kind: {update.kind}")
+            with self._lock:
+                task = self.get_task(task_id)
+                if update.kind == "progress":
+                    if getattr(update, "output_chunk", None):
+                        task.append_live_output(update.output_chunk)
+                    task.add_event("runner_progress", update.message)
+                elif update.kind == "confirmation_required":
+                    task.awaiting_confirmation_reason = update.message
+                    task.set_status(TaskStatus.WAITING_FOR_CONFIRMATION)
+                    task.add_event("confirmation_required", update.message)
+                elif update.kind == "completed":
+                    task.set_result(update.raw_result)
+                    task.clear_live_output()
+                    task.set_status(TaskStatus.COMPLETED)
+                    task.add_event("task_completed", update.message)
+                elif update.kind == "failed":
+                    task.clear_live_output()
+                    task.set_status(TaskStatus.FAILED)
+                    task.add_event("task_failed", update.message)
+                else:
+                    raise TaskStateError(f"Unsupported runner update kind: {update.kind}")
+                self._store.save(task)
+            if on_update is not None:
+                on_update(task)
 
-        self._store.save(task)
-        return task
+        with self._lock:
+            return self.get_task(task_id)

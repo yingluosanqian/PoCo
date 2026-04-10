@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from time import monotonic
 from typing import Protocol
 
 from poco.interaction.card_dispatcher import build_render_instruction
@@ -8,7 +9,7 @@ from poco.platform.feishu.client import FeishuMessageClient
 from poco.platform.feishu.cards import FeishuCardRenderer
 from poco.platform.feishu.debug import FeishuDebugRecorder
 from poco.project.controller import ProjectController
-from poco.task.models import Task
+from poco.task.models import Task, TaskStatus
 from poco.task.rendering import headline_for_notification, render_task_text
 from poco.workspace.controller import WorkspaceContextController
 
@@ -38,9 +39,12 @@ class FeishuTaskNotifier:
         self._project_controller = project_controller
         self._workspace_controller = workspace_controller
         self._debug_recorder = debug_recorder
+        self._last_running_update_at: dict[str, float] = {}
 
     def notify_task(self, task: Task) -> None:
         if not task.reply_receive_id or not task.reply_receive_id_type:
+            return
+        if task.status == TaskStatus.RUNNING and not self._should_send_running_update(task):
             return
 
         is_card_target = task.reply_receive_id_type in {"chat_id", "open_id"}
@@ -143,6 +147,19 @@ class FeishuTaskNotifier:
                     },
                 )
             raise
+
+    def _should_send_running_update(
+        self,
+        task: Task,
+        *,
+        interval_seconds: float = 1.5,
+    ) -> bool:
+        now = monotonic()
+        last = self._last_running_update_at.get(task.id)
+        if last is not None and now - last < interval_seconds:
+            return False
+        self._last_running_update_at[task.id] = now
+        return True
 
     def _sync_workspace_card(self, task: Task) -> None:
         if (

@@ -378,6 +378,40 @@ class FeishuClientTest(unittest.TestCase):
         self.assertIn("Result", result_heading["content"])
         self.assertIn("Done.", result_block["text"]["content"])
 
+    def test_task_status_card_shows_live_output_when_running(self) -> None:
+        task = {
+            "id": "task_run_1",
+            "project_id": "proj_1",
+            "agent_backend": "codex",
+            "effective_workdir": "/srv/poco/api",
+            "prompt": "build project",
+            "status": "running",
+            "awaiting_confirmation_reason": None,
+            "live_output": "Step 1\nStep 2",
+        }
+        card = FeishuCardRenderer().render(
+            build_render_instruction(
+                IntentDispatchResult(
+                    status=DispatchStatus.OK,
+                    intent_key="task.status",
+                    resource_refs=ResourceRefs(project_id="proj_1", task_id="task_run_1"),
+                    view_model=ViewModel(
+                        "task_status",
+                        {
+                            "task": task,
+                        },
+                    ),
+                    refresh_mode=RefreshMode.REPLACE_CURRENT,
+                ),
+                surface=Surface.GROUP,
+            )
+        )
+
+        live_heading = card["body"]["elements"][5]
+        live_block = card["body"]["elements"][6]
+        self.assertIn("Live Output", live_heading["content"])
+        self.assertIn("Step 1", live_block["text"]["content"])
+
     def test_task_status_card_adds_pagination_for_long_raw_result(self) -> None:
         task = {
             "id": "task_3",

@@ -91,6 +91,30 @@ class FeishuTaskNotifierTest(unittest.TestCase):
         snapshot = recorder.snapshot()
         self.assertEqual(snapshot["outbound_attempts"][0]["text_preview"], "[card] task_status:waiting_for_confirmation")
 
+    def test_running_task_sends_interactive_card_with_live_output(self) -> None:
+        client = FakeMessageClient()
+        notifier = FeishuTaskNotifier(client)  # type: ignore[arg-type]
+        task = Task(
+            id="task_running",
+            requester_id="ou_demo",
+            prompt="build",
+            source="feishu_card",
+            agent_backend="codex",
+            project_id="proj_1",
+            effective_workdir="/srv/poco/api",
+            reply_receive_id="oc_group_1",
+            reply_receive_id_type="chat_id",
+            status=TaskStatus.RUNNING,
+            live_output="line 1\nline 2",
+        )
+
+        notifier.notify_task(task)
+
+        self.assertEqual(len(client.sent_cards), 1)
+        card = client.sent_cards[0]["card"]
+        live_block = card["body"]["elements"][6]
+        self.assertIn("line 1", live_block["text"]["content"])
+
     def test_completed_task_sends_result_card(self) -> None:
         client = FakeMessageClient()
         notifier = FeishuTaskNotifier(client)  # type: ignore[arg-type]

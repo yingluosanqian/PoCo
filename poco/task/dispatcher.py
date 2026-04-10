@@ -28,28 +28,37 @@ class AsyncTaskDispatcher:
 
     def _run_start(self, task_id: str) -> None:
         try:
-            task = self._controller.start_task_execution(task_id)
+            self._controller.start_task_execution_with_callback(
+                task_id,
+                on_update=self._notify_if_needed,
+            )
         except Exception as exc:
             task = self._controller.mark_task_failed(
                 task_id,
                 f"Unhandled dispatcher error: {exc}",
             )
-        self._notify_if_needed(task)
+            self._notify_if_needed(task)
 
     def _run_resume(self, task_id: str) -> None:
         try:
-            task = self._controller.resume_task_execution(task_id)
+            self._controller.resume_task_execution_with_callback(
+                task_id,
+                on_update=self._notify_if_needed,
+            )
         except Exception as exc:
             task = self._controller.mark_task_failed(
                 task_id,
                 f"Unhandled dispatcher error: {exc}",
             )
-        self._notify_if_needed(task)
+            self._notify_if_needed(task)
 
     def notify_task(self, task: Task) -> None:
         self._notify_if_needed(task)
 
     def _notify_if_needed(self, task: Task) -> None:
+        if task.status == TaskStatus.RUNNING and task.live_output:
+            self._notifier.notify_task(task)
+            return
         if task.status in {
             TaskStatus.WAITING_FOR_CONFIRMATION,
             TaskStatus.COMPLETED,

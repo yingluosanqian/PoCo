@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 import os
 import shutil
 import subprocess
@@ -17,6 +18,7 @@ UpdateKind = Literal["progress", "confirmation_required", "completed", "failed"]
 class AgentRunUpdate:
     kind: UpdateKind
     message: str
+    output_chunk: str | None = None
     raw_result: str | None = None
 
     @property
@@ -30,10 +32,10 @@ class AgentRunner(Protocol):
     def is_ready(self) -> tuple[bool, str]:
         ...
 
-    def start(self, task: Task) -> list[AgentRunUpdate]:
+    def start(self, task: Task) -> Iterator[AgentRunUpdate]:
         ...
 
-    def resume_after_confirmation(self, task: Task) -> list[AgentRunUpdate]:
+    def resume_after_confirmation(self, task: Task) -> Iterator[AgentRunUpdate]:
         ...
 
 
@@ -45,7 +47,7 @@ class StubAgentRunner:
     def is_ready(self) -> tuple[bool, str]:
         return True, "Stub runner is always available."
 
-    def start(self, task: Task) -> list[AgentRunUpdate]:
+    def start(self, task: Task) -> Iterator[AgentRunUpdate]:
         updates = [
             AgentRunUpdate(
                 kind="progress",
@@ -70,7 +72,7 @@ class StubAgentRunner:
         )
         return updates
 
-    def resume_after_confirmation(self, task: Task) -> list[AgentRunUpdate]:
+    def resume_after_confirmation(self, task: Task) -> Iterator[AgentRunUpdate]:
         return [
             AgentRunUpdate(
                 kind="progress",
@@ -92,10 +94,10 @@ class UnavailableAgentRunner:
     def is_ready(self) -> tuple[bool, str]:
         return False, self._reason
 
-    def start(self, task: Task) -> list[AgentRunUpdate]:
+    def start(self, task: Task) -> Iterator[AgentRunUpdate]:
         return [AgentRunUpdate(kind="failed", message=self._reason)]
 
-    def resume_after_confirmation(self, task: Task) -> list[AgentRunUpdate]:
+    def resume_after_confirmation(self, task: Task) -> Iterator[AgentRunUpdate]:
         return [AgentRunUpdate(kind="failed", message=self._reason)]
 
 
@@ -127,7 +129,7 @@ class CodexCliRunner:
             return False, f"Codex workdir does not exist: {self._workdir}"
         return True, f"Codex CLI ready at {executable}"
 
-    def start(self, task: Task) -> list[AgentRunUpdate]:
+    def start(self, task: Task) -> Iterator[AgentRunUpdate]:
         updates = [
             AgentRunUpdate(
                 kind="progress",
@@ -146,7 +148,7 @@ class CodexCliRunner:
         updates.extend(self._execute_prompt(task, _normalized_prompt(task.prompt)))
         return updates
 
-    def resume_after_confirmation(self, task: Task) -> list[AgentRunUpdate]:
+    def resume_after_confirmation(self, task: Task) -> Iterator[AgentRunUpdate]:
         updates = [
             AgentRunUpdate(
                 kind="progress",
@@ -156,16 +158,19 @@ class CodexCliRunner:
         updates.extend(self._execute_prompt(task, _normalized_prompt(task.prompt)))
         return updates
 
-    def _execute_prompt(self, task: Task, prompt: str) -> list[AgentRunUpdate]:
+    def _execute_prompt(self, task: Task, prompt: str) -> Iterator[AgentRunUpdate]:
         executable = shutil.which(self._command)
         if not executable:
-            return [AgentRunUpdate(kind="failed", message=f"Codex CLI not found: {self._command}")]
+            yield AgentRunUpdate(kind="failed", message=f"Codex CLI not found: {self._command}")
+            return
 
         workdir = task.effective_workdir or self._workdir
         if not Path(workdir).exists():
-            return [AgentRunUpdate(kind="failed", message=f"Codex workdir does not exist: {workdir}")]
+            yield AgentRunUpdate(kind="failed", message=f"Codex workdir does not exist: {workdir}")
+            return
 
         output_file_path: str | None = None
+        process: subprocess.Popen[str] | None = None
         try:
             with tempfile.NamedTemporaryFile(prefix="poco-codex-", suffix=".txt", delete=False) as handle:
                 output_file_path = handle.name
@@ -194,46 +199,56 @@ class CodexCliRunner:
                     self._model,
                 ]
 
-            completed = subprocess.run(
+            process = subprocess.Popen(
                 command,
                 cwd=workdir,
                 env=os.environ.copy(),
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
                 text=True,
-                timeout=self._timeout_seconds,
-                check=False,
+                bufsize=1,
             )
-            if completed.returncode != 0:
+            streamed_output: list[str] = []
+            if process.stdout is not None:
+                for line in process.stdout:
+                    if not line:
+                        continue
+                    streamed_output.append(line)
+                    yield AgentRunUpdate(
+                        kind="progress",
+                        message="Codex output updated.",
+                        output_chunk=line,
+                    )
+                process.stdout.close()
+
+            returncode = process.wait(timeout=self._timeout_seconds)
+            if returncode != 0:
                 detail = _first_non_empty(
-                    completed.stderr,
-                    completed.stdout,
+                    "".join(streamed_output),
                     "Codex CLI exited with a non-zero status.",
                 )
-                return [AgentRunUpdate(kind="failed", message=detail)]
+                yield AgentRunUpdate(kind="failed", message=detail)
+                return
 
             raw_result = self._read_output_file(output_file_path)
             message = "Task completed by the codex runner."
-            return [
-                AgentRunUpdate(
-                    kind="completed",
-                    message=message,
-                    raw_result=raw_result or "Codex completed without a final response body.",
-                )
-            ]
+            yield AgentRunUpdate(
+                kind="completed",
+                message=message,
+                raw_result=raw_result or "Codex completed without a final response body.",
+            )
         except subprocess.TimeoutExpired:
-            return [
-                AgentRunUpdate(
-                    kind="failed",
-                    message=f"Codex CLI timed out after {self._timeout_seconds} seconds.",
-                )
-            ]
+            if process is not None:
+                process.kill()
+            yield AgentRunUpdate(
+                kind="failed",
+                message=f"Codex CLI timed out after {self._timeout_seconds} seconds.",
+            )
         except OSError as exc:
-            return [
-                AgentRunUpdate(
-                    kind="failed",
-                    message=f"Failed to start codex CLI: {exc}",
-                )
-            ]
+            yield AgentRunUpdate(
+                kind="failed",
+                message=f"Failed to start codex CLI: {exc}",
+            )
         finally:
             if output_file_path:
                 Path(output_file_path).unlink(missing_ok=True)
