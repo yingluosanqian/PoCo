@@ -71,6 +71,11 @@ class FeishuCardGatewayTest(unittest.TestCase):
                     "project.bind_group": self.project_handler,
                     "workspace.open": WorkspaceIntentHandler(self.project_controller),
                     "workspace.refresh": WorkspaceIntentHandler(self.project_controller),
+                    "workspace.open_workdir_switcher": WorkspaceIntentHandler(self.project_controller),
+                    "workspace.use_default_dir": WorkspaceIntentHandler(self.project_controller),
+                    "workspace.choose_preset": WorkspaceIntentHandler(self.project_controller),
+                    "workspace.use_recent_dir": WorkspaceIntentHandler(self.project_controller),
+                    "workspace.enter_path": WorkspaceIntentHandler(self.project_controller),
                 }
             ),
             renderer=FeishuCardRenderer(),
@@ -233,10 +238,81 @@ class FeishuCardGatewayTest(unittest.TestCase):
             response["card"]["data"]["header"]["title"]["content"],
             f"Workspace: {project.name}",
         )
-        refresh_button = response["card"]["data"]["body"]["elements"][4]
+        workdir_button = response["card"]["data"]["body"]["elements"][6]
+        self.assertEqual(
+            workdir_button["behaviors"][0]["value"]["intent_key"],
+            "workspace.open_workdir_switcher",
+        )
+        refresh_button = response["card"]["data"]["body"]["elements"][7]
         self.assertEqual(
             refresh_button["behaviors"][0]["value"]["surface"],
             "group",
+        )
+
+    def test_workspace_switcher_card_opens_from_group(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+            workdir="/srv/poco/demo",
+        )
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_card_workdir_1"},
+                "action": {
+                    "value": {
+                        "intent_key": "workspace.open_workdir_switcher",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "request_id": "req_workspace_workdir_switcher_1",
+                    },
+                },
+            }
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        self.assertEqual(response["instruction"]["template_key"], "workspace_workdir_switcher")
+        self.assertEqual(response["card"]["data"]["header"]["title"]["content"], "Workdir: PoCo")
+        use_default_button = response["card"]["data"]["body"]["elements"][3]
+        self.assertEqual(
+            use_default_button["behaviors"][0]["value"]["intent_key"],
+            "workspace.use_default_dir",
+        )
+        self.assertEqual(
+            use_default_button["behaviors"][0]["value"]["surface"],
+            "group",
+        )
+
+    def test_workspace_switcher_subcard_returns_to_switcher(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+        )
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_card_workdir_2"},
+                "action": {
+                    "value": {
+                        "intent_key": "workspace.enter_path",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "request_id": "req_workspace_enter_path_1",
+                    },
+                },
+            }
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        self.assertEqual(response["instruction"]["template_key"], "workspace_enter_path")
+        back_button = response["card"]["data"]["body"]["elements"][2]
+        self.assertEqual(
+            back_button["behaviors"][0]["value"]["intent_key"],
+            "workspace.open_workdir_switcher",
         )
 
     def test_project_config_subcard_opens_agent_config(self) -> None:

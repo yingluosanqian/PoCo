@@ -39,6 +39,31 @@ class FeishuCardRenderer:
                 instruction.template_data,
                 surface=instruction.surface.value,
             )
+        if instruction.template_key == "workspace_workdir_switcher":
+            return _render_workspace_workdir_switcher(
+                instruction.template_data,
+                surface=instruction.surface.value,
+            )
+        if instruction.template_key == "workspace_use_default_dir":
+            return _render_workspace_use_default_dir(
+                instruction.template_data,
+                surface=instruction.surface.value,
+            )
+        if instruction.template_key == "workspace_choose_preset":
+            return _render_workspace_choose_preset(
+                instruction.template_data,
+                surface=instruction.surface.value,
+            )
+        if instruction.template_key == "workspace_recent_dirs":
+            return _render_workspace_recent_dirs(
+                instruction.template_data,
+                surface=instruction.surface.value,
+            )
+        if instruction.template_key == "workspace_enter_path":
+            return _render_workspace_enter_path(
+                instruction.template_data,
+                surface=instruction.surface.value,
+            )
         return _render_fallback(instruction.template_key, instruction.template_data)
 
 
@@ -251,14 +276,27 @@ def _render_workspace_overview(
     latest_result = data.get("latest_result_summary") or "No result yet."
     active_session = data.get("active_session_summary") or "No active session yet."
     pending_approvals = data.get("pending_approvals") or 0
+    current_workdir = data.get("current_workdir") or "未设置"
+    workdir_source = data.get("workdir_source") or "unset"
     return _card_shell(
         title=f"Workspace: {project['name']}",
         template="orange",
         elements=[
             _markdown(f"**active session**\n{active_session}"),
+            _markdown(f"**current workdir**\n`{current_workdir}`"),
+            _markdown(f"**workdir source**: `{workdir_source}`"),
             _markdown(f"**latest task status**: `{latest_status}`"),
             _markdown(f"**pending approvals**: `{pending_approvals}`"),
             _markdown(f"**latest result**\n{latest_result}"),
+            _button(
+                label="Change Workdir",
+                intent_value={
+                    "intent_key": "workspace.open_workdir_switcher",
+                    "surface": surface,
+                    "project_id": project["id"],
+                },
+                name=f"open_workdir_switcher_{project['id']}",
+            ),
             _button(
                 label="Refresh",
                 intent_value={
@@ -278,6 +316,136 @@ def _render_workspace_overview(
                 name=f"back_to_project_{project['id']}",
             ),
         ],
+    )
+
+
+def _render_workspace_workdir_switcher(
+    data: dict[str, Any],
+    *,
+    surface: str,
+) -> dict[str, Any]:
+    project = data["project"]
+    current_agent = data.get("current_agent") or project["backend"]
+    current_workdir = data.get("current_workdir") or "未设置"
+    source = data.get("source") or "unset"
+    return _card_shell(
+        title=f"Workdir: {project['name']}",
+        template="indigo",
+        elements=[
+            _markdown(f"**Current Agent**\n`{current_agent}`"),
+            _markdown(f"**Current Workdir**\n`{current_workdir}`"),
+            _markdown(f"**Source**: `{source}`"),
+            _button(
+                label="Use Default",
+                intent_value={
+                    "intent_key": "workspace.use_default_dir",
+                    "surface": surface,
+                    "project_id": project["id"],
+                },
+                name=f"use_default_dir_{project['id']}",
+            ),
+            _button(
+                label="Choose Preset",
+                intent_value={
+                    "intent_key": "workspace.choose_preset",
+                    "surface": surface,
+                    "project_id": project["id"],
+                },
+                name=f"choose_preset_{project['id']}",
+            ),
+            _button(
+                label="Use Recent",
+                intent_value={
+                    "intent_key": "workspace.use_recent_dir",
+                    "surface": surface,
+                    "project_id": project["id"],
+                },
+                name=f"use_recent_dir_{project['id']}",
+            ),
+            _button(
+                label="Enter Path",
+                intent_value={
+                    "intent_key": "workspace.enter_path",
+                    "surface": surface,
+                    "project_id": project["id"],
+                },
+                name=f"enter_path_{project['id']}",
+            ),
+            _button(
+                label="Back To Workspace",
+                intent_value={
+                    "intent_key": "workspace.open",
+                    "surface": surface,
+                    "project_id": project["id"],
+                },
+                name=f"back_to_workspace_{project['id']}",
+            ),
+        ],
+    )
+
+
+def _render_workspace_use_default_dir(
+    data: dict[str, Any],
+    *,
+    surface: str,
+) -> dict[str, Any]:
+    project = data["project"]
+    default_workdir = data.get("default_workdir") or "未设置"
+    return _workspace_subcard(
+        title=f"Use Default: {project['name']}",
+        summary=f"**Default Workdir**\n`{default_workdir}`",
+        note=data["note"],
+        surface=surface,
+        project_id=project["id"],
+    )
+
+
+def _render_workspace_choose_preset(
+    data: dict[str, Any],
+    *,
+    surface: str,
+) -> dict[str, Any]:
+    project = data["project"]
+    presets = data.get("presets") or []
+    preset_text = "\n".join(f"- `{preset}`" for preset in presets) if presets else "还没有 preset"
+    return _workspace_subcard(
+        title=f"Presets: {project['name']}",
+        summary=f"**Available Presets**\n{preset_text}",
+        note=data["note"],
+        surface=surface,
+        project_id=project["id"],
+    )
+
+
+def _render_workspace_recent_dirs(
+    data: dict[str, Any],
+    *,
+    surface: str,
+) -> dict[str, Any]:
+    project = data["project"]
+    recent_dirs = data.get("recent_dirs") or []
+    recent_text = "\n".join(f"- `{item}`" for item in recent_dirs) if recent_dirs else "还没有 recent dirs"
+    return _workspace_subcard(
+        title=f"Recent Dirs: {project['name']}",
+        summary=f"**Recent Dirs**\n{recent_text}",
+        note=data["note"],
+        surface=surface,
+        project_id=project["id"],
+    )
+
+
+def _render_workspace_enter_path(
+    data: dict[str, Any],
+    *,
+    surface: str,
+) -> dict[str, Any]:
+    project = data["project"]
+    return _workspace_subcard(
+        title=f"Enter Path: {project['name']}",
+        summary="**Manual Path Entry**\nReserved for a later fallback flow.",
+        note=data["note"],
+        surface=surface,
+        project_id=project["id"],
     )
 
 
@@ -314,6 +482,33 @@ def _config_subcard(
                     "project_id": project_id,
                 },
                 name=f"back_to_project_{project_id}",
+            ),
+        ],
+    )
+
+
+def _workspace_subcard(
+    *,
+    title: str,
+    summary: str,
+    note: str,
+    surface: str,
+    project_id: str,
+) -> dict[str, Any]:
+    return _card_shell(
+        title=title,
+        template="blue",
+        elements=[
+            _markdown(summary),
+            _markdown(note),
+            _button(
+                label="Back To Workdir",
+                intent_value={
+                    "intent_key": "workspace.open_workdir_switcher",
+                    "surface": surface,
+                    "project_id": project_id,
+                },
+                name=f"back_to_workdir_{project_id}",
             ),
         ],
     )

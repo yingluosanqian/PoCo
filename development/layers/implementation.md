@@ -79,6 +79,7 @@
 - `project.create` 在真实飞书模式下会同时调用建群 API，并把返回的 `chat_id` 绑定回 project；失败时会回滚 project 创建
 - 建群绑定成功后，会 best-effort 向新群发送第一张 workspace overview card
 - DM 侧已把 `project.open` 升级为 `Project Config Card`，并提供只读的 agent / repo / default dir / dir preset 入口卡
+- Group 侧已新增 `Workdir Switcher Card` 的最小实现，并提供 default / preset / recent / manual path 的只读入口卡
 
 ### 当前明确未实现
 

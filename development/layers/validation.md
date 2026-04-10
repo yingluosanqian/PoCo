@@ -79,6 +79,7 @@
 - `project.create` 是否已经能在真实飞书模式下同步建群并完成失败回滚
 - 建群成功后是否已经能向新群投递第一张 workspace overview card
 - DM `Project Config Card` 是否已经替代旧 detail 视图，并提供只读配置入口
+- Group `Workdir Switcher Card` 是否已经从 workspace 首卡进入，并提供只读目录切换入口
 
 ### 当前轮已知未验证区域
 

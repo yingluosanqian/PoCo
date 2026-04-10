@@ -76,8 +76,13 @@ class FeishuClientTest(unittest.TestCase):
 
         card = FeishuCardRenderer().render(instruction)
 
-        refresh_button = card["body"]["elements"][4]
-        back_button = card["body"]["elements"][5]
+        change_workdir_button = card["body"]["elements"][6]
+        refresh_button = card["body"]["elements"][7]
+        back_button = card["body"]["elements"][8]
+        self.assertEqual(
+            change_workdir_button["behaviors"][0]["value"]["surface"],
+            "group",
+        )
         self.assertEqual(refresh_button["behaviors"][0]["value"]["surface"], "group")
         self.assertEqual(back_button["behaviors"][0]["value"]["surface"], "group")
 
@@ -127,7 +132,7 @@ class FeishuClientTest(unittest.TestCase):
         self.assertEqual(sent["receive_id_type"], "chat_id")
         card = sent["card"]
         self.assertEqual(card["header"]["title"]["content"], "Workspace: PoCo")
-        refresh_button = card["body"]["elements"][4]
+        refresh_button = card["body"]["elements"][7]
         self.assertEqual(refresh_button["behaviors"][0]["value"]["surface"], "group")
         snapshot = recorder.snapshot()
         self.assertEqual(snapshot["outbound_attempts"][0]["source"], "project_workspace_bootstrap")

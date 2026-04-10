@@ -252,6 +252,7 @@ Current interaction model:
 - DM project-list cards now support callback actions including `Create Project + Group`
 - DM project open now lands on a project config card with read-only entries for agent / repo / default dir / dir presets
 - newly created project groups now receive an initial workspace overview card
+- group workspace cards now include a `Change Workdir` path that opens a dedicated workdir switcher card
 - Group messages still return the current text fallback and can dispatch tasks
 - The webhook request returns quickly after acknowledging the command
 - Task execution happens in a background dispatcher

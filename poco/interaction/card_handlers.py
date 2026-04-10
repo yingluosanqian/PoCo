@@ -209,14 +209,87 @@ class WorkspaceIntentHandler:
     project_controller: ProjectController
 
     def handle(self, intent: ActionIntent) -> IntentDispatchResult:
+        if intent.intent_key == "workspace.open_workdir_switcher":
+            return self._open_workdir_switcher(intent)
+        if intent.intent_key == "workspace.use_default_dir":
+            return self._open_use_default_dir(intent)
+        if intent.intent_key == "workspace.choose_preset":
+            return self._open_choose_preset(intent)
+        if intent.intent_key == "workspace.use_recent_dir":
+            return self._open_use_recent_dir(intent)
+        if intent.intent_key == "workspace.enter_path":
+            return self._open_enter_path(intent)
         if intent.intent_key not in {"workspace.open", "workspace.refresh"}:
             return _rejected(intent, f"Unsupported workspace intent: {intent.intent_key}")
-        project_id = _required_id(intent.project_id, "project_id")
-        try:
-            project = self.project_controller.get_project(project_id)
-        except ProjectNotFoundError as exc:
-            return _rejected(intent, str(exc))
+        project = _get_project_or_reject(self.project_controller, intent)
+        if isinstance(project, IntentDispatchResult):
+            return project
         return build_workspace_overview_result(project)
+
+    def _open_workdir_switcher(self, intent: ActionIntent) -> IntentDispatchResult:
+        project = _get_project_or_reject(self.project_controller, intent)
+        if isinstance(project, IntentDispatchResult):
+            return project
+        return IntentDispatchResult(
+            status=DispatchStatus.OK,
+            intent_key=intent.intent_key,
+            resource_refs=ResourceRefs(project_id=project.id),
+            view_model=_workspace_workdir_switcher_view_model(project),
+            refresh_mode=RefreshMode.REPLACE_CURRENT,
+            message=f"Workdir switcher for {project.name}",
+        )
+
+    def _open_use_default_dir(self, intent: ActionIntent) -> IntentDispatchResult:
+        project = _get_project_or_reject(self.project_controller, intent)
+        if isinstance(project, IntentDispatchResult):
+            return project
+        return IntentDispatchResult(
+            status=DispatchStatus.OK,
+            intent_key=intent.intent_key,
+            resource_refs=ResourceRefs(project_id=project.id),
+            view_model=_workspace_use_default_dir_view_model(project),
+            refresh_mode=RefreshMode.REPLACE_CURRENT,
+            message=f"Default dir option for {project.name}",
+        )
+
+    def _open_choose_preset(self, intent: ActionIntent) -> IntentDispatchResult:
+        project = _get_project_or_reject(self.project_controller, intent)
+        if isinstance(project, IntentDispatchResult):
+            return project
+        return IntentDispatchResult(
+            status=DispatchStatus.OK,
+            intent_key=intent.intent_key,
+            resource_refs=ResourceRefs(project_id=project.id),
+            view_model=_workspace_choose_preset_view_model(project),
+            refresh_mode=RefreshMode.REPLACE_CURRENT,
+            message=f"Preset dirs for {project.name}",
+        )
+
+    def _open_use_recent_dir(self, intent: ActionIntent) -> IntentDispatchResult:
+        project = _get_project_or_reject(self.project_controller, intent)
+        if isinstance(project, IntentDispatchResult):
+            return project
+        return IntentDispatchResult(
+            status=DispatchStatus.OK,
+            intent_key=intent.intent_key,
+            resource_refs=ResourceRefs(project_id=project.id),
+            view_model=_workspace_recent_dirs_view_model(project),
+            refresh_mode=RefreshMode.REPLACE_CURRENT,
+            message=f"Recent dirs for {project.name}",
+        )
+
+    def _open_enter_path(self, intent: ActionIntent) -> IntentDispatchResult:
+        project = _get_project_or_reject(self.project_controller, intent)
+        if isinstance(project, IntentDispatchResult):
+            return project
+        return IntentDispatchResult(
+            status=DispatchStatus.OK,
+            intent_key=intent.intent_key,
+            resource_refs=ResourceRefs(project_id=project.id),
+            view_model=_workspace_enter_path_view_model(project),
+            refresh_mode=RefreshMode.REPLACE_CURRENT,
+            message=f"Manual dir entry for {project.name}",
+        )
 
 
 def build_dm_project_list_result(
@@ -251,6 +324,8 @@ def build_workspace_overview_result(project) -> IntentDispatchResult:
                 "latest_task_status": None,
                 "pending_approvals": 0,
                 "latest_result_summary": None,
+                "current_workdir": project.workdir,
+                "workdir_source": "default" if project.workdir else "unset",
             },
         ),
         refresh_mode=RefreshMode.REPLACE_CURRENT,
@@ -317,6 +392,62 @@ def _project_dir_presets_view_model(project) -> ViewModel:
             "project": project.to_dict(),
             "presets": [],
             "note": "Dir preset management is not implemented yet. This card reserves the DM management surface.",
+        },
+    )
+
+
+def _workspace_workdir_switcher_view_model(project) -> ViewModel:
+    current_workdir = project.workdir
+    return ViewModel(
+        "workspace_workdir_switcher",
+        {
+            "project": project.to_dict(),
+            "current_agent": project.backend,
+            "current_workdir": current_workdir,
+            "source": "default" if current_workdir else "unset",
+        },
+    )
+
+
+def _workspace_use_default_dir_view_model(project) -> ViewModel:
+    return ViewModel(
+        "workspace_use_default_dir",
+        {
+            "project": project.to_dict(),
+            "default_workdir": project.workdir,
+            "note": "Default-dir switching is not implemented yet. This card reserves the group-side session action.",
+        },
+    )
+
+
+def _workspace_choose_preset_view_model(project) -> ViewModel:
+    return ViewModel(
+        "workspace_choose_preset",
+        {
+            "project": project.to_dict(),
+            "presets": [],
+            "note": "Preset switching is not implemented yet. Presets remain a DM-managed project-level list.",
+        },
+    )
+
+
+def _workspace_recent_dirs_view_model(project) -> ViewModel:
+    return ViewModel(
+        "workspace_recent_dirs",
+        {
+            "project": project.to_dict(),
+            "recent_dirs": [],
+            "note": "Recent-dir switching is not implemented yet. This card reserves the group-side quick path.",
+        },
+    )
+
+
+def _workspace_enter_path_view_model(project) -> ViewModel:
+    return ViewModel(
+        "workspace_enter_path",
+        {
+            "project": project.to_dict(),
+            "note": "Manual path entry is not implemented yet. It will remain a fallback path, not the primary workdir flow.",
         },
     )
 
