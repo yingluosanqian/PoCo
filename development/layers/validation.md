@@ -87,6 +87,8 @@
 - Codex runner 是否已经优先使用 task 级 workdir
 - group workspace card 是否已经具备 `Run Task` 入口
 - `task.submit` 是否已经继承当前 workspace workdir 并触发异步派发
+- notifier 是否已经发送 `task_status` interactive card
+- `task.approve` / `task.reject` 是否已经接入 card callback 主链
 
 ### 当前轮已知未验证区域
 
@@ -94,7 +96,7 @@
 - 飞书卡片回调更新与完整 renderer 工作流
 - 真实飞书环境里的建群权限、群名称策略和群内 workspace bootstrap
 - 群内 workdir switcher card 与真实目录切换
-- card-first approval / reject / result cards
+- task card 的原位更新与 richer result 视图
 - 群工作区卡片与 project/session/task 完整 handlers
 - 飞书加密事件体
 - 真实网络条件下的飞书端到端联调

@@ -276,6 +276,73 @@ class FeishuClientTest(unittest.TestCase):
         self.assertEqual(submit_button["behaviors"][0]["value"]["intent_key"], "task.submit")
         self.assertEqual(submit_button["behaviors"][0]["value"]["surface"], "group")
 
+    def test_task_status_card_contains_approve_reject_buttons_when_waiting(self) -> None:
+        task = {
+            "id": "task_1",
+            "project_id": "proj_1",
+            "agent_backend": "codex",
+            "effective_workdir": "/srv/poco/api",
+            "prompt": "confirm: deploy",
+            "status": "waiting_for_confirmation",
+            "awaiting_confirmation_reason": "Need approval before deploy.",
+            "result_summary": None,
+        }
+        card = FeishuCardRenderer().render(
+            build_render_instruction(
+                IntentDispatchResult(
+                    status=DispatchStatus.OK,
+                    intent_key="task.status",
+                    resource_refs=ResourceRefs(project_id="proj_1", task_id="task_1"),
+                    view_model=ViewModel(
+                        "task_status",
+                        {
+                            "task": task,
+                        },
+                    ),
+                    refresh_mode=RefreshMode.REPLACE_CURRENT,
+                ),
+                surface=Surface.GROUP,
+            )
+        )
+
+        approve_button = card["body"]["elements"][6]
+        reject_button = card["body"]["elements"][7]
+        self.assertEqual(approve_button["behaviors"][0]["value"]["intent_key"], "task.approve")
+        self.assertEqual(approve_button["behaviors"][0]["value"]["task_id"], "task_1")
+        self.assertEqual(reject_button["behaviors"][0]["value"]["intent_key"], "task.reject")
+
+    def test_task_status_card_contains_result_when_completed(self) -> None:
+        task = {
+            "id": "task_2",
+            "project_id": "proj_1",
+            "agent_backend": "codex",
+            "effective_workdir": "/srv/poco/api",
+            "prompt": "summarize",
+            "status": "completed",
+            "awaiting_confirmation_reason": None,
+            "result_summary": "Done.",
+        }
+        card = FeishuCardRenderer().render(
+            build_render_instruction(
+                IntentDispatchResult(
+                    status=DispatchStatus.OK,
+                    intent_key="task.status",
+                    resource_refs=ResourceRefs(project_id="proj_1", task_id="task_2"),
+                    view_model=ViewModel(
+                        "task_status",
+                        {
+                            "task": task,
+                        },
+                    ),
+                    refresh_mode=RefreshMode.REPLACE_CURRENT,
+                ),
+                surface=Surface.GROUP,
+            )
+        )
+
+        result_block = card["body"]["elements"][5]
+        self.assertIn("Done.", result_block["content"])
+
 
 if __name__ == "__main__":
     unittest.main()

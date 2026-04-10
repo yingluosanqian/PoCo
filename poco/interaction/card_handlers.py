@@ -373,6 +373,10 @@ class TaskIntentHandler:
             return self._open_composer(intent)
         if intent.intent_key == "task.submit":
             return self._submit_task(intent)
+        if intent.intent_key == "task.approve":
+            return self._approve_task(intent)
+        if intent.intent_key == "task.reject":
+            return self._reject_task(intent)
         return _rejected(intent, f"Unsupported task intent: {intent.intent_key}")
 
     def _open_composer(self, intent: ActionIntent) -> IntentDispatchResult:
@@ -419,6 +423,30 @@ class TaskIntentHandler:
             context=context,
             latest_task=task,
             message=f"Task created for {project.name}",
+        )
+
+    def _approve_task(self, intent: ActionIntent) -> IntentDispatchResult:
+        task_id = _required_id(intent.task_id, "task_id")
+        try:
+            task = self.task_controller.resolve_confirmation(task_id, approved=True)
+        except ValueError as exc:
+            return _rejected(intent, str(exc))
+        if self.dispatcher is not None:
+            self.dispatcher.dispatch_resume(task.id)
+        return build_task_status_result(
+            task,
+            message="Task approved. Resuming execution.",
+        )
+
+    def _reject_task(self, intent: ActionIntent) -> IntentDispatchResult:
+        task_id = _required_id(intent.task_id, "task_id")
+        try:
+            task = self.task_controller.resolve_confirmation(task_id, approved=False)
+        except ValueError as exc:
+            return _rejected(intent, str(exc))
+        return build_task_status_result(
+            task,
+            message="Task rejected.",
         )
 
 
@@ -482,6 +510,25 @@ def build_workspace_overview_result(
         ),
         refresh_mode=RefreshMode.REPLACE_CURRENT,
         message=message or f"Workspace ready for {project.name}",
+    )
+
+
+def build_task_status_result(task, *, message: str | None = None) -> IntentDispatchResult:
+    return IntentDispatchResult(
+        status=DispatchStatus.OK,
+        intent_key="task.status",
+        resource_refs=ResourceRefs(
+            project_id=task.project_id,
+            task_id=task.id,
+        ),
+        view_model=ViewModel(
+            "task_status",
+            {
+                "task": task.to_dict(),
+            },
+        ),
+        refresh_mode=RefreshMode.REPLACE_CURRENT,
+        message=message or f"Task updated: {task.id}",
     )
 
 

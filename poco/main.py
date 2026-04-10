@@ -40,6 +40,7 @@ def create_app() -> FastAPI:
     store = InMemoryTaskStore()
     project_store = InMemoryProjectStore()
     workspace_store = InMemoryWorkspaceContextStore()
+    card_renderer = FeishuCardRenderer()
     runner = create_agent_runner(
         backend=settings.agent_backend,
         codex_command=settings.codex_command,
@@ -72,11 +73,15 @@ def create_app() -> FastAPI:
         )
         project_bootstrapper = FeishuProjectBootstrapper(
             message_client,
-            renderer=FeishuCardRenderer(),
+            renderer=card_renderer,
             debug_recorder=feishu_debug,
         )
     notifier = (
-        FeishuTaskNotifier(message_client, debug_recorder=feishu_debug)
+        FeishuTaskNotifier(
+            message_client,
+            renderer=card_renderer,
+            debug_recorder=feishu_debug,
+        )
         if message_client is not None
         else NullTaskNotifier()
     )
@@ -118,11 +123,13 @@ def create_app() -> FastAPI:
             "workspace.apply_entered_path": workspace_intent_handler,
             "task.open_composer": task_intent_handler,
             "task.submit": task_intent_handler,
+            "task.approve": task_intent_handler,
+            "task.reject": task_intent_handler,
         }
     )
     card_gateway = FeishuCardActionGateway(
         dispatcher=card_dispatcher,
-        renderer=FeishuCardRenderer(),
+        renderer=card_renderer,
         project_controller=project_controller,
         request_verifier=request_verifier,
         debug_recorder=feishu_debug,

@@ -60,6 +60,9 @@ class FakeTaskDispatcher:
     def dispatch_start(self, task_id: str) -> None:
         self.actions.append(("start", task_id))
 
+    def dispatch_resume(self, task_id: str) -> None:
+        self.actions.append(("resume", task_id))
+
 
 class FeishuCardGatewayTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -108,6 +111,8 @@ class FeishuCardGatewayTest(unittest.TestCase):
                     "workspace.apply_entered_path": self.workspace_handler,
                     "task.open_composer": self.task_handler,
                     "task.submit": self.task_handler,
+                    "task.approve": self.task_handler,
+                    "task.reject": self.task_handler,
                 }
             ),
             renderer=FeishuCardRenderer(),
@@ -399,6 +404,86 @@ class FeishuCardGatewayTest(unittest.TestCase):
         self.assertEqual(response["toast"]["type"], "warning")
         self.assertEqual(response["instruction"]["refresh_mode"], "ack_only")
         self.assertEqual(self.task_controller.list_tasks(), [])
+
+    def test_task_approve_replaces_card_and_dispatches_resume(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+            group_chat_id="oc_group_proj_1",
+        )
+        task = self.task_controller.create_task(
+            requester_id="ou_demo_user",
+            prompt="confirm: deploy the patch",
+            source="feishu_card",
+            project_id=project.id,
+            effective_workdir="/srv/poco/api",
+            reply_receive_id="oc_group_proj_1",
+            reply_receive_id_type="chat_id",
+        )
+        self.task_controller.start_task_execution(task.id)
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_task_approve_1"},
+                "action": {
+                    "value": {
+                        "intent_key": "task.approve",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "task_id": task.id,
+                        "request_id": "req_task_approve_1",
+                    },
+                },
+            }
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        self.assertEqual(response["instruction"]["template_key"], "task_status")
+        self.assertEqual(response["card"]["data"]["header"]["title"]["content"], f"Task: {task.id}")
+        updated = self.task_controller.get_task(task.id)
+        self.assertEqual(updated.status.value, "running")
+        self.assertIn(("resume", task.id), self.task_dispatcher.actions)
+
+    def test_task_reject_replaces_card_with_cancelled_status(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+            group_chat_id="oc_group_proj_1",
+        )
+        task = self.task_controller.create_task(
+            requester_id="ou_demo_user",
+            prompt="confirm: deploy the patch",
+            source="feishu_card",
+            project_id=project.id,
+            effective_workdir="/srv/poco/api",
+            reply_receive_id="oc_group_proj_1",
+            reply_receive_id_type="chat_id",
+        )
+        self.task_controller.start_task_execution(task.id)
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_task_reject_1"},
+                "action": {
+                    "value": {
+                        "intent_key": "task.reject",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "task_id": task.id,
+                        "request_id": "req_task_reject_1",
+                    },
+                },
+            }
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        self.assertEqual(response["instruction"]["template_key"], "task_status")
+        updated = self.task_controller.get_task(task.id)
+        self.assertEqual(updated.status.value, "cancelled")
 
     def test_workspace_switcher_card_opens_from_group(self) -> None:
         project = self.project_controller.create_project(

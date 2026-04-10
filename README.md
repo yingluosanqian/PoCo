@@ -262,7 +262,8 @@ Current interaction model:
 - group card `task.submit` now reuses the same task-execution path and inherits the current workspace workdir
 - The webhook request returns quickly after acknowledging the command
 - Task execution happens in a background dispatcher
-- When a task waits for confirmation, completes, fails, or is cancelled, PoCo pushes a follow-up message to the stored Feishu reply target
+- When a task waits for confirmation, completes, fails, or is cancelled, PoCo now pushes a `task_status` card to the stored Feishu reply target
+- Waiting task cards now include `Approve` / `Reject` actions that resume or cancel the task through card callbacks
 
 If `POCO_FEISHU_DELIVERY_MODE=longconn` is enabled:
 

@@ -69,6 +69,11 @@ class FeishuCardRenderer:
                 instruction.template_data,
                 surface=instruction.surface.value,
             )
+        if instruction.template_key == "task_status":
+            return _render_task_status(
+                instruction.template_data,
+                surface=instruction.surface.value,
+            )
         return _render_fallback(instruction.template_key, instruction.template_data)
 
 
@@ -600,6 +605,75 @@ def _render_task_composer(
     )
 
 
+def _render_task_status(
+    data: dict[str, Any],
+    *,
+    surface: str,
+) -> dict[str, Any]:
+    task = data["task"]
+    status = task.get("status") or "unknown"
+    prompt = task.get("prompt") or ""
+    workdir = task.get("effective_workdir") or "未设置"
+    result = task.get("result_summary") or "No result yet."
+    elements: list[dict[str, Any]] = [
+        _markdown(f"**Task ID**\n`{task['id']}`"),
+        _markdown(f"**Status**\n`{status}`"),
+        _markdown(f"**Agent**\n`{task.get('agent_backend') or 'unknown'}`"),
+        _markdown(f"**Workdir**\n`{workdir}`"),
+        _markdown(f"**Prompt**\n{prompt}"),
+    ]
+
+    awaiting = task.get("awaiting_confirmation_reason")
+    if awaiting:
+        elements.append(_markdown(f"**Awaiting Confirmation**\n{awaiting}"))
+        elements.append(
+            _button(
+                label="Approve",
+                intent_value={
+                    "intent_key": "task.approve",
+                    "surface": surface,
+                    "project_id": task.get("project_id") or "",
+                    "task_id": task["id"],
+                },
+                style="primary",
+                name=f"approve_task_{task['id']}",
+            )
+        )
+        elements.append(
+            _button(
+                label="Reject",
+                intent_value={
+                    "intent_key": "task.reject",
+                    "surface": surface,
+                    "project_id": task.get("project_id") or "",
+                    "task_id": task["id"],
+                },
+                name=f"reject_task_{task['id']}",
+            )
+        )
+    else:
+        elements.append(_markdown(f"**Result**\n{result}"))
+
+    if task.get("project_id"):
+        elements.append(
+            _button(
+                label="Back To Workspace",
+                intent_value={
+                    "intent_key": "workspace.open",
+                    "surface": surface,
+                    "project_id": task["project_id"],
+                },
+                name=f"task_back_to_workspace_{task['id']}",
+            )
+        )
+
+    return _card_shell(
+        title=f"Task: {task['id']}",
+        template=_task_template_for_status(status),
+        elements=elements,
+    )
+
+
 def _render_fallback(template_key: str | None, data: dict[str, Any]) -> dict[str, Any]:
     return _card_shell(
         title=template_key or "Unknown View",
@@ -747,3 +821,13 @@ def _input(
         "value": value,
         "margin": "0px 0px 12px 0px",
     }
+
+
+def _task_template_for_status(status: str) -> str:
+    if status == "waiting_for_confirmation":
+        return "orange"
+    if status == "completed":
+        return "green"
+    if status in {"failed", "cancelled"}:
+        return "red"
+    return "blue"

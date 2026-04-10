@@ -87,11 +87,13 @@
 - Codex runner 已开始优先消费 task 的 `effective_workdir`，而不是只使用全局 `POCO_CODEX_WORKDIR`
 - group `workspace_overview` 已新增 `Run Task` 入口，并可进入最小 `task_composer`
 - `task.submit` 已接入 card-first 主链，当前会创建 task、继承当前 workdir，并异步派发执行
+- `task_status` 已接入 notifier 回推链，等待确认和终态现在会发送 interactive card
+- `task.approve` / `task.reject` 已接入 card callback，并复用现有 confirmation / resume 主链
 
 ### 当前明确未实现
 
 - 飞书卡片 2.0 驱动的完整正式交互面
-- 飞书卡片端到端正式工作流，以及 approval/result 等完整 task card handlers
+- 飞书卡片端到端正式工作流，以及 richer result/approval timeline 等更完整 task card handlers
 - 飞书加密事件体处理
 - Claude Code 与 Cursor Agent 执行适配
 - 跨进程可恢复的任务队列
