@@ -4,6 +4,7 @@ from threading import RLock
 
 from poco.project.models import Project
 from poco.task.models import Task
+from poco.workspace.models import WorkspaceContext
 
 
 class InMemoryTaskStore:
@@ -46,3 +47,18 @@ class InMemoryProjectStore:
     def delete(self, project_id: str) -> None:
         with self._lock:
             self._projects.pop(project_id, None)
+
+
+class InMemoryWorkspaceContextStore:
+    def __init__(self) -> None:
+        self._contexts: dict[str, WorkspaceContext] = {}
+        self._lock = RLock()
+
+    def save(self, context: WorkspaceContext) -> WorkspaceContext:
+        with self._lock:
+            self._contexts[context.project_id] = context
+            return context
+
+    def get(self, project_id: str) -> WorkspaceContext | None:
+        with self._lock:
+            return self._contexts.get(project_id)

@@ -8,7 +8,8 @@ from poco.platform.feishu.card_gateway import FeishuCardActionGateway
 from poco.platform.feishu.cards import FeishuCardRenderer
 from poco.project.bootstrap import ProjectBootstrapError, ProjectBootstrapResult
 from poco.project.controller import ProjectController
-from poco.storage.memory import InMemoryProjectStore
+from poco.storage.memory import InMemoryProjectStore, InMemoryWorkspaceContextStore
+from poco.workspace.controller import WorkspaceContextController
 
 
 class FakeProjectBootstrapper:
@@ -53,10 +54,15 @@ class NotifyFailingProjectBootstrapper(FakeProjectBootstrapper):
 class FeishuCardGatewayTest(unittest.TestCase):
     def setUp(self) -> None:
         self.project_controller = ProjectController(InMemoryProjectStore())
+        self.workspace_controller = WorkspaceContextController(InMemoryWorkspaceContextStore())
         self.bootstrapper = FakeProjectBootstrapper()
         self.project_handler = ProjectIntentHandler(
             self.project_controller,
             bootstrapper=self.bootstrapper,
+        )
+        self.workspace_handler = WorkspaceIntentHandler(
+            self.project_controller,
+            self.workspace_controller,
         )
         self.gateway = FeishuCardActionGateway(
             dispatcher=CardActionDispatcher(
@@ -69,13 +75,13 @@ class FeishuCardGatewayTest(unittest.TestCase):
                     "project.configure_default_dir": self.project_handler,
                     "project.manage_dir_presets": self.project_handler,
                     "project.bind_group": self.project_handler,
-                    "workspace.open": WorkspaceIntentHandler(self.project_controller),
-                    "workspace.refresh": WorkspaceIntentHandler(self.project_controller),
-                    "workspace.open_workdir_switcher": WorkspaceIntentHandler(self.project_controller),
-                    "workspace.use_default_dir": WorkspaceIntentHandler(self.project_controller),
-                    "workspace.choose_preset": WorkspaceIntentHandler(self.project_controller),
-                    "workspace.use_recent_dir": WorkspaceIntentHandler(self.project_controller),
-                    "workspace.enter_path": WorkspaceIntentHandler(self.project_controller),
+                    "workspace.open": self.workspace_handler,
+                    "workspace.refresh": self.workspace_handler,
+                    "workspace.open_workdir_switcher": self.workspace_handler,
+                    "workspace.use_default_dir": self.workspace_handler,
+                    "workspace.choose_preset": self.workspace_handler,
+                    "workspace.use_recent_dir": self.workspace_handler,
+                    "workspace.enter_path": self.workspace_handler,
                 }
             ),
             renderer=FeishuCardRenderer(),
@@ -284,6 +290,68 @@ class FeishuCardGatewayTest(unittest.TestCase):
             use_default_button["behaviors"][0]["value"]["surface"],
             "group",
         )
+
+    def test_workspace_use_default_dir_updates_context(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+            workdir="/srv/poco/default",
+        )
+        self.workspace_controller.set_active_workdir(
+            project,
+            workdir="/srv/poco/manual",
+            source="manual",
+        )
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_card_workdir_3"},
+                "action": {
+                    "value": {
+                        "intent_key": "workspace.use_default_dir",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "request_id": "req_workspace_use_default_1",
+                    },
+                },
+            }
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        self.assertEqual(response["instruction"]["template_key"], "workspace_use_default_dir")
+        summary = response["card"]["data"]["body"]["elements"][0]["content"]
+        self.assertIn("/srv/poco/default", summary)
+        context = self.workspace_controller.get_context(project)
+        self.assertEqual(context.active_workdir, "/srv/poco/default")
+        self.assertEqual(context.workdir_source, "default")
+
+    def test_workspace_use_default_dir_rejects_when_not_configured(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+        )
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_card_workdir_4"},
+                "action": {
+                    "value": {
+                        "intent_key": "workspace.use_default_dir",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "request_id": "req_workspace_use_default_2",
+                    },
+                },
+            }
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        self.assertEqual(response["toast"]["type"], "warning")
+        self.assertEqual(response["instruction"]["refresh_mode"], "ack_only")
 
     def test_workspace_switcher_subcard_returns_to_switcher(self) -> None:
         project = self.project_controller.create_project(

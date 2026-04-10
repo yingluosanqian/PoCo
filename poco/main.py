@@ -24,10 +24,11 @@ from poco.platform.feishu.project_bootstrap import FeishuProjectBootstrapper
 from poco.platform.feishu.verification import FeishuRequestVerifier, FeishuVerificationError
 from poco.project.bootstrap import NullProjectBootstrapper
 from poco.project.controller import ProjectController
-from poco.storage.memory import InMemoryProjectStore, InMemoryTaskStore
+from poco.storage.memory import InMemoryProjectStore, InMemoryTaskStore, InMemoryWorkspaceContextStore
 from poco.task.controller import TaskController, TaskNotFoundError
 from poco.task.dispatcher import AsyncTaskDispatcher
 from poco.task.notifier import FeishuTaskNotifier, NullTaskNotifier
+from poco.workspace.controller import WorkspaceContextController
 
 
 class DemoDecisionRequest(BaseModel):
@@ -38,6 +39,7 @@ def create_app() -> FastAPI:
     settings = Settings()
     store = InMemoryTaskStore()
     project_store = InMemoryProjectStore()
+    workspace_store = InMemoryWorkspaceContextStore()
     runner = create_agent_runner(
         backend=settings.agent_backend,
         codex_command=settings.codex_command,
@@ -49,6 +51,7 @@ def create_app() -> FastAPI:
     )
     controller = TaskController(store=store, runner=runner)
     project_controller = ProjectController(project_store)
+    workspace_controller = WorkspaceContextController(workspace_store)
     interaction = InteractionService(controller)
     feishu_debug = FeishuDebugRecorder()
     request_verifier = FeishuRequestVerifier(
@@ -82,7 +85,10 @@ def create_app() -> FastAPI:
         project_controller,
         bootstrapper=project_bootstrapper,
     )
-    workspace_intent_handler = WorkspaceIntentHandler(project_controller)
+    workspace_intent_handler = WorkspaceIntentHandler(
+        project_controller,
+        workspace_controller,
+    )
     card_dispatcher = CardActionDispatcher(
         {
             "project.list": project_intent_handler,
@@ -135,6 +141,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
     app.state.task_controller = controller
     app.state.project_controller = project_controller
+    app.state.workspace_controller = workspace_controller
     app.state.feishu_gateway = gateway
     app.state.feishu_card_gateway = card_gateway
     app.state.settings = settings

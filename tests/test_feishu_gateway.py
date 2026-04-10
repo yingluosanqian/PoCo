@@ -16,10 +16,11 @@ from poco.platform.feishu.verification import (
     FeishuVerificationError,
 )
 from poco.project.controller import ProjectController
-from poco.storage.memory import InMemoryProjectStore, InMemoryTaskStore
+from poco.storage.memory import InMemoryProjectStore, InMemoryTaskStore, InMemoryWorkspaceContextStore
 from poco.task.controller import TaskController
 from poco.task.dispatcher import AsyncTaskDispatcher
 from poco.agent.runner import StubAgentRunner
+from poco.workspace.controller import WorkspaceContextController
 
 
 class FakeMessageClient:
@@ -74,14 +75,19 @@ class FeishuGatewayTest(unittest.TestCase):
         self.dispatcher = FakeDispatcher()
         self.debug_recorder = FeishuDebugRecorder()
         self.project_controller = ProjectController(InMemoryProjectStore())
+        self.workspace_controller = WorkspaceContextController(InMemoryWorkspaceContextStore())
+        workspace_handler = WorkspaceIntentHandler(
+            self.project_controller,
+            self.workspace_controller,
+        )
         self.card_gateway = FeishuCardActionGateway(
             dispatcher=CardActionDispatcher(
                 {
                     "project.create": ProjectIntentHandler(self.project_controller),
                     "project.open": ProjectIntentHandler(self.project_controller),
                     "project.bind_group": ProjectIntentHandler(self.project_controller),
-                    "workspace.open": WorkspaceIntentHandler(self.project_controller),
-                    "workspace.refresh": WorkspaceIntentHandler(self.project_controller),
+                    "workspace.open": workspace_handler,
+                    "workspace.refresh": workspace_handler,
                 }
             ),
             renderer=FeishuCardRenderer(),

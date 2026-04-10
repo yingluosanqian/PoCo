@@ -12,6 +12,7 @@ from poco.interaction.card_models import (
 )
 from poco.project.bootstrap import ProjectBootstrapError, ProjectBootstrapper
 from poco.project.controller import ProjectController, ProjectNotFoundError
+from poco.workspace.controller import WorkspaceContextController, WorkspaceContextError
 
 
 @dataclass(slots=True)
@@ -207,6 +208,7 @@ class ProjectIntentHandler:
 @dataclass(slots=True)
 class WorkspaceIntentHandler:
     project_controller: ProjectController
+    workspace_controller: WorkspaceContextController
 
     def handle(self, intent: ActionIntent) -> IntentDispatchResult:
         if intent.intent_key == "workspace.open_workdir_switcher":
@@ -224,17 +226,19 @@ class WorkspaceIntentHandler:
         project = _get_project_or_reject(self.project_controller, intent)
         if isinstance(project, IntentDispatchResult):
             return project
-        return build_workspace_overview_result(project)
+        context = self.workspace_controller.get_context(project)
+        return build_workspace_overview_result(project, context=context)
 
     def _open_workdir_switcher(self, intent: ActionIntent) -> IntentDispatchResult:
         project = _get_project_or_reject(self.project_controller, intent)
         if isinstance(project, IntentDispatchResult):
             return project
+        context = self.workspace_controller.get_context(project)
         return IntentDispatchResult(
             status=DispatchStatus.OK,
             intent_key=intent.intent_key,
             resource_refs=ResourceRefs(project_id=project.id),
-            view_model=_workspace_workdir_switcher_view_model(project),
+            view_model=_workspace_workdir_switcher_view_model(project, context=context),
             refresh_mode=RefreshMode.REPLACE_CURRENT,
             message=f"Workdir switcher for {project.name}",
         )
@@ -243,13 +247,17 @@ class WorkspaceIntentHandler:
         project = _get_project_or_reject(self.project_controller, intent)
         if isinstance(project, IntentDispatchResult):
             return project
+        try:
+            context = self.workspace_controller.use_default_workdir(project)
+        except WorkspaceContextError as exc:
+            return _rejected(intent, str(exc))
         return IntentDispatchResult(
             status=DispatchStatus.OK,
             intent_key=intent.intent_key,
             resource_refs=ResourceRefs(project_id=project.id),
-            view_model=_workspace_use_default_dir_view_model(project),
+            view_model=_workspace_use_default_dir_view_model(project, context=context),
             refresh_mode=RefreshMode.REPLACE_CURRENT,
-            message=f"Default dir option for {project.name}",
+            message=f"Using default dir for {project.name}",
         )
 
     def _open_choose_preset(self, intent: ActionIntent) -> IntentDispatchResult:
@@ -311,7 +319,15 @@ def build_dm_project_list_result(
     )
 
 
-def build_workspace_overview_result(project) -> IntentDispatchResult:
+def build_workspace_overview_result(project, *, context=None) -> IntentDispatchResult:
+    current_workdir = None
+    workdir_source = "unset"
+    if context is not None:
+        current_workdir = context.active_workdir
+        workdir_source = context.workdir_source
+    elif project.workdir:
+        current_workdir = project.workdir
+        workdir_source = "default"
     return IntentDispatchResult(
         status=DispatchStatus.OK,
         intent_key="workspace.open",
@@ -324,8 +340,8 @@ def build_workspace_overview_result(project) -> IntentDispatchResult:
                 "latest_task_status": None,
                 "pending_approvals": 0,
                 "latest_result_summary": None,
-                "current_workdir": project.workdir,
-                "workdir_source": "default" if project.workdir else "unset",
+                "current_workdir": current_workdir,
+                "workdir_source": workdir_source,
             },
         ),
         refresh_mode=RefreshMode.REPLACE_CURRENT,
@@ -396,26 +412,27 @@ def _project_dir_presets_view_model(project) -> ViewModel:
     )
 
 
-def _workspace_workdir_switcher_view_model(project) -> ViewModel:
-    current_workdir = project.workdir
+def _workspace_workdir_switcher_view_model(project, *, context) -> ViewModel:
     return ViewModel(
         "workspace_workdir_switcher",
         {
             "project": project.to_dict(),
             "current_agent": project.backend,
-            "current_workdir": current_workdir,
-            "source": "default" if current_workdir else "unset",
+            "current_workdir": context.active_workdir,
+            "source": context.workdir_source,
         },
     )
 
 
-def _workspace_use_default_dir_view_model(project) -> ViewModel:
+def _workspace_use_default_dir_view_model(project, *, context) -> ViewModel:
     return ViewModel(
         "workspace_use_default_dir",
         {
             "project": project.to_dict(),
             "default_workdir": project.workdir,
-            "note": "Default-dir switching is not implemented yet. This card reserves the group-side session action.",
+            "current_workdir": context.active_workdir,
+            "source": context.workdir_source,
+            "note": "Default-dir switching is now active for the current in-memory workspace context. It is not yet persisted across service restarts.",
         },
     )
 
