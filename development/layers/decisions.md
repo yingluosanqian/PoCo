@@ -146,3 +146,5 @@ PoCo 默认采用 `sqlite` 作为运行态状态后端，先持久化 `project /
 PoCo 当前采用“每个 project 一个当前 active session”的最小模型。
 
 新 task 默认挂到当前 active session；session 负责沉淀最小 handoff 信息，但不承担完整多分支会话能力。
+
+在交互上，group workspace 首卡已开始提供 `New Session / Close Session` 两个最小 lifecycle 动作。

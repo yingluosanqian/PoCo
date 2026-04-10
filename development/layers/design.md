@@ -69,6 +69,7 @@
 - `project -> session -> task` 的执行上下文分层，其中 `agent` 归 project，`working dir` 归 session
 - 最小运行态持久化层：`project / workspace context / task -> sqlite`
 - 最小 `session/handoff` 运行态层：`project -> active session -> task`
+- group workspace 上的最小 session lifecycle 动作：`New Session / Close Session`
 - card-first interaction model，正式交互由卡片驱动而不是文本命令驱动
 - 分层卡片信息架构：DM 管理卡片与群工作区卡片
 - 面向执行上下文配置的最小卡片 IA：`DM Project Config Card` 与 `Group Workdir Switcher Card`

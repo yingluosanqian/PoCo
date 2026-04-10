@@ -33,6 +33,8 @@ WRITE_INTENT_KEYS = {
     "project.bind_group",
     "project.archive",
     "project.add_dir_preset",
+    "session.new",
+    "session.close",
     "workspace.use_default_dir",
     "workspace.apply_preset_dir",
     "workspace.apply_entered_path",

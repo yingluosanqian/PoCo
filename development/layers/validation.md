@@ -104,6 +104,7 @@
 - 启动恢复是否已经把被重启打断的运行中 task 收敛到明确状态
 - task 是否已经自动挂到 active session
 - workspace card 是否已经展示真实 active session
+- workspace card 是否已经提供最小 session lifecycle 动作
 
 ### 当前轮已知未验证区域
 

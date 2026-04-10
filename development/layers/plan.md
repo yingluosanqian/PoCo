@@ -117,3 +117,5 @@
 - 显式 `continue/new session/close session` 动作
 - richer handoff summary
 - session timeline
+
+其中 `new session / close session` 已进入实现；下一轮重点可转向 `continue` 与 session timeline。

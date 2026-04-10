@@ -6,7 +6,7 @@ import unittest
 
 from poco.interaction.service import InteractionService
 from poco.interaction.card_dispatcher import CardActionDispatcher
-from poco.interaction.card_handlers import ProjectIntentHandler, WorkspaceIntentHandler
+from poco.interaction.card_handlers import ProjectIntentHandler, SessionIntentHandler, WorkspaceIntentHandler
 from poco.platform.feishu.card_gateway import FeishuCardActionGateway
 from poco.platform.feishu.cards import FeishuCardRenderer
 from poco.platform.feishu.debug import FeishuDebugRecorder
@@ -89,6 +89,11 @@ class FeishuGatewayTest(unittest.TestCase):
             self.workspace_controller,
             session_controller=self.session_controller,
         )
+        session_handler = SessionIntentHandler(
+            self.project_controller,
+            self.workspace_controller,
+            self.session_controller,
+        )
         self.card_gateway = FeishuCardActionGateway(
             dispatcher=CardActionDispatcher(
                 {
@@ -97,6 +102,8 @@ class FeishuGatewayTest(unittest.TestCase):
                     "project.bind_group": ProjectIntentHandler(self.project_controller),
                     "workspace.open": workspace_handler,
                     "workspace.refresh": workspace_handler,
+                    "session.new": session_handler,
+                    "session.close": session_handler,
                 }
             ),
             renderer=FeishuCardRenderer(),

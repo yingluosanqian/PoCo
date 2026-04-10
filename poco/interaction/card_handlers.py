@@ -376,6 +376,161 @@ class WorkspaceIntentHandler:
 
 
 @dataclass(slots=True)
+class SessionIntentHandler:
+    project_controller: ProjectController
+    workspace_controller: WorkspaceContextController
+    session_controller: SessionController
+    task_controller: TaskController | None = None
+
+    def handle(self, intent: ActionIntent) -> IntentDispatchResult:
+        if intent.intent_key == "session.new":
+            return self._new_session(intent)
+        if intent.intent_key == "session.close":
+            return self._close_session(intent)
+        return _rejected(intent, f"Unsupported session intent: {intent.intent_key}")
+
+    def _new_session(self, intent: ActionIntent) -> IntentDispatchResult:
+        project = _get_project_or_reject(self.project_controller, intent)
+        if isinstance(project, IntentDispatchResult):
+            return project
+        session = self.session_controller.create_session(
+            project_id=project.id,
+            created_by=intent.actor_id,
+        )
+        context = self.workspace_controller.get_context(project)
+        return build_workspace_overview_result(
+            project,
+            context=context,
+            active_session=session,
+            latest_task=_latest_project_task(self.task_controller, project.id),
+            message=f"Started a new session for {project.name}",
+        )
+
+    def _close_session(self, intent: ActionIntent) -> IntentDispatchResult:
+        project = _get_project_or_reject(self.project_controller, intent)
+        if isinstance(project, IntentDispatchResult):
+            return project
+        session = self.session_controller.close_active_session(project.id)
+        if session is None:
+            return _rejected(intent, f"No active session to close for {project.name}")
+        context = self.workspace_controller.get_context(project)
+        return build_workspace_overview_result(
+            project,
+            context=context,
+            active_session=None,
+            latest_task=_latest_project_task(self.task_controller, project.id),
+            message=f"Closed active session for {project.name}",
+        )
+
+    def _open_workdir_switcher(self, intent: ActionIntent) -> IntentDispatchResult:
+        project = _get_project_or_reject(self.project_controller, intent)
+        if isinstance(project, IntentDispatchResult):
+            return project
+        context = self.workspace_controller.get_context(project)
+        return IntentDispatchResult(
+            status=DispatchStatus.OK,
+            intent_key=intent.intent_key,
+            resource_refs=ResourceRefs(project_id=project.id),
+            view_model=_workspace_workdir_switcher_view_model(project, context=context),
+            refresh_mode=RefreshMode.REPLACE_CURRENT,
+            message=f"Workdir switcher for {project.name}",
+        )
+
+    def _open_use_default_dir(self, intent: ActionIntent) -> IntentDispatchResult:
+        project = _get_project_or_reject(self.project_controller, intent)
+        if isinstance(project, IntentDispatchResult):
+            return project
+        try:
+            context = self.workspace_controller.use_default_workdir(project)
+        except WorkspaceContextError as exc:
+            return _rejected(intent, str(exc))
+        return IntentDispatchResult(
+            status=DispatchStatus.OK,
+            intent_key=intent.intent_key,
+            resource_refs=ResourceRefs(project_id=project.id),
+            view_model=_workspace_use_default_dir_view_model(project, context=context),
+            refresh_mode=RefreshMode.REPLACE_CURRENT,
+            message=f"Using default dir for {project.name}",
+        )
+
+    def _open_choose_preset(self, intent: ActionIntent) -> IntentDispatchResult:
+        project = _get_project_or_reject(self.project_controller, intent)
+        if isinstance(project, IntentDispatchResult):
+            return project
+        return IntentDispatchResult(
+            status=DispatchStatus.OK,
+            intent_key=intent.intent_key,
+            resource_refs=ResourceRefs(project_id=project.id),
+            view_model=_workspace_choose_preset_view_model(project),
+            refresh_mode=RefreshMode.REPLACE_CURRENT,
+            message=f"Preset dirs for {project.name}",
+        )
+
+    def _apply_preset_dir(self, intent: ActionIntent) -> IntentDispatchResult:
+        project = _get_project_or_reject(self.project_controller, intent)
+        if isinstance(project, IntentDispatchResult):
+            return project
+        preset = _extract_workdir_path(intent.payload)
+        try:
+            context = self.workspace_controller.use_preset_workdir(project, preset)
+        except WorkspaceContextError as exc:
+            return _rejected(intent, str(exc))
+        return IntentDispatchResult(
+            status=DispatchStatus.OK,
+            intent_key=intent.intent_key,
+            resource_refs=ResourceRefs(project_id=project.id),
+            view_model=_workspace_workdir_switcher_view_model(project, context=context),
+            refresh_mode=RefreshMode.REPLACE_CURRENT,
+            message=f"Using preset dir for {project.name}",
+        )
+
+    def _open_use_recent_dir(self, intent: ActionIntent) -> IntentDispatchResult:
+        project = _get_project_or_reject(self.project_controller, intent)
+        if isinstance(project, IntentDispatchResult):
+            return project
+        return IntentDispatchResult(
+            status=DispatchStatus.OK,
+            intent_key=intent.intent_key,
+            resource_refs=ResourceRefs(project_id=project.id),
+            view_model=_workspace_recent_dirs_view_model(project),
+            refresh_mode=RefreshMode.REPLACE_CURRENT,
+            message=f"Recent dirs for {project.name}",
+        )
+
+    def _open_enter_path(self, intent: ActionIntent) -> IntentDispatchResult:
+        project = _get_project_or_reject(self.project_controller, intent)
+        if isinstance(project, IntentDispatchResult):
+            return project
+        context = self.workspace_controller.get_context(project)
+        return IntentDispatchResult(
+            status=DispatchStatus.OK,
+            intent_key=intent.intent_key,
+            resource_refs=ResourceRefs(project_id=project.id),
+            view_model=_workspace_enter_path_view_model(project, context=context),
+            refresh_mode=RefreshMode.REPLACE_CURRENT,
+            message=f"Manual dir entry for {project.name}",
+        )
+
+    def _apply_entered_path(self, intent: ActionIntent) -> IntentDispatchResult:
+        project = _get_project_or_reject(self.project_controller, intent)
+        if isinstance(project, IntentDispatchResult):
+            return project
+        workdir = _extract_workdir_path(intent.payload)
+        try:
+            context = self.workspace_controller.use_manual_workdir(project, workdir)
+        except WorkspaceContextError as exc:
+            return _rejected(intent, str(exc))
+        return IntentDispatchResult(
+            status=DispatchStatus.OK,
+            intent_key=intent.intent_key,
+            resource_refs=ResourceRefs(project_id=project.id),
+            view_model=_workspace_workdir_switcher_view_model(project, context=context),
+            refresh_mode=RefreshMode.REPLACE_CURRENT,
+            message=f"Updated workdir for {project.name}",
+        )
+
+
+@dataclass(slots=True)
 class TaskIntentHandler:
     project_controller: ProjectController
     workspace_controller: WorkspaceContextController
@@ -523,8 +678,10 @@ def build_workspace_overview_result(
     if latest_task is not None:
         latest_task_status = latest_task.status.value
         latest_task_id = latest_task.id
+    active_session_id = None
     active_session_summary = "No active session yet."
     if active_session is not None:
+        active_session_id = active_session.id
         active_session_summary = active_session.summary_text()
     return IntentDispatchResult(
         status=DispatchStatus.OK,
@@ -537,6 +694,7 @@ def build_workspace_overview_result(
             "workspace_overview",
             {
                 "project": project.to_dict(),
+                "active_session_id": active_session_id,
                 "active_session_summary": active_session_summary,
                 "latest_task_status": latest_task_status,
                 "latest_task_id": latest_task_id,

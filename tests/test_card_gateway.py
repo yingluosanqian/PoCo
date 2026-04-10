@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from poco.interaction.card_dispatcher import CardActionDispatcher
-from poco.interaction.card_handlers import ProjectIntentHandler, TaskIntentHandler, WorkspaceIntentHandler
+from poco.interaction.card_handlers import ProjectIntentHandler, SessionIntentHandler, TaskIntentHandler, WorkspaceIntentHandler
 from poco.platform.feishu.card_gateway import FeishuCardActionGateway
 from poco.platform.feishu.cards import FeishuCardRenderer
 from poco.project.bootstrap import ProjectBootstrapError, ProjectBootstrapResult
@@ -87,6 +87,12 @@ class FeishuCardGatewayTest(unittest.TestCase):
             self.task_controller,
             self.session_controller,
         )
+        self.session_handler = SessionIntentHandler(
+            self.project_controller,
+            self.workspace_controller,
+            self.session_controller,
+            self.task_controller,
+        )
         self.task_handler = TaskIntentHandler(
             self.project_controller,
             self.workspace_controller,
@@ -108,6 +114,8 @@ class FeishuCardGatewayTest(unittest.TestCase):
                     "project.bind_group": self.project_handler,
                     "workspace.open": self.workspace_handler,
                     "workspace.refresh": self.workspace_handler,
+                    "session.new": self.session_handler,
+                    "session.close": self.session_handler,
                     "workspace.open_workdir_switcher": self.workspace_handler,
                     "workspace.use_default_dir": self.workspace_handler,
                     "workspace.choose_preset": self.workspace_handler,
@@ -282,12 +290,17 @@ class FeishuCardGatewayTest(unittest.TestCase):
             response["card"]["data"]["header"]["title"]["content"],
             f"Workspace: {project.name}",
         )
-        workdir_button = response["card"]["data"]["body"]["elements"][5]
+        new_session_button = response["card"]["data"]["body"]["elements"][5]
+        self.assertEqual(
+            new_session_button["behaviors"][0]["value"]["intent_key"],
+            "session.new",
+        )
+        workdir_button = response["card"]["data"]["body"]["elements"][6]
         self.assertEqual(
             workdir_button["behaviors"][0]["value"]["intent_key"],
             "workspace.open_workdir_switcher",
         )
-        refresh_button = response["card"]["data"]["body"]["elements"][6]
+        refresh_button = response["card"]["data"]["body"]["elements"][7]
         self.assertEqual(
             refresh_button["behaviors"][0]["value"]["surface"],
             "group",
@@ -335,6 +348,8 @@ class FeishuCardGatewayTest(unittest.TestCase):
 
         session_block = response["card"]["data"]["body"]["elements"][0]
         self.assertIn(session.id, session_block["content"])
+        close_button = response["card"]["data"]["body"]["elements"][6]
+        self.assertEqual(close_button["behaviors"][0]["value"]["intent_key"], "session.close")
 
     def test_workspace_open_shows_latest_task_button_when_task_exists(self) -> None:
         project = self.project_controller.create_project(
@@ -367,14 +382,77 @@ class FeishuCardGatewayTest(unittest.TestCase):
 
         response = self.gateway.handle_action(payload)
 
-        latest_button = response["card"]["data"]["body"]["elements"][5]
+        new_session_button = response["card"]["data"]["body"]["elements"][5]
+        self.assertEqual(new_session_button["behaviors"][0]["value"]["intent_key"], "session.new")
+        latest_button = response["card"]["data"]["body"]["elements"][6]
         self.assertEqual(latest_button["behaviors"][0]["value"]["intent_key"], "task.open")
         self.assertEqual(latest_button["behaviors"][0]["value"]["task_id"], task.id)
-        workdir_button = response["card"]["data"]["body"]["elements"][6]
+        workdir_button = response["card"]["data"]["body"]["elements"][7]
         self.assertEqual(
             workdir_button["behaviors"][0]["value"]["intent_key"],
             "workspace.open_workdir_switcher",
         )
+
+    def test_session_new_action_starts_fresh_active_session(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+        )
+        old_session = self.session_controller.create_session(
+            project_id=project.id,
+            created_by="ou_demo_user",
+        )
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_session_new_1"},
+                "action": {
+                    "value": {
+                        "intent_key": "session.new",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "request_id": "req_session_new_1",
+                    },
+                },
+            }
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        session_block = response["card"]["data"]["body"]["elements"][0]
+        self.assertNotIn(old_session.id, session_block["content"])
+        self.assertEqual(response["instruction"]["template_key"], "workspace_overview")
+
+    def test_session_close_action_clears_active_session(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+        )
+        self.session_controller.create_session(
+            project_id=project.id,
+            created_by="ou_demo_user",
+        )
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_session_close_1"},
+                "action": {
+                    "value": {
+                        "intent_key": "session.close",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "request_id": "req_session_close_1",
+                    },
+                },
+            }
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        session_block = response["card"]["data"]["body"]["elements"][0]
+        self.assertIn("No active session yet.", session_block["content"])
 
     def test_task_composer_opens_from_workspace_card(self) -> None:
         project = self.project_controller.create_project(
