@@ -153,7 +153,7 @@ class FeishuGatewayTest(unittest.TestCase):
         sent = self.message_client.sent_messages[0]
         self.assertEqual(sent["receive_id_type"], "chat_id")
         self.assertEqual(sent["receive_id"], "oc_demo_chat")
-        self.assertIn("/run <prompt>", sent["text"])
+        self.assertIn("This group is not bound to a project yet.", sent["text"])
         snapshot = self.debug_recorder.snapshot()
         self.assertEqual(len(snapshot["inbound_events"]), 1)
         self.assertEqual(snapshot["inbound_events"][0]["reply_receive_id_type"], "chat_id")
@@ -304,6 +304,77 @@ class FeishuGatewayTest(unittest.TestCase):
         self.assertEqual(task.project_id, project.id)
         self.assertEqual(task.effective_workdir, "/srv/poco/api")
         self.assertIn("effective_workdir=/srv/poco/api", response["reply_preview"])
+
+    def test_plain_group_message_dispatches_background_start(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+            group_chat_id="oc_demo_chat",
+        )
+        self.workspace_controller.set_active_workdir(
+            project,
+            workdir="/srv/poco/api",
+            source="manual",
+        )
+        payload = {
+            "token": "verify-token",
+            "event": {
+                "sender": {"sender_id": {"open_id": "ou_demo_user"}},
+                "message": {
+                    "chat_type": "group",
+                    "chat_id": "oc_demo_chat",
+                    "content": json.dumps({"text": "summarize the repository"}),
+                },
+            },
+        }
+
+        response = self.gateway.handle_event(
+            payload,
+            headers={},
+            raw_body=json.dumps(payload).encode("utf-8"),
+        )
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(len(self.dispatcher.actions), 1)
+        action, task_id = self.dispatcher.actions[0]
+        self.assertEqual(action, "start")
+        self.assertEqual(task_id, response["task_id"])
+        task = self.controller.get_task(task_id)
+        self.assertEqual(task.prompt, "summarize the repository")
+        self.assertEqual(task.project_id, project.id)
+        self.assertEqual(task.effective_workdir, "/srv/poco/api")
+        self.assertIn("prompt=summarize the repository", response["reply_preview"])
+
+    def test_unknown_slash_command_in_group_returns_help_instead_of_task(self) -> None:
+        self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+            group_chat_id="oc_demo_chat",
+        )
+        payload = {
+            "token": "verify-token",
+            "event": {
+                "sender": {"sender_id": {"open_id": "ou_demo_user"}},
+                "message": {
+                    "chat_type": "group",
+                    "chat_id": "oc_demo_chat",
+                    "content": json.dumps({"text": "/unknown do something"}),
+                },
+            },
+        }
+
+        response = self.gateway.handle_event(
+            payload,
+            headers={},
+            raw_body=json.dumps(payload).encode("utf-8"),
+        )
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(len(self.dispatcher.actions), 0)
+        self.assertIsNone(response["task_id"])
+        self.assertIn("Send any plain text message to create a task in this project.", response["reply_preview"])
 
 
 class FeishuRequestVerifierTest(unittest.TestCase):

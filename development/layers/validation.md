@@ -84,6 +84,7 @@
 - `workspace.apply_entered_path` 是否已经成为第二条真实可写的群侧 workdir 路径
 - `project.add_dir_preset` / `workspace.apply_preset_dir` 是否已经形成最小 preset 写链路
 - group 文本 `/run` 是否已经把当前 workspace context 固化到 task 的 `effective_workdir`
+- 已绑定 project 的 group 普通文本消息是否也已经默认创建 task
 - Codex runner 是否已经优先使用 task 级 workdir
 - group workspace card 是否已经具备 `Run Task` 入口
 - `task.submit` 是否已经继承当前 workspace workdir 并触发异步派发

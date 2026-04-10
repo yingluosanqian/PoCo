@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 from poco.task.controller import TaskController, TaskNotFoundError, TaskStateError
 from poco.task.rendering import render_task_text
+
+
+MessageSurface = Literal["dm", "group", "unknown"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,6 +27,7 @@ class InteractionService:
         text: str,
         source: str,
         *,
+        message_surface: MessageSurface = "unknown",
         project_id: str | None = None,
         effective_workdir: str | None = None,
         reply_receive_id: str | None = None,
@@ -30,16 +35,26 @@ class InteractionService:
     ) -> InteractionResponse:
         command = text.strip()
         if not command:
-            return InteractionResponse(text=self._help_text())
+            return InteractionResponse(
+                text=self._help_text(
+                    message_surface=message_surface,
+                    project_id=project_id,
+                )
+            )
 
         if command == "/help":
-            return InteractionResponse(text=self._help_text())
+            return InteractionResponse(
+                text=self._help_text(
+                    message_surface=message_surface,
+                    project_id=project_id,
+                )
+            )
 
         if command.startswith("/run "):
             prompt = command.removeprefix("/run ").strip()
             if not prompt:
                 return InteractionResponse(text="Usage: /run <prompt>")
-            task = self._controller.create_task(
+            return self._create_task_response(
                 requester_id=user_id,
                 prompt=prompt,
                 source=source,
@@ -47,11 +62,6 @@ class InteractionService:
                 effective_workdir=effective_workdir,
                 reply_receive_id=reply_receive_id,
                 reply_receive_id_type=reply_receive_id_type,
-            )
-            return InteractionResponse(
-                text=render_task_text(task, headline="Task created."),
-                task_id=task.id,
-                dispatch_action="start",
             )
 
         if command.startswith("/status "):
@@ -66,7 +76,57 @@ class InteractionService:
             task_id = command.removeprefix("/reject ").strip()
             return self._resolve_confirmation(task_id, approved=False)
 
-        return InteractionResponse(text=self._help_text())
+        if command.startswith("/"):
+            return InteractionResponse(
+                text=self._help_text(
+                    message_surface=message_surface,
+                    project_id=project_id,
+                )
+            )
+
+        if message_surface == "group" and project_id:
+            return self._create_task_response(
+                requester_id=user_id,
+                prompt=command,
+                source=source,
+                project_id=project_id,
+                effective_workdir=effective_workdir,
+                reply_receive_id=reply_receive_id,
+                reply_receive_id_type=reply_receive_id_type,
+            )
+
+        return InteractionResponse(
+            text=self._help_text(
+                message_surface=message_surface,
+                project_id=project_id,
+            )
+        )
+
+    def _create_task_response(
+        self,
+        *,
+        requester_id: str,
+        prompt: str,
+        source: str,
+        project_id: str | None,
+        effective_workdir: str | None,
+        reply_receive_id: str | None,
+        reply_receive_id_type: str | None,
+    ) -> InteractionResponse:
+        task = self._controller.create_task(
+            requester_id=requester_id,
+            prompt=prompt,
+            source=source,
+            project_id=project_id,
+            effective_workdir=effective_workdir,
+            reply_receive_id=reply_receive_id,
+            reply_receive_id_type=reply_receive_id_type,
+        )
+        return InteractionResponse(
+            text=render_task_text(task, headline="Task created."),
+            task_id=task.id,
+            dispatch_action="start",
+        )
 
     def _task_lookup_response(self, task_id: str) -> InteractionResponse:
         try:
@@ -88,8 +148,23 @@ class InteractionService:
             dispatch_action="resume" if approved else None,
         )
 
-    def _help_text(self) -> str:
-        return "\n".join(
+    def _help_text(
+        self,
+        *,
+        message_surface: MessageSurface,
+        project_id: str | None,
+    ) -> str:
+        lines: list[str] = []
+        if message_surface == "group" and project_id:
+            lines.append("Send any plain text message to create a task in this project.")
+        elif message_surface == "group":
+            lines.append("This group is not bound to a project yet.")
+        elif message_surface == "dm":
+            lines.append("DM is the PoCo control plane. Use cards to manage projects and workspaces.")
+        else:
+            lines.append("PoCo help.")
+
+        lines.extend(
             [
                 "Commands:",
                 "/run <prompt>",
@@ -99,3 +174,4 @@ class InteractionService:
                 "/help",
             ]
         )
+        return "\n".join(lines)

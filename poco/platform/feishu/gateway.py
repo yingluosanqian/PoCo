@@ -113,6 +113,7 @@ class FeishuGateway:
             user_id=user_id,
             text=text,
             source="feishu",
+            message_surface=self._message_surface(event),
             project_id=self._resolve_project_id(event),
             effective_workdir=self._resolve_effective_workdir(event),
             reply_receive_id=target["receive_id"],
@@ -194,6 +195,20 @@ class FeishuGateway:
             return str(content.get("text", "")).strip()
 
         return str(event.get("text", "")).strip()
+
+    def _message_surface(self, event: dict[str, Any]) -> str:
+        message = event.get("message", {})
+        chat_type = (
+            message.get("chat_type")
+            or event.get("chat_type")
+            or event.get("message_type")
+        )
+        normalized = str(chat_type).lower() if chat_type is not None else ""
+        if normalized in {"group", "chat", "group_chat"}:
+            return "group"
+        if normalized in {"p2p", "dm"}:
+            return "dm"
+        return "unknown"
 
     def _resolve_reply_target(
         self,
