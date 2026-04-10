@@ -43,7 +43,8 @@ class FeishuAccessTokenProvider:
             "app_id": self._app_id,
             "app_secret": self._app_secret,
         }
-        response = _post_json(
+        response = _request_json(
+            method="POST",
             url=f"{self._base_url}/open-apis/auth/v3/tenant_access_token/internal",
             payload=payload,
             headers={"Content-Type": "application/json; charset=utf-8"},
@@ -95,6 +96,38 @@ class FeishuMessageClient:
             content=card,
         )
 
+    def update_interactive(
+        self,
+        *,
+        message_id: str,
+        card: dict[str, Any],
+    ) -> FeishuSendResult:
+        token = self._token_provider.get_token()
+        response = _request_json(
+            method="PUT",
+            url=f"{self._base_url}/open-apis/im/v1/messages/{message_id}",
+            payload={
+                "msg_type": "interactive",
+                "content": json.dumps(card, ensure_ascii=False),
+            },
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json; charset=utf-8",
+            },
+        )
+
+        code = response.get("code", 0)
+        if code != 0:
+            raise FeishuApiError(
+                f"Failed to update Feishu message: code={code} msg={response.get('msg', 'unknown error')}"
+            )
+
+        data = response.get("data", {})
+        return FeishuSendResult(
+            message_id=data.get("message_id") or message_id,
+            raw_response=response,
+        )
+
     def create_group_chat(
         self,
         *,
@@ -109,7 +142,8 @@ class FeishuMessageClient:
                 "uuid": uuid4().hex,
             }
         )
-        response = _post_json(
+        response = _request_json(
+            method="POST",
             url=f"{self._base_url}/open-apis/im/v1/chats?{query}",
             payload={
                 "name": name,
@@ -151,7 +185,8 @@ class FeishuMessageClient:
     ) -> FeishuSendResult:
         token = self._token_provider.get_token()
         query = urlencode({"receive_id_type": receive_id_type})
-        response = _post_json(
+        response = _request_json(
+            method="POST",
             url=f"{self._base_url}/open-apis/im/v1/messages?{query}",
             payload={
                 "receive_id": receive_id,
@@ -177,13 +212,19 @@ class FeishuMessageClient:
         )
 
 
-def _post_json(url: str, payload: dict[str, Any], headers: dict[str, str]) -> dict[str, Any]:
+def _request_json(
+    *,
+    method: str,
+    url: str,
+    payload: dict[str, Any],
+    headers: dict[str, str],
+) -> dict[str, Any]:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     request = Request(
         url=url,
         data=body,
         headers=headers,
-        method="POST",
+        method=method,
     )
 
     try:

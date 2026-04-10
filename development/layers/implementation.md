@@ -89,11 +89,12 @@
 - `task.submit` 已接入 card-first 主链，当前会创建 task、继承当前 workdir，并异步派发执行
 - `task_status` 已接入 notifier 回推链，等待确认和终态现在会发送 interactive card
 - `task.approve` / `task.reject` 已接入 card callback，并复用现有 confirmation / resume 主链
+- `Task` 已开始保存 `notification_message_id`，后续 notifier 会优先原位更新已有 task status card，失败时回退新发
 
 ### 当前明确未实现
 
 - 飞书卡片 2.0 驱动的完整正式交互面
-- 飞书卡片端到端正式工作流，以及 richer result/approval timeline 等更完整 task card handlers
+- 飞书卡片端到端正式工作流，以及 workspace/composer/task 卡之间更完整的更新策略与 richer result/approval timeline
 - 飞书加密事件体处理
 - Claude Code 与 Cursor Agent 执行适配
 - 跨进程可恢复的任务队列

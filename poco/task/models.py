@@ -41,6 +41,7 @@ class Task:
     agent_backend: str = "unknown"
     project_id: str | None = None
     effective_workdir: str | None = None
+    notification_message_id: str | None = None
     reply_receive_id: str | None = None
     reply_receive_id_type: str | None = None
     status: TaskStatus = TaskStatus.CREATED
@@ -58,6 +59,10 @@ class Task:
         self.status = status
         self.updated_at = utc_now()
 
+    def set_notification_message_id(self, message_id: str | None) -> None:
+        self.notification_message_id = message_id
+        self.updated_at = utc_now()
+
     def to_dict(self) -> dict[str, object]:
         return {
             "id": self.id,
@@ -67,6 +72,7 @@ class Task:
             "agent_backend": self.agent_backend,
             "project_id": self.project_id,
             "effective_workdir": self.effective_workdir,
+            "notification_message_id": self.notification_message_id,
             "reply_receive_id": self.reply_receive_id,
             "reply_receive_id_type": self.reply_receive_id_type,
             "status": self.status.value,

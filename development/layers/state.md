@@ -85,6 +85,7 @@
 - 已存在最小按-task 工作目录执行能力，当前 Codex runner 会优先在 task 指定目录下运行
 - 已存在最小 card-first 发任务链，当前 group workspace card 可进入 `task_composer`，并通过 `task.submit` 创建 task、继承当前 workdir、触发异步 dispatch
 - 已存在最小 task status card 链，当前等待确认和终态会发送 `task_status` card，并可通过卡片执行 `Approve` / `Reject`
+- 已存在最小 task card 原位更新链，当前 notifier 首次发送 task status card 后会记录 message id，并在后续状态变化时优先更新同一张卡
 - 已有最小自动化验证，覆盖核心任务状态流、飞书 challenge 校验、签名校验、Codex runner、后台调度器和本地 demo 接口
 - 仓库当前结构仍较简单，尚无重型历史实现包袱
 
@@ -97,11 +98,11 @@
 - 当前状态存储仅为内存实现，不适合跨进程或重启后的任务追踪
 - 当前系统仅维护 task state，尚未维护 session continuity 或产品级 handoff context
 - 当前系统已开始把 `agent` 与 `working dir` 的 ownership 落到实现里，真实写路径已覆盖 `Use Default`、`Enter Path` 和 `Choose Preset`
-- 当前 workdir 已开始进入文本和 card 两条 task 创建路径，approval/result 也已有最小 card 链，但仍未形成完整 timeline 或 richer result 视图
+- 当前 workdir 已开始进入文本和 card 两条 task 创建路径，approval/result 也已有最小 card 链和原位更新能力，但仍未形成完整 timeline 或 richer result 视图
 - 当前 `agent` 与 `working dir` 的卡片信息架构已部分进入实现：DM 配置卡和群目录切换卡都已具备入口，但 `Use Recent` 仍未接入真实目录切换
 - 当前系统尚未实现完整 project lifecycle 与正式 workspace card 工作流，正式交互模型仍未闭环
 - 当前 DM 已能主动下发首页卡片，并具备第一批真实 callback 动作；但 project 命名、timeline、session/task 正式交互仍未形成完整正式工作流
-- 当前正式实现仍是 DM 首屏卡片 + group card/task/status 混合态，尚未形成完整 card-first 正式交互面
+- 当前正式实现仍是 DM 首屏卡片 + group workspace/task/status 混合态，尚未形成完整 card-first 正式交互面
 - 当前虽已有 card callback HTTP 入口和真实 interactive renderer，但尚未接入完整 group workspace、session/task handlers 和真实飞书端到端验证
 - 当前权限模型、审计机制和敏感操作保护仍停留在约束层，没有落成实现
 - 当前用户工作流已可接近真实消息交互，但尚未形成真实可用的手机端生产链路

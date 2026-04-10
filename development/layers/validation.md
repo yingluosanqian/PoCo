@@ -89,6 +89,7 @@
 - `task.submit` 是否已经继承当前 workspace workdir 并触发异步派发
 - notifier 是否已经发送 `task_status` interactive card
 - `task.approve` / `task.reject` 是否已经接入 card callback 主链
+- notifier 是否已经优先原位更新已有 task status card
 
 ### 当前轮已知未验证区域
 
@@ -96,7 +97,7 @@
 - 飞书卡片回调更新与完整 renderer 工作流
 - 真实飞书环境里的建群权限、群名称策略和群内 workspace bootstrap
 - 群内 workdir switcher card 与真实目录切换
-- task card 的原位更新与 richer result 视图
+- workspace / composer / task card 之间更完整的更新策略与 richer result 视图
 - 群工作区卡片与 project/session/task 完整 handlers
 - 飞书加密事件体
 - 真实网络条件下的飞书端到端联调

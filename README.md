@@ -264,6 +264,7 @@ Current interaction model:
 - Task execution happens in a background dispatcher
 - When a task waits for confirmation, completes, fails, or is cancelled, PoCo now pushes a `task_status` card to the stored Feishu reply target
 - Waiting task cards now include `Approve` / `Reject` actions that resume or cancel the task through card callbacks
+- Once a task status card has been sent, later task-state notifications now try to update that same card in place before falling back to a new message
 
 If `POCO_FEISHU_DELIVERY_MODE=longconn` is enabled:
 

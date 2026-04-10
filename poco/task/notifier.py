@@ -51,6 +51,32 @@ class FeishuTaskNotifier:
                 surface=surface,
             )
             card = self._renderer.render(instruction)
+            if task.notification_message_id:
+                if self._debug_recorder is not None:
+                    self._debug_recorder.record_outbound_attempt(
+                        source="task_notifier_update",
+                        receive_id=task.reply_receive_id,
+                        receive_id_type=task.reply_receive_id_type,
+                        text=f"[card-update] task_status:{task.status.value}",
+                        task_id=task.id,
+                    )
+                try:
+                    self._message_client.update_interactive(
+                        message_id=task.notification_message_id,
+                        card=card,
+                    )
+                    return
+                except Exception as exc:
+                    if self._debug_recorder is not None:
+                        self._debug_recorder.record_error(
+                            stage="task_notifier_update",
+                            message=str(exc),
+                            context={
+                                "task_id": task.id,
+                                "message_id": task.notification_message_id,
+                            },
+                        )
+
             preview = f"[card] task_status:{task.status.value}"
             if self._debug_recorder is not None:
                 self._debug_recorder.record_outbound_attempt(
@@ -61,11 +87,12 @@ class FeishuTaskNotifier:
                     task_id=task.id,
                 )
             try:
-                self._message_client.send_interactive(
+                result = self._message_client.send_interactive(
                     receive_id=task.reply_receive_id,
                     receive_id_type=task.reply_receive_id_type,
                     card=card,
                 )
+                task.set_notification_message_id(result.message_id)
                 return
             except Exception as exc:
                 if self._debug_recorder is not None:

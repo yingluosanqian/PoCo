@@ -31,9 +31,9 @@ class FeishuClientTest(unittest.TestCase):
     def test_create_group_chat_uses_feishu_chat_api(self) -> None:
         with (
             patch.object(self.token_provider, "get_token", return_value="tenant-token"),
-            patch("poco.platform.feishu.client._post_json") as post_json,
+            patch("poco.platform.feishu.client._request_json") as request_json,
         ):
-            post_json.return_value = {
+            request_json.return_value = {
                 "code": 0,
                 "data": {
                     "chat_id": "oc_group_123",
@@ -48,7 +48,8 @@ class FeishuClientTest(unittest.TestCase):
 
         self.assertEqual(result.chat_id, "oc_group_123")
         self.assertEqual(result.name, "PoCo | Demo")
-        kwargs = post_json.call_args.kwargs
+        kwargs = request_json.call_args.kwargs
+        self.assertEqual(kwargs["method"], "POST")
         self.assertIn("/open-apis/im/v1/chats?", kwargs["url"])
         self.assertIn("user_id_type=open_id", kwargs["url"])
         self.assertIn("set_bot_manager=true", kwargs["url"])
@@ -60,6 +61,29 @@ class FeishuClientTest(unittest.TestCase):
             kwargs["headers"]["Authorization"],
             "Bearer tenant-token",
         )
+
+    def test_update_interactive_uses_put_message_api(self) -> None:
+        with (
+            patch.object(self.token_provider, "get_token", return_value="tenant-token"),
+            patch("poco.platform.feishu.client._request_json") as request_json,
+        ):
+            request_json.return_value = {
+                "code": 0,
+                "data": {
+                    "message_id": "om_updated_123",
+                },
+            }
+
+            result = self.client.update_interactive(
+                message_id="om_original_123",
+                card={"schema": "2.0"},
+            )
+
+        self.assertEqual(result.message_id, "om_updated_123")
+        kwargs = request_json.call_args.kwargs
+        self.assertEqual(kwargs["method"], "PUT")
+        self.assertIn("/open-apis/im/v1/messages/om_original_123", kwargs["url"])
+        self.assertEqual(kwargs["payload"]["msg_type"], "interactive")
 
     def test_workspace_renderer_uses_group_surface_for_workspace_cards(self) -> None:
         project = Project(
