@@ -221,6 +221,8 @@ class WorkspaceIntentHandler:
             return self._open_use_recent_dir(intent)
         if intent.intent_key == "workspace.enter_path":
             return self._open_enter_path(intent)
+        if intent.intent_key == "workspace.apply_entered_path":
+            return self._apply_entered_path(intent)
         if intent.intent_key not in {"workspace.open", "workspace.refresh"}:
             return _rejected(intent, f"Unsupported workspace intent: {intent.intent_key}")
         project = _get_project_or_reject(self.project_controller, intent)
@@ -290,13 +292,32 @@ class WorkspaceIntentHandler:
         project = _get_project_or_reject(self.project_controller, intent)
         if isinstance(project, IntentDispatchResult):
             return project
+        context = self.workspace_controller.get_context(project)
         return IntentDispatchResult(
             status=DispatchStatus.OK,
             intent_key=intent.intent_key,
             resource_refs=ResourceRefs(project_id=project.id),
-            view_model=_workspace_enter_path_view_model(project),
+            view_model=_workspace_enter_path_view_model(project, context=context),
             refresh_mode=RefreshMode.REPLACE_CURRENT,
             message=f"Manual dir entry for {project.name}",
+        )
+
+    def _apply_entered_path(self, intent: ActionIntent) -> IntentDispatchResult:
+        project = _get_project_or_reject(self.project_controller, intent)
+        if isinstance(project, IntentDispatchResult):
+            return project
+        workdir = _extract_workdir_path(intent.payload)
+        try:
+            context = self.workspace_controller.use_manual_workdir(project, workdir)
+        except WorkspaceContextError as exc:
+            return _rejected(intent, str(exc))
+        return IntentDispatchResult(
+            status=DispatchStatus.OK,
+            intent_key=intent.intent_key,
+            resource_refs=ResourceRefs(project_id=project.id),
+            view_model=_workspace_workdir_switcher_view_model(project, context=context),
+            refresh_mode=RefreshMode.REPLACE_CURRENT,
+            message=f"Updated workdir for {project.name}",
         )
 
 
@@ -459,12 +480,13 @@ def _workspace_recent_dirs_view_model(project) -> ViewModel:
     )
 
 
-def _workspace_enter_path_view_model(project) -> ViewModel:
+def _workspace_enter_path_view_model(project, *, context) -> ViewModel:
     return ViewModel(
         "workspace_enter_path",
         {
             "project": project.to_dict(),
-            "note": "Manual path entry is not implemented yet. It will remain a fallback path, not the primary workdir flow.",
+            "current_workdir": context.active_workdir,
+            "note": "Manual path entry is a fallback path. It updates the current in-memory workspace context only.",
         },
     )
 
@@ -485,6 +507,20 @@ def _optional_string(value: object) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _extract_workdir_path(payload: dict[str, object]) -> str:
+    direct = _optional_string(payload.get("workdir"))
+    if direct is not None:
+        return direct
+    input_value = payload.get("input_value")
+    if isinstance(input_value, str) and input_value.strip():
+        return input_value.strip()
+    if isinstance(input_value, dict):
+        nested = _optional_string(input_value.get("workdir"))
+        if nested is not None:
+            return nested
+    return ""
 
 
 def _required_id(value: str | None, label: str) -> str:

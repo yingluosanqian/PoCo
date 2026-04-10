@@ -32,6 +32,8 @@ WRITE_INTENT_KEYS = {
     "project.create",
     "project.bind_group",
     "project.archive",
+    "workspace.use_default_dir",
+    "workspace.apply_entered_path",
     "task.submit",
     "task.approve",
     "task.reject",
@@ -94,4 +96,3 @@ class PlatformRenderInstruction:
     template_data: dict[str, Any]
     refresh_mode: RefreshMode
     message: str | None = None
-

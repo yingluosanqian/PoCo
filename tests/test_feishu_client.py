@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from poco.interaction.card_dispatcher import build_render_instruction
 from poco.interaction.card_handlers import build_workspace_overview_result
-from poco.interaction.card_models import Surface
+from poco.interaction.card_models import DispatchStatus, IntentDispatchResult, RefreshMode, ResourceRefs, Surface, ViewModel
 from poco.platform.feishu.client import (
     FeishuAccessTokenProvider,
     FeishuMessageClient,
@@ -136,6 +136,40 @@ class FeishuClientTest(unittest.TestCase):
         self.assertEqual(refresh_button["behaviors"][0]["value"]["surface"], "group")
         snapshot = recorder.snapshot()
         self.assertEqual(snapshot["outbound_attempts"][0]["source"], "project_workspace_bootstrap")
+
+    def test_workspace_enter_path_card_contains_input_and_apply(self) -> None:
+        project = Project(
+            id="proj_1",
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+        )
+        card = FeishuCardRenderer().render(
+            build_render_instruction(
+                IntentDispatchResult(
+                    status=DispatchStatus.OK,
+                    intent_key="workspace.enter_path",
+                    resource_refs=ResourceRefs(project_id=project.id),
+                    view_model=ViewModel(
+                        "workspace_enter_path",
+                        {
+                            "project": project.to_dict(),
+                            "current_workdir": "/srv/poco/manual",
+                            "note": "Manual path entry is a fallback path.",
+                        },
+                    ),
+                    refresh_mode=RefreshMode.REPLACE_CURRENT,
+                ),
+                surface=Surface.GROUP,
+            )
+        )
+
+        input_box = card["body"]["elements"][1]
+        apply_button = card["body"]["elements"][3]
+        self.assertEqual(input_box["tag"], "input")
+        self.assertEqual(input_box["name"], "workdir")
+        self.assertEqual(apply_button["behaviors"][0]["value"]["intent_key"], "workspace.apply_entered_path")
+        self.assertEqual(apply_button["behaviors"][0]["value"]["surface"], "group")
 
 
 if __name__ == "__main__":

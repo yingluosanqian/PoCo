@@ -107,6 +107,7 @@ def create_app() -> FastAPI:
             "workspace.choose_preset": workspace_intent_handler,
             "workspace.use_recent_dir": workspace_intent_handler,
             "workspace.enter_path": workspace_intent_handler,
+            "workspace.apply_entered_path": workspace_intent_handler,
         }
     )
     card_gateway = FeishuCardActionGateway(

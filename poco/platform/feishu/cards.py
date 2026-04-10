@@ -440,12 +440,38 @@ def _render_workspace_enter_path(
     surface: str,
 ) -> dict[str, Any]:
     project = data["project"]
-    return _workspace_subcard(
+    current_workdir = data.get("current_workdir") or ""
+    return _card_shell(
         title=f"Enter Path: {project['name']}",
-        summary="**Manual Path Entry**\nReserved for a later fallback flow.",
-        note=data["note"],
-        surface=surface,
-        project_id=project["id"],
+        template="blue",
+        elements=[
+            _markdown("**Manual Path Entry**\nEnter a workdir path for the current workspace context."),
+            _input(
+                name="workdir",
+                placeholder="Enter workdir path",
+                value=current_workdir,
+            ),
+            _markdown(data["note"]),
+            _button(
+                label="Apply Path",
+                intent_value={
+                    "intent_key": "workspace.apply_entered_path",
+                    "surface": surface,
+                    "project_id": project["id"],
+                },
+                style="primary",
+                name=f"apply_entered_path_{project['id']}",
+            ),
+            _button(
+                label="Back To Workdir",
+                intent_value={
+                    "intent_key": "workspace.open_workdir_switcher",
+                    "surface": surface,
+                    "project_id": project["id"],
+                },
+                name=f"back_to_workdir_{project['id']}",
+            ),
+        ],
     )
 
 
@@ -576,5 +602,23 @@ def _button(
                 "value": intent_value,
             }
         ],
+        "margin": "0px 0px 12px 0px",
+    }
+
+
+def _input(
+    *,
+    name: str,
+    placeholder: str,
+    value: str = "",
+) -> dict[str, Any]:
+    return {
+        "tag": "input",
+        "name": name,
+        "placeholder": {
+            "tag": "plain_text",
+            "content": placeholder,
+        },
+        "value": value,
         "margin": "0px 0px 12px 0px",
     }

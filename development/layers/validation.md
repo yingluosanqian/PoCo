@@ -81,6 +81,7 @@
 - DM `Project Config Card` 是否已经替代旧 detail 视图，并提供只读配置入口
 - Group `Workdir Switcher Card` 是否已经从 workspace 首卡进入，并提供只读目录切换入口
 - `workspace.use_default_dir` 是否已经成为第一条真实可写的群侧 workdir 路径
+- `workspace.apply_entered_path` 是否已经成为第二条真实可写的群侧 workdir 路径
 
 ### 当前轮已知未验证区域
 

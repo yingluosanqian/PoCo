@@ -79,6 +79,7 @@
 - 已存在 DM `Project Config Card` 的最小实现，当前至少可只读展示 agent、repo、default workdir、workspace group，并进入对应的只读配置入口卡
 - 已存在 Group `Workdir Switcher Card` 的最小实现，当前至少可只读展示 current agent、current workdir、source，并进入对应的只读目录切换入口卡
 - 已存在最小 in-memory workspace context，当前 `Use Default` 已可把 `active_workdir` 和 `source=default` 写入当前群工作面的上下文状态
+- 已存在第二条真实 workdir 写路径，当前 `Enter Path` 已可把手工输入目录写入 in-memory workspace context，并标记 `source=manual`
 - 已有最小自动化验证，覆盖核心任务状态流、飞书 challenge 校验、签名校验、Codex runner、后台调度器和本地 demo 接口
 - 仓库当前结构仍较简单，尚无重型历史实现包袱
 
@@ -90,8 +91,8 @@
 - 当前后台调度仍基于进程内线程，不适合跨进程或重启后的任务追踪
 - 当前状态存储仅为内存实现，不适合跨进程或重启后的任务追踪
 - 当前系统仅维护 task state，尚未维护 session continuity 或产品级 handoff context
-- 当前系统已开始把 `agent` 与 `working dir` 的 ownership 落到实现里，但仍只完成了第一条真实写路径：`Use Default`
-- 当前 `agent` 与 `working dir` 的卡片信息架构已部分进入实现：DM 配置卡和群目录切换卡都已具备入口，但 `Choose Preset / Use Recent / Enter Path` 仍未接入真实目录切换
+- 当前系统已开始把 `agent` 与 `working dir` 的 ownership 落到实现里，但真实写路径仍只覆盖 `Use Default` 和 `Enter Path`
+- 当前 `agent` 与 `working dir` 的卡片信息架构已部分进入实现：DM 配置卡和群目录切换卡都已具备入口，但 `Choose Preset / Use Recent` 仍未接入真实目录切换
 - 当前系统尚未实现完整 project lifecycle 与正式 workspace card 工作流，正式交互模型仍未闭环
 - 当前 DM 已能主动下发首页卡片，并具备第一批真实 callback 动作；但 project 命名、群内 workspace 深层动作、session/task 正式交互仍未形成完整正式工作流
 - 当前正式实现仍是 DM 首屏卡片 + group 文本 fallback 的混合态，尚未形成完整 card-first 正式交互面

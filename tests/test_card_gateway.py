@@ -82,6 +82,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
                     "workspace.choose_preset": self.workspace_handler,
                     "workspace.use_recent_dir": self.workspace_handler,
                     "workspace.enter_path": self.workspace_handler,
+                    "workspace.apply_entered_path": self.workspace_handler,
                 }
             ),
             renderer=FeishuCardRenderer(),
@@ -377,11 +378,81 @@ class FeishuCardGatewayTest(unittest.TestCase):
         response = self.gateway.handle_action(payload)
 
         self.assertEqual(response["instruction"]["template_key"], "workspace_enter_path")
-        back_button = response["card"]["data"]["body"]["elements"][2]
+        input_box = response["card"]["data"]["body"]["elements"][1]
+        self.assertEqual(input_box["tag"], "input")
+        apply_button = response["card"]["data"]["body"]["elements"][3]
+        self.assertEqual(
+            apply_button["behaviors"][0]["value"]["intent_key"],
+            "workspace.apply_entered_path",
+        )
+        back_button = response["card"]["data"]["body"]["elements"][4]
         self.assertEqual(
             back_button["behaviors"][0]["value"]["intent_key"],
             "workspace.open_workdir_switcher",
         )
+
+    def test_workspace_apply_entered_path_updates_context(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+            workdir="/srv/poco/default",
+        )
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_card_workdir_5"},
+                "action": {
+                    "value": {
+                        "intent_key": "workspace.apply_entered_path",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "request_id": "req_workspace_apply_path_1",
+                    },
+                    "form_value": {
+                        "workdir": "/srv/poco/manual",
+                    },
+                },
+            }
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        self.assertEqual(response["instruction"]["template_key"], "workspace_workdir_switcher")
+        context = self.workspace_controller.get_context(project)
+        self.assertEqual(context.active_workdir, "/srv/poco/manual")
+        self.assertEqual(context.workdir_source, "manual")
+        current_workdir_text = response["card"]["data"]["body"]["elements"][1]["content"]
+        self.assertIn("/srv/poco/manual", current_workdir_text)
+
+    def test_workspace_apply_entered_path_rejects_empty_path(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+        )
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_card_workdir_6"},
+                "action": {
+                    "value": {
+                        "intent_key": "workspace.apply_entered_path",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "request_id": "req_workspace_apply_path_2",
+                    },
+                    "form_value": {
+                        "workdir": "   ",
+                    },
+                },
+            }
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        self.assertEqual(response["toast"]["type"], "warning")
+        self.assertEqual(response["instruction"]["refresh_mode"], "ack_only")
 
     def test_project_config_subcard_opens_agent_config(self) -> None:
         project = self.project_controller.create_project(

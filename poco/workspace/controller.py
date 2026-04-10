@@ -52,3 +52,13 @@ class WorkspaceContextController:
             workdir=project.workdir,
             source="default",
         )
+
+    def use_manual_workdir(self, project: Project, workdir: str) -> WorkspaceContext:
+        normalized = workdir.strip()
+        if not normalized:
+            raise WorkspaceContextError("Workdir path cannot be empty.")
+        return self.set_active_workdir(
+            project,
+            workdir=normalized,
+            source="manual",
+        )

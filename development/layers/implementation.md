@@ -81,6 +81,7 @@
 - DM 侧已把 `project.open` 升级为 `Project Config Card`，并提供只读的 agent / repo / default dir / dir preset 入口卡
 - Group 侧已新增 `Workdir Switcher Card` 的最小实现，并提供 default / preset / recent / manual path 的只读入口卡
 - `workspace.use_default_dir` 已升级为真实写路径，会更新当前 in-memory workspace context 中的 `active_workdir`
+- `workspace.apply_entered_path` 已升级为真实写路径，会把手工输入目录写入当前 in-memory workspace context，并标记 `source=manual`
 
 ### 当前明确未实现
 
