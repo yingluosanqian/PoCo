@@ -13,7 +13,9 @@ from poco.platform.feishu.client import (
 from poco.platform.feishu.cards import FeishuCardRenderer
 from poco.platform.feishu.debug import FeishuDebugRecorder
 from poco.platform.feishu.project_bootstrap import FeishuProjectBootstrapper
+from poco.project.controller import ProjectController
 from poco.project.models import Project
+from poco.storage.memory import InMemoryProjectStore
 
 
 class FeishuClientTest(unittest.TestCase):
@@ -134,9 +136,14 @@ class FeishuClientTest(unittest.TestCase):
                         "card": card,
                     }
                 )
+                return type(
+                    "SendResult",
+                    (),
+                    {"message_id": "om_workspace_bootstrap_1"},
+                )()
 
-        project = Project(
-            id="proj_1",
+        project_controller = ProjectController(InMemoryProjectStore())
+        project = project_controller.create_project(
             name="PoCo",
             created_by="ou_demo_user",
             backend="codex",
@@ -147,6 +154,7 @@ class FeishuClientTest(unittest.TestCase):
         bootstrapper = FeishuProjectBootstrapper(
             message_client,  # type: ignore[arg-type]
             renderer=FeishuCardRenderer(),
+            project_controller=project_controller,
             debug_recorder=recorder,
         )
 
@@ -163,6 +171,7 @@ class FeishuClientTest(unittest.TestCase):
         self.assertEqual(card["header"]["title"]["content"], "Workspace: PoCo")
         refresh_button = card["body"]["elements"][8]
         self.assertEqual(refresh_button["behaviors"][0]["value"]["surface"], "group")
+        self.assertEqual(project.workspace_message_id, "om_workspace_bootstrap_1")
         snapshot = recorder.snapshot()
         self.assertEqual(snapshot["outbound_attempts"][0]["source"], "project_workspace_bootstrap")
 

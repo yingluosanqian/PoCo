@@ -3,8 +3,12 @@ from __future__ import annotations
 import unittest
 
 from poco.platform.feishu.debug import FeishuDebugRecorder
+from poco.project.controller import ProjectController
+from poco.project.models import Project
+from poco.storage.memory import InMemoryProjectStore, InMemoryWorkspaceContextStore
 from poco.task.models import Task, TaskStatus
 from poco.task.notifier import FeishuTaskNotifier
+from poco.workspace.controller import WorkspaceContextController
 
 
 class FakeMessageClient:
@@ -141,6 +145,51 @@ class FeishuTaskNotifierTest(unittest.TestCase):
         self.assertEqual(client.updated_cards[0]["message_id"], "om_task_status_1")
         snapshot = recorder.snapshot()
         self.assertEqual(snapshot["outbound_attempts"][0]["source"], "task_notifier_update")
+
+    def test_task_notification_also_updates_bound_workspace_card(self) -> None:
+        client = FakeMessageClient()
+        recorder = FeishuDebugRecorder()
+        project_controller = ProjectController(InMemoryProjectStore())
+        workspace_controller = WorkspaceContextController(InMemoryWorkspaceContextStore())
+        project = project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+            group_chat_id="oc_group_1",
+        )
+        project_controller.bind_workspace_message(project.id, "om_workspace_1")
+        workspace_controller.set_active_workdir(
+            project,
+            workdir="/srv/poco/api",
+            source="preset",
+        )
+        notifier = FeishuTaskNotifier(
+            client,  # type: ignore[arg-type]
+            project_controller=project_controller,
+            workspace_controller=workspace_controller,
+            debug_recorder=recorder,
+        )
+        task = Task(
+            id="task_workspace_sync",
+            requester_id="ou_demo",
+            prompt="confirm: deploy",
+            source="feishu_card",
+            agent_backend="codex",
+            project_id=project.id,
+            effective_workdir="/srv/poco/api",
+            reply_receive_id="oc_group_1",
+            reply_receive_id_type="chat_id",
+            status=TaskStatus.WAITING_FOR_CONFIRMATION,
+            awaiting_confirmation_reason="Need explicit approval.",
+        )
+
+        notifier.notify_task(task)
+
+        self.assertEqual(len(client.sent_cards), 1)
+        self.assertEqual(len(client.updated_cards), 1)
+        self.assertEqual(client.updated_cards[0]["message_id"], "om_workspace_1")
+        snapshot = recorder.snapshot()
+        self.assertEqual(snapshot["outbound_attempts"][0]["source"], "workspace_notifier_update")
 
 
 if __name__ == "__main__":

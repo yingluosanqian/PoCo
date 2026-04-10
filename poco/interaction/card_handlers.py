@@ -8,6 +8,7 @@ from poco.interaction.card_models import (
     IntentDispatchResult,
     RefreshMode,
     ResourceRefs,
+    Surface,
     ViewModel,
 )
 from poco.project.bootstrap import ProjectBootstrapError, ProjectBootstrapper
@@ -251,6 +252,11 @@ class WorkspaceIntentHandler:
         project = _get_project_or_reject(self.project_controller, intent)
         if isinstance(project, IntentDispatchResult):
             return project
+        if intent.surface == Surface.GROUP and intent.source_message_id:
+            project = self.project_controller.bind_workspace_message(
+                project.id,
+                intent.source_message_id,
+            )
         context = self.workspace_controller.get_context(project)
         return build_workspace_overview_result(
             project,

@@ -74,12 +74,15 @@ def create_app() -> FastAPI:
         project_bootstrapper = FeishuProjectBootstrapper(
             message_client,
             renderer=card_renderer,
+            project_controller=project_controller,
             debug_recorder=feishu_debug,
         )
     notifier = (
         FeishuTaskNotifier(
             message_client,
             renderer=card_renderer,
+            project_controller=project_controller,
+            workspace_controller=workspace_controller,
             debug_recorder=feishu_debug,
         )
         if message_client is not None

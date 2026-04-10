@@ -77,6 +77,13 @@ class ProjectController:
             self._store.save(project)
             return project
 
+    def bind_workspace_message(self, project_id: str, message_id: str) -> Project:
+        with self._lock:
+            project = self.get_project(project_id)
+            project.bind_workspace_message(message_id)
+            self._store.save(project)
+            return project
+
     def get_project_by_group_chat_id(self, group_chat_id: str) -> Project | None:
         with self._lock:
             for project in self._store.list_all():

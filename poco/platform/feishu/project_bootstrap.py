@@ -10,6 +10,7 @@ from poco.project.bootstrap import (
     ProjectBootstrapError,
     ProjectBootstrapResult,
 )
+from poco.project.controller import ProjectController
 from poco.project.models import Project
 
 
@@ -19,10 +20,12 @@ class FeishuProjectBootstrapper:
         message_client: FeishuMessageClient,
         renderer: FeishuCardRenderer,
         *,
+        project_controller: ProjectController | None = None,
         debug_recorder: FeishuDebugRecorder | None = None,
     ) -> None:
         self._message_client = message_client
         self._renderer = renderer
+        self._project_controller = project_controller
         self._debug_recorder = debug_recorder
 
     def bootstrap_project(
@@ -73,7 +76,7 @@ class FeishuProjectBootstrapper:
         instruction = build_render_instruction(result, surface=Surface.GROUP)
         card = self._renderer.render(instruction)
         try:
-            self._message_client.send_interactive(
+            result = self._message_client.send_interactive(
                 receive_id=project.group_chat_id,
                 receive_id_type="chat_id",
                 card=card,
@@ -91,6 +94,9 @@ class FeishuProjectBootstrapper:
                     },
                 )
             return
+
+        if self._project_controller is not None and result.message_id:
+            self._project_controller.bind_workspace_message(project.id, result.message_id)
 
         if self._debug_recorder is not None:
             self._debug_recorder.record_outbound_attempt(

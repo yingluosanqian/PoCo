@@ -292,6 +292,8 @@ class FeishuCardGatewayTest(unittest.TestCase):
             refresh_button["behaviors"][0]["value"]["surface"],
             "group",
         )
+        updated_project = self.project_controller.get_project(project.id)
+        self.assertEqual(updated_project.workspace_message_id, "om_card_2")
 
     def test_workspace_open_shows_latest_task_button_when_task_exists(self) -> None:
         project = self.project_controller.create_project(

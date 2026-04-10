@@ -18,12 +18,17 @@ class Project:
     workdir: str | None = None
     workdir_presets: list[str] = field(default_factory=list)
     group_chat_id: str | None = None
+    workspace_message_id: str | None = None
     archived: bool = False
     created_at: datetime = field(default_factory=utc_now)
     updated_at: datetime = field(default_factory=utc_now)
 
     def bind_group(self, group_chat_id: str) -> None:
         self.group_chat_id = group_chat_id
+        self.updated_at = utc_now()
+
+    def bind_workspace_message(self, message_id: str) -> None:
+        self.workspace_message_id = message_id
         self.updated_at = utc_now()
 
     def archive(self) -> None:
@@ -46,6 +51,7 @@ class Project:
             "workdir": self.workdir,
             "workdir_presets": list(self.workdir_presets),
             "group_chat_id": self.group_chat_id,
+            "workspace_message_id": self.workspace_message_id,
             "archived": self.archived,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),

@@ -267,6 +267,7 @@ Current interaction model:
 - Waiting task cards now include `Approve` / `Reject` actions that resume or cancel the task through card callbacks
 - Once a task status card has been sent, later task-state notifications now try to update that same card in place before falling back to a new message
 - workspace cards now expose `Open Latest Task` when a latest project task exists
+- workspace cards now keep a bound message id and will also be refreshed with latest-task changes when task state changes
 
 If `POCO_FEISHU_DELIVERY_MODE=longconn` is enabled:
 

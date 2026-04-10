@@ -7,8 +7,10 @@ from poco.interaction.card_models import Surface
 from poco.platform.feishu.client import FeishuMessageClient
 from poco.platform.feishu.cards import FeishuCardRenderer
 from poco.platform.feishu.debug import FeishuDebugRecorder
+from poco.project.controller import ProjectController
 from poco.task.models import Task
 from poco.task.rendering import headline_for_notification, render_task_text
+from poco.workspace.controller import WorkspaceContextController
 
 
 class TaskNotifier(Protocol):
@@ -27,10 +29,14 @@ class FeishuTaskNotifier:
         message_client: FeishuMessageClient,
         *,
         renderer: FeishuCardRenderer | None = None,
+        project_controller: ProjectController | None = None,
+        workspace_controller: WorkspaceContextController | None = None,
         debug_recorder: FeishuDebugRecorder | None = None,
     ) -> None:
         self._message_client = message_client
         self._renderer = renderer or FeishuCardRenderer()
+        self._project_controller = project_controller
+        self._workspace_controller = workspace_controller
         self._debug_recorder = debug_recorder
 
     def notify_task(self, task: Task) -> None:
@@ -65,6 +71,7 @@ class FeishuTaskNotifier:
                         message_id=task.notification_message_id,
                         card=card,
                     )
+                    self._sync_workspace_card(task)
                     return
                 except Exception as exc:
                     if self._debug_recorder is not None:
@@ -93,6 +100,7 @@ class FeishuTaskNotifier:
                     card=card,
                 )
                 task.set_notification_message_id(result.message_id)
+                self._sync_workspace_card(task)
                 return
             except Exception as exc:
                 if self._debug_recorder is not None:
@@ -135,3 +143,58 @@ class FeishuTaskNotifier:
                     },
                 )
             raise
+
+    def _sync_workspace_card(self, task: Task) -> None:
+        if (
+            self._project_controller is None
+            or self._workspace_controller is None
+            or not task.project_id
+        ):
+            return
+        try:
+            project = self._project_controller.get_project(task.project_id)
+        except ValueError:
+            return
+        workspace_message_id = project.workspace_message_id
+        if not workspace_message_id:
+            return
+        if workspace_message_id == task.notification_message_id:
+            return
+
+        from poco.interaction.card_handlers import build_workspace_overview_result
+
+        context = self._workspace_controller.get_context(project)
+        instruction = build_render_instruction(
+            build_workspace_overview_result(
+                project,
+                context=context,
+                latest_task=task,
+                message=f"Workspace synced for {project.name}",
+            ),
+            surface=Surface.GROUP,
+        )
+        card = self._renderer.render(instruction)
+        if self._debug_recorder is not None:
+            self._debug_recorder.record_outbound_attempt(
+                source="workspace_notifier_update",
+                receive_id=project.group_chat_id or "",
+                receive_id_type="chat_id",
+                text=f"[card-update] workspace_overview:{task.status.value}",
+                task_id=task.id,
+            )
+        try:
+            self._message_client.update_interactive(
+                message_id=workspace_message_id,
+                card=card,
+            )
+        except Exception as exc:
+            if self._debug_recorder is not None:
+                self._debug_recorder.record_error(
+                    stage="workspace_notifier_update",
+                    message=str(exc),
+                    context={
+                        "task_id": task.id,
+                        "workspace_message_id": workspace_message_id,
+                        "project_id": project.id,
+                    },
+                )
