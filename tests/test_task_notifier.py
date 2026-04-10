@@ -60,6 +60,16 @@ class FakeMessageClient:
         )
 
 
+class FailingUpdateMessageClient(FakeMessageClient):
+    def update_interactive(
+        self,
+        *,
+        message_id: str,
+        card: dict[str, object],
+    ) -> None:
+        raise RuntimeError("update failed")
+
+
 class FeishuTaskNotifierTest(unittest.TestCase):
     def test_waiting_task_sends_interactive_card(self) -> None:
         client = FakeMessageClient()
@@ -214,6 +224,31 @@ class FeishuTaskNotifierTest(unittest.TestCase):
         self.assertEqual(client.updated_cards[0]["message_id"], "om_workspace_1")
         snapshot = recorder.snapshot()
         self.assertEqual(snapshot["outbound_attempts"][0]["source"], "workspace_notifier_update")
+
+    def test_running_update_failure_does_not_fallback_to_new_card(self) -> None:
+        client = FailingUpdateMessageClient()
+        recorder = FeishuDebugRecorder()
+        notifier = FeishuTaskNotifier(client, debug_recorder=recorder)  # type: ignore[arg-type]
+        task = Task(
+            id="task_running_existing_card",
+            requester_id="ou_demo",
+            prompt="build",
+            source="feishu_group_message",
+            agent_backend="codex",
+            project_id="proj_1",
+            effective_workdir="/srv/poco/api",
+            notification_message_id="om_existing_card",
+            reply_receive_id="oc_group_1",
+            reply_receive_id_type="chat_id",
+            status=TaskStatus.RUNNING,
+            live_output="streaming line",
+        )
+
+        notifier.notify_task(task)
+
+        self.assertEqual(len(client.sent_cards), 0)
+        snapshot = recorder.snapshot()
+        self.assertEqual(snapshot["errors"][0]["stage"], "task_notifier_update")
 
 
 if __name__ == "__main__":

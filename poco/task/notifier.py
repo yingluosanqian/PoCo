@@ -87,6 +87,8 @@ class FeishuTaskNotifier:
                                 "message_id": task.notification_message_id,
                             },
                         )
+                    if task.status == TaskStatus.RUNNING:
+                        return
 
             preview = f"[card] task_status:{task.status.value}"
             if self._debug_recorder is not None:

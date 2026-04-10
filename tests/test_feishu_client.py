@@ -64,7 +64,7 @@ class FeishuClientTest(unittest.TestCase):
             "Bearer tenant-token",
         )
 
-    def test_update_interactive_uses_put_message_api(self) -> None:
+    def test_update_interactive_uses_patch_message_api(self) -> None:
         with (
             patch.object(self.token_provider, "get_token", return_value="tenant-token"),
             patch("poco.platform.feishu.client._request_json") as request_json,
@@ -83,7 +83,7 @@ class FeishuClientTest(unittest.TestCase):
 
         self.assertEqual(result.message_id, "om_updated_123")
         kwargs = request_json.call_args.kwargs
-        self.assertEqual(kwargs["method"], "PUT")
+        self.assertEqual(kwargs["method"], "PATCH")
         self.assertIn("/open-apis/im/v1/messages/om_original_123", kwargs["url"])
         self.assertEqual(kwargs["payload"]["msg_type"], "interactive")
 

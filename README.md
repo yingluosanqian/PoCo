@@ -312,6 +312,8 @@ Example webhook payload:
 ## Supported Commands
 
 - In a bound project group, you can now send plain text directly and PoCo will treat it as the task prompt.
+- Group text-created tasks now reply with a single initial `task_status` card, and later live/terminal updates stay on that same card.
+- Running-state card update failures no longer fallback to new-card fanout.
 - `/run <prompt>`
 - `/status <task_id>`
 - `/approve <task_id>`

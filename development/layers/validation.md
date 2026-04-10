@@ -98,6 +98,8 @@
 - running task 是否已经展示 live output
 - running 中的 task card 是否已经按节流策略原位刷新
 - group 文本创建 task 时是否先回单张初始 task card，而不是文本回执加多张卡
+- Feishu card update API 是否已经使用正确的 message patch endpoint
+- running 中的 task card 在更新失败时是否避免回退成多张新卡
 
 ### 当前轮已知未验证区域
 

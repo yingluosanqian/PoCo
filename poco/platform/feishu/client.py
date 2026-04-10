@@ -104,7 +104,7 @@ class FeishuMessageClient:
     ) -> FeishuSendResult:
         token = self._token_provider.get_token()
         response = _request_json(
-            method="PUT",
+            method="PATCH",
             url=f"{self._base_url}/open-apis/im/v1/messages/{message_id}",
             payload={
                 "msg_type": "interactive",
