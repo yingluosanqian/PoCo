@@ -197,6 +197,7 @@ Real Feishu DM bootstrap is now also wired:
 - the project-list card now contains real callback buttons such as `Create Project + Group`
 - `Create Project + Group` now creates the project and, in real Feishu mode, bootstraps a dedicated group chat in the same action
 - after the group is created, PoCo also posts the first workspace overview card into that group
+- opening a project in DM now lands on a `Project Config` card instead of a bare detail card
 - current group chats still keep the text-command fallback path
 
 That means the current interaction split is:
@@ -249,6 +250,7 @@ Current interaction model:
 
 - DM messages currently bootstrap a project-list card instead of returning text help
 - DM project-list cards now support callback actions including `Create Project + Group`
+- DM project open now lands on a project config card with read-only entries for agent / repo / default dir / dir presets
 - newly created project groups now receive an initial workspace overview card
 - Group messages still return the current text fallback and can dispatch tasks
 - The webhook request returns quickly after acknowledging the command

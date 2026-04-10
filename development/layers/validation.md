@@ -78,12 +78,14 @@
 - DM 首页卡片上的真实 callback 动作是否已经成立
 - `project.create` 是否已经能在真实飞书模式下同步建群并完成失败回滚
 - 建群成功后是否已经能向新群投递第一张 workspace overview card
+- DM `Project Config Card` 是否已经替代旧 detail 视图，并提供只读配置入口
 
 ### 当前轮已知未验证区域
 
 - 真实飞书客户端是否已稳定看到 DM 首屏卡片
 - 飞书卡片回调更新与完整 renderer 工作流
 - 真实飞书环境里的建群权限、群名称策略和群内 workspace bootstrap
+- 群内 workdir switcher card 与真实目录切换
 - 群工作区卡片与 project/session/task 完整 handlers
 - 飞书加密事件体
 - 真实网络条件下的飞书端到端联调

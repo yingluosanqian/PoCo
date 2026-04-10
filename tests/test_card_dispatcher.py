@@ -129,7 +129,7 @@ class CardActionDispatcherTest(unittest.TestCase):
             status=DispatchStatus.OK,
             intent_key="project.open",
             resource_refs=ResourceRefs(project_id="proj_1"),
-            view_model=ViewModel("project_detail", {"project_id": "proj_1"}),
+            view_model=ViewModel("project_config", {"project_id": "proj_1"}),
             refresh_mode=RefreshMode.REPLACE_CURRENT,
             message="Project opened.",
         )
@@ -138,7 +138,7 @@ class CardActionDispatcherTest(unittest.TestCase):
 
         self.assertEqual(instruction.surface, Surface.DM)
         self.assertEqual(instruction.render_target, RenderTarget.CURRENT_CARD)
-        self.assertEqual(instruction.template_key, "project_detail")
+        self.assertEqual(instruction.template_key, "project_config")
         self.assertEqual(instruction.template_data["project_id"], "proj_1")
 
     def test_build_render_instruction_supports_ack_only(self) -> None:

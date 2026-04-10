@@ -76,6 +76,7 @@
 - 已存在最小 DM card 链路，包括 project 内存模型、card handlers、Feishu card gateway、renderer 和 demo card 入口
 - 已存在真实 Feishu interactive card 发送能力，DM 消息当前可主动回发 project list card
 - 已存在 DM 首页卡片上的首批真实 callback 动作，当前至少可点击创建 project，并在真实飞书模式下自动拉起对应工作群；新群会收到第一张 workspace overview card
+- 已存在 DM `Project Config Card` 的最小实现，当前至少可只读展示 agent、repo、default workdir、workspace group，并进入对应的只读配置入口卡
 - 已有最小自动化验证，覆盖核心任务状态流、飞书 challenge 校验、签名校验、Codex runner、后台调度器和本地 demo 接口
 - 仓库当前结构仍较简单，尚无重型历史实现包袱
 
@@ -87,8 +88,8 @@
 - 当前后台调度仍基于进程内线程，不适合跨进程或重启后的任务追踪
 - 当前状态存储仅为内存实现，不适合跨进程或重启后的任务追踪
 - 当前系统仅维护 task state，尚未维护 session continuity 或产品级 handoff context
-- 当前系统尚未把 `agent` 和 `working dir` 的 ownership 正式落到代码实现中；虽然方向已被定义，但用户还不能在正式卡片工作流里完成这两类配置
-- 当前 `agent` 与 `working dir` 的卡片信息架构已在记录层收敛为 DM 配置卡和群目录切换卡，但仍未进入实现
+- 当前系统已开始把 `agent` 与 `working dir` 的 ownership 落到 DM 配置卡实现里，但仍未接入真实配置写入和群内 workdir 切换
+- 当前 `agent` 与 `working dir` 的卡片信息架构已部分进入实现：DM 配置卡已具备只读入口，群目录切换卡仍未进入实现
 - 当前系统尚未实现完整 project lifecycle 与正式 workspace card 工作流，正式交互模型仍未闭环
 - 当前 DM 已能主动下发首页卡片，并具备第一批真实 callback 动作；但 project 命名、群内 workspace 深层动作、session/task 正式交互仍未形成完整正式工作流
 - 当前正式实现仍是 DM 首屏卡片 + group 文本 fallback 的混合态，尚未形成完整 card-first 正式交互面

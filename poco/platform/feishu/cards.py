@@ -9,8 +9,28 @@ class FeishuCardRenderer:
     def render(self, instruction: PlatformRenderInstruction) -> dict[str, Any]:
         if instruction.template_key == "project_list":
             return _render_project_list(instruction.template_data)
-        if instruction.template_key == "project_detail":
-            return _render_project_detail(
+        if instruction.template_key == "project_config":
+            return _render_project_config(
+                instruction.template_data,
+                surface=instruction.surface.value,
+            )
+        if instruction.template_key == "project_agent_config":
+            return _render_project_agent_config(
+                instruction.template_data,
+                surface=instruction.surface.value,
+            )
+        if instruction.template_key == "project_repo_config":
+            return _render_project_repo_config(
+                instruction.template_data,
+                surface=instruction.surface.value,
+            )
+        if instruction.template_key == "project_default_dir_config":
+            return _render_project_default_dir_config(
+                instruction.template_data,
+                surface=instruction.surface.value,
+            )
+        if instruction.template_key == "project_dir_presets":
+            return _render_project_dir_presets(
                 instruction.template_data,
                 surface=instruction.surface.value,
             )
@@ -75,7 +95,7 @@ def _render_project_list(data: dict[str, Any]) -> dict[str, Any]:
     )
 
 
-def _render_project_detail(
+def _render_project_config(
     data: dict[str, Any],
     *,
     surface: str,
@@ -86,16 +106,16 @@ def _render_project_detail(
     repo_hint = project.get("repo") or "未设置"
     workdir_hint = project.get("workdir") or "未设置"
     return _card_shell(
-        title=project["name"],
+        title=f"Project: {project['name']}",
         template="green",
         elements=[
             _markdown(
                 "\n".join(
                     [
-                        f"**backend**: `{project['backend']}`",
-                        f"**group**: `{group_hint}`",
-                        f"**repo**: `{repo_hint}`",
-                        f"**workdir**: `{workdir_hint}`",
+                        f"**Agent**\n`{project['backend']}`",
+                        f"**Repo Root**\n`{repo_hint}`",
+                        f"**Default Workdir**\n`{workdir_hint}`",
+                        f"**Workspace Group**\n{group_hint}",
                     ]
                 )
             ),
@@ -110,6 +130,42 @@ def _render_project_detail(
                 name=f"open_workspace_{project['id']}",
             ),
             _button(
+                label="Configure Agent",
+                intent_value={
+                    "intent_key": "project.configure_agent",
+                    "surface": surface,
+                    "project_id": project["id"],
+                },
+                name=f"configure_agent_{project['id']}",
+            ),
+            _button(
+                label="Configure Repo",
+                intent_value={
+                    "intent_key": "project.configure_repo",
+                    "surface": surface,
+                    "project_id": project["id"],
+                },
+                name=f"configure_repo_{project['id']}",
+            ),
+            _button(
+                label="Configure Default Dir",
+                intent_value={
+                    "intent_key": "project.configure_default_dir",
+                    "surface": surface,
+                    "project_id": project["id"],
+                },
+                name=f"configure_default_dir_{project['id']}",
+            ),
+            _button(
+                label="Manage Dir Presets",
+                intent_value={
+                    "intent_key": "project.manage_dir_presets",
+                    "surface": surface,
+                    "project_id": project["id"],
+                },
+                name=f"manage_dir_presets_{project['id']}",
+            ),
+            _button(
                 label="Back To Projects",
                 intent_value={
                     "intent_key": "project.list",
@@ -118,6 +174,70 @@ def _render_project_detail(
                 name="back_to_projects_button",
             ),
         ],
+    )
+
+
+def _render_project_agent_config(
+    data: dict[str, Any],
+    *,
+    surface: str,
+) -> dict[str, Any]:
+    project = data["project"]
+    return _config_subcard(
+        title=f"Agent: {project['name']}",
+        summary=f"**Current Agent**\n`{data['current_agent']}`",
+        note=data["note"],
+        surface=surface,
+        project_id=project["id"],
+    )
+
+
+def _render_project_repo_config(
+    data: dict[str, Any],
+    *,
+    surface: str,
+) -> dict[str, Any]:
+    project = data["project"]
+    repo_root = data.get("repo_root") or "未设置"
+    return _config_subcard(
+        title=f"Repo: {project['name']}",
+        summary=f"**Repo Root**\n`{repo_root}`",
+        note=data["note"],
+        surface=surface,
+        project_id=project["id"],
+    )
+
+
+def _render_project_default_dir_config(
+    data: dict[str, Any],
+    *,
+    surface: str,
+) -> dict[str, Any]:
+    project = data["project"]
+    default_workdir = data.get("default_workdir") or "未设置"
+    return _config_subcard(
+        title=f"Default Dir: {project['name']}",
+        summary=f"**Default Workdir**\n`{default_workdir}`",
+        note=data["note"],
+        surface=surface,
+        project_id=project["id"],
+    )
+
+
+def _render_project_dir_presets(
+    data: dict[str, Any],
+    *,
+    surface: str,
+) -> dict[str, Any]:
+    project = data["project"]
+    presets = data.get("presets") or []
+    preset_text = "\n".join(f"- `{preset}`" for preset in presets) if presets else "还没有 preset"
+    return _config_subcard(
+        title=f"Dir Presets: {project['name']}",
+        summary=f"**Current Presets**\n{preset_text}",
+        note=data["note"],
+        surface=surface,
+        project_id=project["id"],
     )
 
 
@@ -168,6 +288,33 @@ def _render_fallback(template_key: str | None, data: dict[str, Any]) -> dict[str
         elements=[
             _markdown(f"未识别的模板：`{template_key or 'unknown'}`"),
             _markdown(f"```json\n{data}\n```"),
+        ],
+    )
+
+
+def _config_subcard(
+    *,
+    title: str,
+    summary: str,
+    note: str,
+    surface: str,
+    project_id: str,
+) -> dict[str, Any]:
+    return _card_shell(
+        title=title,
+        template="wathet",
+        elements=[
+            _markdown(summary),
+            _markdown(note),
+            _button(
+                label="Back To Project",
+                intent_value={
+                    "intent_key": "project.open",
+                    "surface": surface,
+                    "project_id": project_id,
+                },
+                name=f"back_to_project_{project_id}",
+            ),
         ],
     )
 

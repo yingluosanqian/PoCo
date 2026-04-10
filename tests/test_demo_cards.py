@@ -47,9 +47,9 @@ class DemoCardApiTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["mode"], "demo")
-        self.assertEqual(payload["instruction"]["template_key"], "project_detail")
+        self.assertEqual(payload["instruction"]["template_key"], "project_config")
         self.assertEqual(payload["card"]["data"]["schema"], "2.0")
-        self.assertEqual(payload["card"]["data"]["header"]["title"]["content"], "PoCo")
+        self.assertEqual(payload["card"]["data"]["header"]["title"]["content"], "Project: PoCo")
 
 
 if __name__ == "__main__":

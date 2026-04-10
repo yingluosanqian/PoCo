@@ -26,6 +26,14 @@ class ProjectIntentHandler:
             return self._create_project(intent)
         if intent.intent_key == "project.open":
             return self._open_project(intent)
+        if intent.intent_key == "project.configure_agent":
+            return self._open_agent_config(intent)
+        if intent.intent_key == "project.configure_repo":
+            return self._open_repo_config(intent)
+        if intent.intent_key == "project.configure_default_dir":
+            return self._open_default_dir_config(intent)
+        if intent.intent_key == "project.manage_dir_presets":
+            return self._open_dir_presets(intent)
         if intent.intent_key == "project.bind_group":
             return self._bind_group(intent)
         if intent.intent_key == "project.archive":
@@ -89,7 +97,7 @@ class ProjectIntentHandler:
             status=DispatchStatus.OK,
             intent_key=intent.intent_key,
             resource_refs=ResourceRefs(project_id=project.id),
-            view_model=_project_detail_view_model(project),
+            view_model=_project_config_view_model(project),
             refresh_mode=RefreshMode.REPLACE_CURRENT,
             message=message,
         )
@@ -104,9 +112,61 @@ class ProjectIntentHandler:
             status=DispatchStatus.OK,
             intent_key=intent.intent_key,
             resource_refs=ResourceRefs(project_id=project.id),
-            view_model=_project_detail_view_model(project),
+            view_model=_project_config_view_model(project),
             refresh_mode=RefreshMode.REPLACE_CURRENT,
             message=f"Opened project: {project.name}",
+        )
+
+    def _open_agent_config(self, intent: ActionIntent) -> IntentDispatchResult:
+        project = _get_project_or_reject(self.project_controller, intent)
+        if isinstance(project, IntentDispatchResult):
+            return project
+        return IntentDispatchResult(
+            status=DispatchStatus.OK,
+            intent_key=intent.intent_key,
+            resource_refs=ResourceRefs(project_id=project.id),
+            view_model=_project_agent_config_view_model(project),
+            refresh_mode=RefreshMode.REPLACE_CURRENT,
+            message=f"Agent config for {project.name}",
+        )
+
+    def _open_repo_config(self, intent: ActionIntent) -> IntentDispatchResult:
+        project = _get_project_or_reject(self.project_controller, intent)
+        if isinstance(project, IntentDispatchResult):
+            return project
+        return IntentDispatchResult(
+            status=DispatchStatus.OK,
+            intent_key=intent.intent_key,
+            resource_refs=ResourceRefs(project_id=project.id),
+            view_model=_project_repo_config_view_model(project),
+            refresh_mode=RefreshMode.REPLACE_CURRENT,
+            message=f"Repo config for {project.name}",
+        )
+
+    def _open_default_dir_config(self, intent: ActionIntent) -> IntentDispatchResult:
+        project = _get_project_or_reject(self.project_controller, intent)
+        if isinstance(project, IntentDispatchResult):
+            return project
+        return IntentDispatchResult(
+            status=DispatchStatus.OK,
+            intent_key=intent.intent_key,
+            resource_refs=ResourceRefs(project_id=project.id),
+            view_model=_project_default_dir_config_view_model(project),
+            refresh_mode=RefreshMode.REPLACE_CURRENT,
+            message=f"Default dir config for {project.name}",
+        )
+
+    def _open_dir_presets(self, intent: ActionIntent) -> IntentDispatchResult:
+        project = _get_project_or_reject(self.project_controller, intent)
+        if isinstance(project, IntentDispatchResult):
+            return project
+        return IntentDispatchResult(
+            status=DispatchStatus.OK,
+            intent_key=intent.intent_key,
+            resource_refs=ResourceRefs(project_id=project.id),
+            view_model=_project_dir_presets_view_model(project),
+            refresh_mode=RefreshMode.REPLACE_CURRENT,
+            message=f"Dir presets for {project.name}",
         )
 
     def _bind_group(self, intent: ActionIntent) -> IntentDispatchResult:
@@ -123,7 +183,7 @@ class ProjectIntentHandler:
             status=DispatchStatus.OK,
             intent_key=intent.intent_key,
             resource_refs=ResourceRefs(project_id=project.id),
-            view_model=_project_detail_view_model(project),
+            view_model=_project_config_view_model(project),
             refresh_mode=RefreshMode.REPLACE_CURRENT,
             message=f"Group bound to project: {project.name}",
         )
@@ -207,14 +267,69 @@ def _project_list_view_model(projects) -> ViewModel:
     )
 
 
-def _project_detail_view_model(project) -> ViewModel:
+def _project_config_view_model(project) -> ViewModel:
     return ViewModel(
-        "project_detail",
+        "project_config",
         {
             "project": project.to_dict(),
             "recent_session_summary": None,
         },
     )
+
+
+def _project_agent_config_view_model(project) -> ViewModel:
+    return ViewModel(
+        "project_agent_config",
+        {
+            "project": project.to_dict(),
+            "current_agent": project.backend,
+            "note": "Agent is treated as project identity. Changing it later should be a high-cost migration, not a casual switch.",
+        },
+    )
+
+
+def _project_repo_config_view_model(project) -> ViewModel:
+    return ViewModel(
+        "project_repo_config",
+        {
+            "project": project.to_dict(),
+            "repo_root": project.repo,
+            "note": "Repo binding is not implemented yet. This card reserves the DM control-plane entrypoint.",
+        },
+    )
+
+
+def _project_default_dir_config_view_model(project) -> ViewModel:
+    return ViewModel(
+        "project_default_dir_config",
+        {
+            "project": project.to_dict(),
+            "default_workdir": project.workdir,
+            "note": "Default workdir configuration is not implemented yet. Working dir remains a session-level stance.",
+        },
+    )
+
+
+def _project_dir_presets_view_model(project) -> ViewModel:
+    return ViewModel(
+        "project_dir_presets",
+        {
+            "project": project.to_dict(),
+            "presets": [],
+            "note": "Dir preset management is not implemented yet. This card reserves the DM management surface.",
+        },
+    )
+
+
+def _get_project_or_reject(
+    project_controller: ProjectController,
+    intent: ActionIntent,
+):
+    project_id = _required_id(intent.project_id, "project_id")
+    try:
+        return project_controller.get_project(project_id)
+    except ProjectNotFoundError as exc:
+        return _rejected(intent, str(exc))
 
 
 def _optional_string(value: object) -> str | None:
