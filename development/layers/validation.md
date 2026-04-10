@@ -100,6 +100,8 @@
 - group 文本创建 task 时是否先回单张初始 task card，而不是文本回执加多张卡
 - Feishu card update API 是否已经使用正确的 message patch endpoint
 - running 中的 task card 在更新失败时是否避免回退成多张新卡
+- sqlite 状态后端是否已经保住重启后的 `project/workspace/task` 最小跟踪能力
+- 启动恢复是否已经把被重启打断的运行中 task 收敛到明确状态
 
 ### 当前轮已知未验证区域
 
@@ -112,4 +114,4 @@
 - 飞书加密事件体
 - 真实网络条件下的飞书端到端联调
 - 真实 agent 执行与长任务管理
-- 服务重启后的后台任务恢复
+- 服务重启后的后台任务断点续跑

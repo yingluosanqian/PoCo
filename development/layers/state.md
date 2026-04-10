@@ -93,6 +93,8 @@
 - 已存在最小结果保真链，当前 `Task` 已保存 `raw_result`，task status card 会优先展示原始结果，超长结果可分页查看
 - 已存在最小运行期透明链，当前 running task 可携带 `live_output`，并驱动节流后的 task card 原位更新
 - 已存在 group 文本直达单卡链，当前群文本创建 task 时会先收到一张初始 task card，后续状态与 live output 都会更新这张卡
+- 已存在默认 sqlite 状态后端，当前 `project`、`workspace context` 和 `task` 已可跨服务重启恢复
+- 已存在最小启动恢复逻辑，当前重启后仍可识别既有 `group_chat_id -> project` 绑定、workspace 卡绑定和当前 workdir 状态
 - 已有最小自动化验证，覆盖核心任务状态流、飞书 challenge 校验、签名校验、Codex runner、后台调度器和本地 demo 接口
 - 仓库当前结构仍较简单，尚无重型历史实现包袱
 
@@ -102,8 +104,8 @@
 - 当前长连接接入已覆盖消息事件和卡片回调，但真实飞书环境下的复杂卡片工作流仍未完成持续验证
 - 当前 agent 执行已优先接入 Codex CLI，但仍未具备长任务编排、后台队列和真实执行器事件回传
 - 当前后台调度仍基于进程内线程，不适合跨进程或重启后的任务追踪
-- 当前状态存储仅为内存实现，不适合跨进程或重启后的任务追踪
 - 当前系统仅维护 task state，尚未维护 session continuity 或产品级 handoff context
+- 当前虽已具备最小 sqlite 持久化，但尚未实现完整 session continuity 或 backend execution context 恢复
 - 当前系统已开始把 `agent` 与 `working dir` 的 ownership 落到实现里，真实写路径已覆盖 `Use Default`、`Enter Path` 和 `Choose Preset`
 - 当前 workdir 已开始进入文本和 card 两条 task 创建路径，approval/result 也已有最小 card 链、原位更新和 task-card 绑定能力，但仍未形成完整 timeline 或 richer progress 视图
 - 当前 group workspace 已开始转向“普通文本默认即 prompt”的正式语义，workspace 首卡不再承担发任务入口职责
@@ -139,3 +141,4 @@ PoCo 目前已从“纯项目定义期”进入“受控实现期”。
 - 尚未具备完整平台级可用性
 - 尚未具备完整执行器体系
 - 尚未具备持久化、可恢复后台队列、权限与安全闭环
+- 尚未具备完整 session 持久化和可恢复 worker 闭环

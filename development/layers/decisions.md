@@ -134,3 +134,9 @@ PoCo 在正式交互模型上进一步收敛为：
 - 已绑定 project 的 `Group` 中，普通文本消息默认直接作为 task prompt
 
 卡片继续保留，但主要承担状态、确认、配置和导航，而不再承担唯一发任务入口。
+
+### 当前状态恢复决策
+
+PoCo 默认采用 `sqlite` 作为运行态状态后端，先持久化 `project / workspace context / task`，以解决服务重启后丢失 group workspace 跟踪的问题。
+
+这轮不把该能力表述为完整 `session continuity`。

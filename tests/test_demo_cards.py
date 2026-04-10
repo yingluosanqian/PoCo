@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import os
+import tempfile
 import unittest
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -9,6 +12,17 @@ from poco.main import create_app
 
 class DemoCardApiTest(unittest.TestCase):
     def setUp(self) -> None:
+        self.tempdir = tempfile.TemporaryDirectory()
+        self.env = patch.dict(
+            os.environ,
+            {
+                "POCO_STATE_BACKEND": "sqlite",
+                "POCO_STATE_DB_PATH": os.path.join(self.tempdir.name, "poco.db"),
+            },
+        )
+        self.env.start()
+        self.addCleanup(self.env.stop)
+        self.addCleanup(self.tempdir.cleanup)
         self.client = TestClient(create_app())
 
     def test_demo_dm_project_list_card(self) -> None:

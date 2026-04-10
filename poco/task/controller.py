@@ -5,7 +5,7 @@ from threading import RLock
 from uuid import uuid4
 
 from poco.agent.runner import AgentRunner
-from poco.storage.memory import InMemoryTaskStore
+from poco.storage.protocols import TaskStore
 from poco.task.models import Task, TaskStatus
 
 
@@ -20,7 +20,7 @@ class TaskStateError(ValueError):
 class TaskController:
     def __init__(
         self,
-        store: InMemoryTaskStore,
+        store: TaskStore,
         runner: AgentRunner,
     ) -> None:
         self._store = store
@@ -125,6 +125,22 @@ class TaskController:
             task.add_event("task_failed", message)
             self._store.save(task)
             return task
+
+    def recover_interrupted_tasks(self) -> list[Task]:
+        recovered: list[Task] = []
+        with self._lock:
+            for task in self._store.list_all():
+                if task.status not in {TaskStatus.CREATED, TaskStatus.RUNNING}:
+                    continue
+                task.clear_live_output()
+                task.set_status(TaskStatus.FAILED)
+                task.add_event(
+                    "task_interrupted",
+                    "Task execution was interrupted by a server restart.",
+                )
+                self._store.save(task)
+                recovered.append(task)
+        return recovered
 
     def _start_or_resume(
         self,

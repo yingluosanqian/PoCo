@@ -25,6 +25,7 @@ from poco.platform.feishu.verification import FeishuRequestVerifier, FeishuVerif
 from poco.project.bootstrap import NullProjectBootstrapper
 from poco.project.controller import ProjectController
 from poco.storage.memory import InMemoryProjectStore, InMemoryTaskStore, InMemoryWorkspaceContextStore
+from poco.storage.sqlite import SqliteProjectStore, SqliteTaskStore, SqliteWorkspaceContextStore
 from poco.task.controller import TaskController, TaskNotFoundError
 from poco.task.dispatcher import AsyncTaskDispatcher
 from poco.task.notifier import FeishuTaskNotifier, NullTaskNotifier
@@ -35,11 +36,16 @@ class DemoDecisionRequest(BaseModel):
     approved: bool
 
 
-def create_app() -> FastAPI:
-    settings = Settings()
-    store = InMemoryTaskStore()
-    project_store = InMemoryProjectStore()
-    workspace_store = InMemoryWorkspaceContextStore()
+def create_app(*, settings: Settings | None = None) -> FastAPI:
+    settings = settings or Settings()
+    if settings.state_backend == "sqlite":
+        store = SqliteTaskStore(settings.state_db_path)
+        project_store = SqliteProjectStore(settings.state_db_path)
+        workspace_store = SqliteWorkspaceContextStore(settings.state_db_path)
+    else:
+        store = InMemoryTaskStore()
+        project_store = InMemoryProjectStore()
+        workspace_store = InMemoryWorkspaceContextStore()
     card_renderer = FeishuCardRenderer()
     runner = create_agent_runner(
         backend=settings.agent_backend,
@@ -51,6 +57,7 @@ def create_app() -> FastAPI:
         codex_timeout_seconds=settings.codex_timeout_seconds,
     )
     controller = TaskController(store=store, runner=runner)
+    controller.recover_interrupted_tasks()
     project_controller = ProjectController(project_store)
     workspace_controller = WorkspaceContextController(workspace_store)
     interaction = InteractionService(controller)
@@ -227,6 +234,8 @@ def create_app() -> FastAPI:
             "feishu_signature_enabled": settings.feishu_signature_enabled,
             "feishu_listener_ready": listener_ready,
             "feishu_listener_detail": listener_detail,
+            "state_backend": settings.state_backend,
+            "state_db_path": settings.state_db_path if settings.state_backend == "sqlite" else None,
             "agent_backend": runner.name,
             "agent_ready": agent_ready,
             "agent_detail": agent_detail,

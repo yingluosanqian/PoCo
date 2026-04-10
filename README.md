@@ -117,6 +117,8 @@ Optional:
 export POCO_FEISHU_API_BASE_URL="https://open.feishu.cn"
 export POCO_FEISHU_VERIFICATION_TOKEN="xxx"
 export POCO_FEISHU_ENCRYPT_KEY="xxx"
+export POCO_STATE_BACKEND="sqlite"
+export POCO_STATE_DB_PATH="/absolute/path/to/poco.db"
 ```
 
 Notes:
@@ -127,6 +129,8 @@ Notes:
 - `POCO_FEISHU_DELIVERY_MODE=longconn` removes the need for public inbound webhook access during local development.
 - The current long-connection implementation now handles both `im.message.receive_v1` and card callback traffic for local/mobile-first operation.
 - Callback token/signature settings apply to webhook delivery. Feishu long-connection inbound events are authenticated by the long-connection session itself.
+- `POCO_STATE_BACKEND=sqlite` is now the default runtime path. PoCo persists projects, workspace state and tasks so restart does not lose existing group/workspace tracking.
+- `POCO_STATE_DB_PATH` defaults to `.work/poco.db`.
 
 Install dependencies, then start the service:
 
@@ -146,6 +150,7 @@ The health response now includes:
 - chosen Feishu delivery mode: `webhook` or `longconn`
 - chosen agent backend and whether it looks ready
 - whether the Feishu long-connection listener is actually ready
+- which state backend is in use
 - whether Feishu callback token verification is enabled
 - whether Feishu signature validation is enabled
 - what is still missing

@@ -98,6 +98,9 @@
 - `task_status` 已开始优先展示原始结果；超长结果使用最小分页，而不是默认摘要替代
 - `workspace_overview` 已移除 latest result preview，开始只承担项目状态面板职责
 - `CodexCliRunner` 已开始流式读取进程输出，`Task` 会保存 `live_output` tail，running 中的 task card 会按节流策略原位刷新
+- 运行态状态后端已默认切到 `sqlite`，当前 `project`、`workspace context` 和 `task` 会持久化到本地 db 文件
+- `create_app()` 已支持 `memory/sqlite` 状态后端切换，默认运行态会在启动时恢复最小持久化状态
+- 启动阶段已增加最小恢复逻辑，`created/running` task 会被标记为因服务重启而中断
 
 ### 当前明确未实现
 
@@ -106,4 +109,5 @@
 - 飞书加密事件体处理
 - Claude Code 与 Cursor Agent 执行适配
 - 跨进程可恢复的任务队列
-- 持久化数据库
+- 完整 session 持久化
+- 跨进程可恢复 worker

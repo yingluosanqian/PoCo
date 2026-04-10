@@ -3,7 +3,7 @@ from __future__ import annotations
 from threading import RLock
 
 from poco.project.models import Project
-from poco.storage.memory import InMemoryWorkspaceContextStore
+from poco.storage.protocols import WorkspaceContextStore
 from poco.workspace.models import WorkspaceContext
 
 
@@ -12,7 +12,7 @@ class WorkspaceContextError(ValueError):
 
 
 class WorkspaceContextController:
-    def __init__(self, store: InMemoryWorkspaceContextStore) -> None:
+    def __init__(self, store: WorkspaceContextStore) -> None:
         self._store = store
         self._lock = RLock()
 

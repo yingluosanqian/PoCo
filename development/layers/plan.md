@@ -105,3 +105,9 @@
 - 已绑定 project 的群里，普通文本消息直接创建 task
 - DM 继续保持 control plane 语义
 - `Run Task` 卡片收缩为辅助输入入口，而不是唯一正式入口
+
+在最小状态恢复已落地后，下一轮应继续补：
+
+- 真正的 `session/handoff` 持久化模型
+- 跨进程可恢复 worker
+- 重启后的进行中 task 恢复或重放策略

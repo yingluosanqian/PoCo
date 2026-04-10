@@ -4,7 +4,7 @@ from threading import RLock
 from uuid import uuid4
 
 from poco.project.models import Project
-from poco.storage.memory import InMemoryProjectStore
+from poco.storage.protocols import ProjectStore
 
 
 class ProjectNotFoundError(ValueError):
@@ -16,7 +16,7 @@ class ProjectConfigError(ValueError):
 
 
 class ProjectController:
-    def __init__(self, store: InMemoryProjectStore) -> None:
+    def __init__(self, store: ProjectStore) -> None:
         self._store = store
         self._lock = RLock()
 
