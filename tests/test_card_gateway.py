@@ -459,7 +459,10 @@ class FeishuCardGatewayTest(unittest.TestCase):
         self.assertEqual(task.reply_receive_id, "oc_group_proj_1")
         self.assertEqual(task.reply_receive_id_type, "chat_id")
         self.assertEqual(self.task_dispatcher.actions, [("start", task.id)])
-        self.assertEqual(response["card"]["data"]["header"]["title"]["content"], f"Task: {task.id}")
+        self.assertEqual(
+            response["card"]["data"]["header"]["title"]["content"],
+            f"Task: {task.id} (Created, stub, /srv/poco/api)",
+        )
 
     def test_task_open_returns_existing_task_status_card(self) -> None:
         project = self.project_controller.create_project(
@@ -493,7 +496,10 @@ class FeishuCardGatewayTest(unittest.TestCase):
         response = self.gateway.handle_action(payload)
 
         self.assertEqual(response["instruction"]["template_key"], "task_status")
-        self.assertEqual(response["card"]["data"]["header"]["title"]["content"], f"Task: {task.id}")
+        self.assertEqual(
+            response["card"]["data"]["header"]["title"]["content"],
+            f"Task: {task.id} (Created, stub, /srv/poco/api)",
+        )
 
     def test_task_submit_rejects_empty_prompt(self) -> None:
         project = self.project_controller.create_project(
@@ -561,7 +567,10 @@ class FeishuCardGatewayTest(unittest.TestCase):
         response = self.gateway.handle_action(payload)
 
         self.assertEqual(response["instruction"]["template_key"], "task_status")
-        self.assertEqual(response["card"]["data"]["header"]["title"]["content"], f"Task: {task.id}")
+        self.assertEqual(
+            response["card"]["data"]["header"]["title"]["content"],
+            f"Task: {task.id} (Running, stub, /srv/poco/api)",
+        )
         updated = self.task_controller.get_task(task.id)
         self.assertEqual(updated.status.value, "running")
         self.assertIn(("resume", task.id), self.task_dispatcher.actions)

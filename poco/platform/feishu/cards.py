@@ -619,23 +619,16 @@ def _render_task_status(
 ) -> dict[str, Any]:
     task = data["task"]
     status = task.get("status") or "unknown"
-    prompt = task.get("prompt") or ""
     workdir = task.get("effective_workdir") or "未设置"
     live_output = task.get("live_output") or ""
     raw_result = task.get("raw_result") or task.get("result_summary") or "No result yet."
     requested_page = _normalize_page(data.get("result_page"))
     result_chunk, page, total_pages = _paginate_text(raw_result, page=requested_page)
-    elements: list[dict[str, Any]] = [
-        _markdown(f"**Task ID**\n`{task['id']}`"),
-        _markdown(f"**Status**\n`{status}`"),
-        _markdown(f"**Agent**\n`{task.get('agent_backend') or 'unknown'}`"),
-        _markdown(f"**Workdir**\n`{workdir}`"),
-        _markdown(f"**Prompt**\n{prompt}"),
-    ]
+    elements: list[dict[str, Any]] = []
 
     awaiting = task.get("awaiting_confirmation_reason")
     if awaiting:
-        elements.append(_markdown(f"**Awaiting Confirmation**\n{awaiting}"))
+        elements.append(_plain_text(awaiting))
         elements.append(
             _button(
                 label="Approve",
@@ -662,12 +655,8 @@ def _render_task_status(
             )
         )
     elif status == "running":
-        elements.append(_markdown("**Live Output**"))
         elements.append(_plain_text(live_output or "Waiting for agent output..."))
     else:
-        elements.append(_markdown("**Result**"))
-        if total_pages > 1:
-            elements.append(_markdown(f"Page `{page}` / `{total_pages}`"))
         elements.append(_plain_text(result_chunk))
         if total_pages > 1:
             if page > 1:
@@ -713,7 +702,14 @@ def _render_task_status(
         )
 
     return _card_shell(
-        title=f"Task: {task['id']}",
+        title=_task_title(
+            task_id=task["id"],
+            status=status,
+            agent=task.get("agent_backend") or "unknown",
+            workdir=workdir,
+            page=page,
+            total_pages=total_pages,
+        ),
         template=_task_template_for_status(status),
         elements=elements,
     )
@@ -887,6 +883,37 @@ def _task_template_for_status(status: str) -> str:
     if status in {"failed", "cancelled"}:
         return "red"
     return "blue"
+
+
+def _task_title(
+    *,
+    task_id: str,
+    status: str,
+    agent: str,
+    workdir: str,
+    page: int,
+    total_pages: int,
+) -> str:
+    title = f"Task: {task_id} ({_task_status_label(status)}, {agent}, {workdir})"
+    if total_pages > 1:
+        return f"{title} [{page}/{total_pages}]"
+    return title
+
+
+def _task_status_label(status: str) -> str:
+    if status == "waiting_for_confirmation":
+        return "Waiting"
+    if status == "completed":
+        return "Complete"
+    if status == "failed":
+        return "Error"
+    if status == "cancelled":
+        return "Stopped"
+    if status == "running":
+        return "Running"
+    if status == "created":
+        return "Created"
+    return "Unknown"
 
 
 def _normalize_page(value: Any) -> int:
