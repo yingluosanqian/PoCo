@@ -14,6 +14,7 @@ class Project:
     name: str
     created_by: str
     backend: str = "codex"
+    model: str | None = None
     repo: str | None = None
     workdir: str | None = None
     workdir_presets: list[str] = field(default_factory=list)
@@ -41,12 +42,18 @@ class Project:
             self.workdir_presets.append(normalized)
             self.updated_at = utc_now()
 
+    def set_model(self, model: str | None) -> None:
+        normalized = model.strip() if model else None
+        self.model = normalized or None
+        self.updated_at = utc_now()
+
     def to_dict(self) -> dict[str, object]:
         return {
             "id": self.id,
             "name": self.name,
             "created_by": self.created_by,
             "backend": self.backend,
+            "model": self.model,
             "repo": self.repo,
             "workdir": self.workdir,
             "workdir_presets": list(self.workdir_presets),

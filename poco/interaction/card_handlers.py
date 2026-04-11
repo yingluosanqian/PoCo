@@ -243,10 +243,14 @@ class WorkspaceIntentHandler:
             return self._open_use_recent_dir(intent)
         if intent.intent_key == "workspace.enter_path":
             return self._open_enter_path(intent)
+        if intent.intent_key == "workspace.choose_model":
+            return self._open_choose_model(intent)
         if intent.intent_key == "workspace.apply_preset_dir":
             return self._apply_preset_dir(intent)
         if intent.intent_key == "workspace.apply_entered_path":
             return self._apply_entered_path(intent)
+        if intent.intent_key == "workspace.apply_model":
+            return self._apply_model(intent)
         if intent.intent_key != "workspace.open":
             return _rejected(intent, f"Unsupported workspace intent: {intent.intent_key}")
         project = _get_project_or_reject(self.project_controller, intent)
@@ -353,9 +357,42 @@ class WorkspaceIntentHandler:
             status=DispatchStatus.OK,
             intent_key=intent.intent_key,
             resource_refs=ResourceRefs(project_id=project.id),
-            view_model=_workspace_enter_path_view_model(project, context=context),
+            view_model=build_workspace_overview_result(
+                project,
+                context=context,
+                active_session=_active_project_session(self.session_controller, project.id),
+                latest_task=_latest_project_task(self.task_controller, project.id),
+            ).view_model,
             refresh_mode=RefreshMode.REPLACE_CURRENT,
             message=f"Updated workdir for {project.name}",
+        )
+
+    def _open_choose_model(self, intent: ActionIntent) -> IntentDispatchResult:
+        project = _get_project_or_reject(self.project_controller, intent)
+        if isinstance(project, IntentDispatchResult):
+            return project
+        return IntentDispatchResult(
+            status=DispatchStatus.OK,
+            intent_key=intent.intent_key,
+            resource_refs=ResourceRefs(project_id=project.id),
+            view_model=_workspace_choose_model_view_model(project),
+            refresh_mode=RefreshMode.REPLACE_CURRENT,
+            message=f"Choose model for {project.name}",
+        )
+
+    def _apply_model(self, intent: ActionIntent) -> IntentDispatchResult:
+        project = _get_project_or_reject(self.project_controller, intent)
+        if isinstance(project, IntentDispatchResult):
+            return project
+        model = _optional_string(intent.payload.get("model"))
+        project = self.project_controller.set_model(project.id, model)
+        context = self.workspace_controller.get_context(project)
+        return build_workspace_overview_result(
+            project,
+            context=context,
+            active_session=_active_project_session(self.session_controller, project.id),
+            latest_task=_latest_project_task(self.task_controller, project.id),
+            message=f"Model updated for {project.name}",
         )
 
 
@@ -420,6 +457,7 @@ class TaskIntentHandler:
                 project_id=project.id,
                 actor_id=intent.actor_id,
             ),
+            effective_model=project.model,
             effective_workdir=context.active_workdir,
             notification_message_id=_optional_string(intent.source_message_id),
             reply_receive_id=reply_receive_id,
@@ -520,6 +558,8 @@ def build_workspace_overview_result(
     if latest_task is not None:
         latest_task_status = latest_task.status.value
         latest_task_id = latest_task.id
+    current_model = project.model or "runner default"
+    stop_enabled = latest_task_status == "running" and latest_task_id is not None
     active_session_id = None
     active_session_summary = "No active session yet."
     if active_session is not None:
@@ -540,6 +580,8 @@ def build_workspace_overview_result(
                 "active_session_summary": active_session_summary,
                 "latest_task_status": latest_task_status,
                 "latest_task_id": latest_task_id,
+                "current_model": current_model,
+                "stop_enabled": stop_enabled,
                 "pending_approvals": 0,
                 "current_workdir": current_workdir,
                 "workdir_source": workdir_source,
@@ -680,7 +722,25 @@ def _workspace_enter_path_view_model(project, *, context) -> ViewModel:
         {
             "project": project.to_dict(),
             "current_workdir": context.active_workdir,
-            "note": "Manual path entry is a fallback path. It updates the current in-memory workspace context only.",
+            "note": "Apply updates the current workspace and returns to the main workspace card.",
+        },
+    )
+
+
+def _workspace_choose_model_view_model(project) -> ViewModel:
+    return ViewModel(
+        "workspace_choose_model",
+        {
+            "project": project.to_dict(),
+            "current_model": project.model or "runner default",
+            "options": [
+                {"label": "Runner Default", "value": ""},
+                {"label": "gpt-5.4", "value": "gpt-5.4"},
+                {"label": "gpt-5.4-mini", "value": "gpt-5.4-mini"},
+                {"label": "gpt-5.3-codex", "value": "gpt-5.3-codex"},
+                {"label": "gpt-5.3-codex-spark", "value": "gpt-5.3-codex-spark"},
+            ],
+            "note": "Apply updates the project model and returns to the main workspace card.",
         },
     )
 

@@ -59,6 +59,11 @@ class FeishuCardRenderer:
                 instruction.template_data,
                 surface=instruction.surface.value,
             )
+        if instruction.template_key == "workspace_choose_model":
+            return _render_workspace_choose_model(
+                instruction.template_data,
+                surface=instruction.surface.value,
+            )
         if instruction.template_key == "task_composer":
             return _render_task_composer(
                 instruction.template_data,
@@ -302,23 +307,36 @@ def _render_workspace_overview(
     project = data["project"]
     latest_status = data.get("latest_task_status") or "none"
     latest_task_id = data.get("latest_task_id")
-    active_session_id = data.get("active_session_id")
-    active_session = data.get("active_session_summary") or "No active session yet."
-    pending_approvals = data.get("pending_approvals") or 0
     current_workdir = data.get("current_workdir") or "未设置"
-    workdir_source = data.get("workdir_source") or "unset"
-    latest_task_line = f"**latest task status**: `{latest_status}`"
-    if latest_task_id:
-        latest_task_line = f"**latest task**: `{latest_status}` (`{latest_task_id}`)"
+    current_model = data.get("current_model") or "runner default"
+    stop_enabled = bool(data.get("stop_enabled"))
+    latest_task_line = latest_task_id or "none"
     elements: list[dict[str, Any]] = [
-        _markdown(f"**active session**\n{active_session}"),
-        _markdown(f"**current workdir**\n`{current_workdir}`"),
-        _markdown(f"**workdir source**: `{workdir_source}`"),
-        _markdown(latest_task_line),
-        _markdown(f"**pending approvals**: `{pending_approvals}`"),
+        _markdown(
+            "\n".join(
+                [
+                    f"**Model**\n`{current_model}`",
+                    f"**Working Dir**\n`{current_workdir}`",
+                    f"**Task Status**\n`{latest_status}`",
+                    f"**Current Task**\n`{latest_task_line}`",
+                ]
+            )
+        ),
     ]
     elements.extend(
         [
+            _button(
+                label="Stop",
+                intent_value={
+                    "intent_key": "task.stop",
+                    "surface": surface,
+                    "project_id": project["id"],
+                    "task_id": latest_task_id or "",
+                },
+                name=f"stop_workspace_task_{project['id']}",
+                style="danger",
+                disabled=not stop_enabled,
+            ),
             _button(
                 label="Change Workdir",
                 intent_value={
@@ -329,13 +347,13 @@ def _render_workspace_overview(
                 name=f"enter_workdir_path_{project['id']}",
             ),
             _button(
-                label="Change Model",
+                label="Choose Model",
                 intent_value={
-                    "intent_key": "project.configure_agent",
+                    "intent_key": "workspace.choose_model",
                     "surface": surface,
                     "project_id": project["id"],
                 },
-                name=f"configure_workspace_agent_{project['id']}",
+                name=f"choose_workspace_model_{project['id']}",
             ),
         ]
     )
@@ -456,15 +474,59 @@ def _render_workspace_enter_path(
                 name=f"apply_entered_path_{project['id']}",
             ),
             _button(
-                label="Back To Workspace",
+                label="Cancel",
                 intent_value={
                     "intent_key": "workspace.open",
                     "surface": surface,
                     "project_id": project["id"],
                 },
-                name=f"back_to_workspace_{project['id']}",
+                name=f"cancel_workspace_enter_path_{project['id']}",
             ),
         ],
+    )
+
+
+def _render_workspace_choose_model(
+    data: dict[str, Any],
+    *,
+    surface: str,
+) -> dict[str, Any]:
+    project = data["project"]
+    current_model = data.get("current_model") or "runner default"
+    options = data.get("options") or []
+    elements: list[dict[str, Any]] = [
+        _markdown(f"**Current Model**\n`{current_model}`"),
+        _markdown(data["note"]),
+    ]
+    for option in options:
+        elements.append(
+            _button(
+                label=option["label"],
+                intent_value={
+                    "intent_key": "workspace.apply_model",
+                    "surface": surface,
+                    "project_id": project["id"],
+                    "model": option["value"],
+                },
+                name=f"apply_model_{project['id']}_{option['label'].lower().replace(' ', '_')}",
+                style="primary" if option["value"] else "default",
+            )
+        )
+    elements.append(
+        _button(
+            label="Cancel",
+            intent_value={
+                "intent_key": "workspace.open",
+                "surface": surface,
+                "project_id": project["id"],
+            },
+            name=f"cancel_workspace_choose_model_{project['id']}",
+        )
+    )
+    return _card_shell(
+        title=f"Choose Model: {project['name']}",
+        template="blue",
+        elements=elements,
     )
 
 
@@ -613,13 +675,13 @@ def _render_task_status(
         )
         elements.append(
             _button(
-                label="Change Model",
+                label="Choose Model",
                 intent_value={
-                    "intent_key": "project.configure_agent",
+                    "intent_key": "workspace.choose_model",
                     "surface": surface,
                     "project_id": task["project_id"],
                 },
-                name=f"task_change_model_{task['id']}",
+                name=f"task_choose_model_{task['id']}",
             )
         )
 
@@ -749,6 +811,7 @@ def _button(
     intent_value: dict[str, str],
     name: str,
     style: str = "default",
+    disabled: bool = False,
 ) -> dict[str, Any]:
     return {
         "tag": "button",
@@ -760,7 +823,10 @@ def _button(
         "width": "default",
         "size": "medium",
         "name": name,
-        "behaviors": [
+        "disabled": disabled,
+        "behaviors": []
+        if disabled
+        else [
             {
                 "type": "callback",
                 "value": intent_value,

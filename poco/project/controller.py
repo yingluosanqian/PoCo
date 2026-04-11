@@ -26,6 +26,7 @@ class ProjectController:
         name: str,
         created_by: str,
         backend: str = "codex",
+        model: str | None = None,
         repo: str | None = None,
         workdir: str | None = None,
         group_chat_id: str | None = None,
@@ -36,6 +37,7 @@ class ProjectController:
                 name=name,
                 created_by=created_by,
                 backend=backend,
+                model=model,
                 repo=repo,
                 workdir=workdir,
                 group_chat_id=group_chat_id,
@@ -105,6 +107,13 @@ class ProjectController:
         with self._lock:
             project = self.get_project(project_id)
             project.add_workdir_preset(normalized)
+            self._store.save(project)
+            return project
+
+    def set_model(self, project_id: str, model: str | None) -> Project:
+        with self._lock:
+            project = self.get_project(project_id)
+            project.set_model(model)
             self._store.save(project)
             return project
 

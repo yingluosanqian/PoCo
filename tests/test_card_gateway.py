@@ -113,6 +113,8 @@ class FeishuCardGatewayTest(unittest.TestCase):
                     "workspace.use_recent_dir": self.workspace_handler,
                     "workspace.enter_path": self.workspace_handler,
                     "workspace.apply_entered_path": self.workspace_handler,
+                    "workspace.choose_model": self.workspace_handler,
+                    "workspace.apply_model": self.workspace_handler,
                     "task.open_composer": self.task_handler,
                     "task.open": self.task_handler,
                     "task.submit": self.task_handler,
@@ -281,24 +283,26 @@ class FeishuCardGatewayTest(unittest.TestCase):
             response["card"]["data"]["header"]["title"]["content"],
             f"Workspace: {project.name}",
         )
-        workdir_button = response["card"]["data"]["body"]["elements"][5]
+        stop_button = response["card"]["data"]["body"]["elements"][1]
+        self.assertTrue(stop_button["disabled"])
+        workdir_button = response["card"]["data"]["body"]["elements"][2]
         self.assertEqual(
             workdir_button["behaviors"][0]["value"]["intent_key"],
             "workspace.enter_path",
         )
-        change_model_button = response["card"]["data"]["body"]["elements"][6]
+        change_model_button = response["card"]["data"]["body"]["elements"][3]
         self.assertEqual(
             change_model_button["behaviors"][0]["value"]["surface"],
             "group",
         )
         self.assertEqual(
             change_model_button["behaviors"][0]["value"]["intent_key"],
-            "project.configure_agent",
+            "workspace.choose_model",
         )
         updated_project = self.project_controller.get_project(project.id)
         self.assertEqual(updated_project.workspace_message_id, "om_card_2")
 
-    def test_workspace_open_shows_active_session_summary(self) -> None:
+    def test_workspace_open_includes_latest_task_summary_in_compact_block(self) -> None:
         project = self.project_controller.create_project(
             name="PoCo",
             created_by="ou_demo_user",
@@ -336,8 +340,9 @@ class FeishuCardGatewayTest(unittest.TestCase):
 
         response = self.gateway.handle_action(payload)
 
-        session_block = response["card"]["data"]["body"]["elements"][0]
-        self.assertIn(session.id, session_block["content"])
+        summary_block = response["card"]["data"]["body"]["elements"][0]
+        self.assertIn(task.id, summary_block["content"])
+        self.assertIn("completed", summary_block["content"])
 
     def test_workspace_open_shows_latest_task_summary_when_task_exists(self) -> None:
         project = self.project_controller.create_project(
@@ -370,13 +375,51 @@ class FeishuCardGatewayTest(unittest.TestCase):
 
         response = self.gateway.handle_action(payload)
 
-        latest_task_block = response["card"]["data"]["body"]["elements"][3]
+        latest_task_block = response["card"]["data"]["body"]["elements"][0]
         self.assertIn(task.id, latest_task_block["content"])
-        workdir_button = response["card"]["data"]["body"]["elements"][5]
+        workdir_button = response["card"]["data"]["body"]["elements"][2]
         self.assertEqual(
             workdir_button["behaviors"][0]["value"]["intent_key"],
             "workspace.enter_path",
         )
+
+    def test_workspace_open_enables_stop_when_latest_task_is_running(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+            group_chat_id="oc_group_proj_1",
+        )
+        task = self.task_controller.create_task(
+            requester_id="ou_demo_user",
+            prompt="stream output",
+            source="feishu_card",
+            project_id=project.id,
+            effective_workdir="/srv/poco/api",
+        )
+        task.set_status(task.status.RUNNING)
+        self.task_controller._store.save(task)  # type: ignore[attr-defined]
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_card_running_workspace"},
+                "action": {
+                    "value": {
+                        "intent_key": "workspace.open",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "request_id": "req_workspace_open_running",
+                    },
+                },
+            }
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        stop_button = response["card"]["data"]["body"]["elements"][1]
+        self.assertFalse(stop_button["disabled"])
+        self.assertEqual(stop_button["behaviors"][0]["value"]["intent_key"], "task.stop")
+        self.assertEqual(stop_button["behaviors"][0]["value"]["task_id"], task.id)
 
     def test_task_composer_opens_from_workspace_card(self) -> None:
         project = self.project_controller.create_project(
@@ -809,12 +852,12 @@ class FeishuCardGatewayTest(unittest.TestCase):
 
         response = self.gateway.handle_action(payload)
 
-        self.assertEqual(response["instruction"]["template_key"], "workspace_enter_path")
+        self.assertEqual(response["instruction"]["template_key"], "workspace_overview")
         context = self.workspace_controller.get_context(project)
         self.assertEqual(context.active_workdir, "/srv/poco/manual")
         self.assertEqual(context.workdir_source, "manual")
-        current_workdir_input = response["card"]["data"]["body"]["elements"][1]
-        self.assertEqual(current_workdir_input["value"], "/srv/poco/manual")
+        summary_block = response["card"]["data"]["body"]["elements"][0]
+        self.assertIn("/srv/poco/manual", summary_block["content"])
 
     def test_workspace_apply_entered_path_rejects_empty_path(self) -> None:
         project = self.project_controller.create_project(
@@ -928,6 +971,52 @@ class FeishuCardGatewayTest(unittest.TestCase):
         context = self.workspace_controller.get_context(project)
         self.assertEqual(context.active_workdir, "/srv/poco/api")
         self.assertEqual(context.workdir_source, "preset")
+
+    def test_workspace_choose_model_opens_and_apply_returns_workspace(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+        )
+        open_payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_choose_model_1"},
+                "action": {
+                    "value": {
+                        "intent_key": "workspace.choose_model",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "request_id": "req_choose_model_1",
+                    },
+                },
+            }
+        }
+
+        opened = self.gateway.handle_action(open_payload)
+
+        self.assertEqual(opened["instruction"]["template_key"], "workspace_choose_model")
+        apply_payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_choose_model_1"},
+                "action": {
+                    "value": {
+                        "intent_key": "workspace.apply_model",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "request_id": "req_apply_model_1",
+                        "model": "gpt-5.4",
+                    },
+                },
+            }
+        }
+
+        applied = self.gateway.handle_action(apply_payload)
+
+        self.assertEqual(applied["instruction"]["template_key"], "workspace_overview")
+        updated = self.project_controller.get_project(project.id)
+        self.assertEqual(updated.model, "gpt-5.4")
 
     def test_workspace_apply_preset_rejects_unknown_preset(self) -> None:
         project = self.project_controller.create_project(

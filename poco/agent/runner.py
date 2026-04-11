@@ -190,7 +190,7 @@ class CodexCliRunner:
         return True
 
     def resolve_execution_context(self, task: Task) -> tuple[str | None, str | None]:
-        return self._model or self.name, task.effective_workdir or self._workdir
+        return task.effective_model or self._model or self.name, task.effective_workdir or self._workdir
 
     def _execute_prompt(self, task: Task, prompt: str) -> Iterator[AgentRunUpdate]:
         executable = shutil.which(self._command)
@@ -227,10 +227,11 @@ class CodexCliRunner:
                     prompt,
                 ]
             )
-            if self._model:
+            resolved_model = task.effective_model or self._model
+            if resolved_model:
                 command[command.index("exec") + 1:command.index("exec") + 1] = [
                     "-m",
-                    self._model,
+                    resolved_model,
                 ]
 
             process = subprocess.Popen(

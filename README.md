@@ -258,6 +258,8 @@ Current interaction model:
 - DM project open now lands on a project config card with read-only entries for agent / repo / default dir / dir presets
 - newly created project groups now receive an initial workspace overview card
 - group workspace and task cards now route `Change Workdir` directly to the `Enter Path` card instead of an intermediate switcher page
+- group workspace cards are now intentionally compact: one summary block plus `Stop`, `Change Workdir`, and `Choose Model`
+- `Choose Model` now opens a dedicated model-selection card; applying a model returns to the main workspace card
 - `Use Default` now updates the in-memory workspace context and becomes the first real write path for group-side workdir state
 - `Enter Path` now updates the same in-memory workspace context and becomes the second real write path, using manual source
 - DM `Manage Dir Presets` can now add project-level presets, and group `Choose Preset` can apply them into the current in-memory workspace context

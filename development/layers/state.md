@@ -78,6 +78,8 @@
 - 已存在 DM 首页卡片上的首批真实 callback 动作，当前至少可点击创建 project，并在真实飞书模式下自动拉起对应工作群；新群会收到第一张 workspace overview card
 - 已存在 DM `Project Config Card` 的最小实现，当前至少可只读展示 agent、repo、default workdir、workspace group，并进入对应的只读配置入口卡
 - 已移除多余的 Group `Workdir Switcher Card` 中间页，当前 `Change Workdir` 已直接进入 `Enter Path` 输入卡
+- 已将群首卡收敛为单块摘要 + 三个主动作，当前主动作仅保留 `Stop`、`Change Workdir`、`Choose Model`
+- 已存在最小 model 选择链路，当前 `Choose Model` 已可进入独立选择卡，apply 后会回到主 workspace 卡
 - 已存在最小 in-memory workspace context，当前 `Use Default` 已可把 `active_workdir` 和 `source=default` 写入当前群工作面的上下文状态
 - 已存在第二条真实 workdir 写路径，当前 `Enter Path` 已可把手工输入目录写入 in-memory workspace context，并标记 `source=manual`
 - 已存在最小 preset 存储与应用链路，当前可在 DM 中新增 project-level presets，并在群工作面应用为 `source=preset`

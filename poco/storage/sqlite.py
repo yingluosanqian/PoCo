@@ -36,6 +36,7 @@ class _SqliteStoreBase:
                     name TEXT NOT NULL,
                     created_by TEXT NOT NULL,
                     backend TEXT NOT NULL,
+                    model TEXT,
                     repo TEXT,
                     workdir TEXT,
                     workdir_presets TEXT NOT NULL,
@@ -103,6 +104,12 @@ class _SqliteStoreBase:
                 row["name"]
                 for row in connection.execute("PRAGMA table_info(tasks)").fetchall()
             }
+            project_columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(projects)").fetchall()
+            }
+            if "model" not in project_columns:
+                connection.execute("ALTER TABLE projects ADD COLUMN model TEXT")
             if "session_id" not in task_columns:
                 connection.execute("ALTER TABLE tasks ADD COLUMN session_id TEXT")
             if "effective_model" not in task_columns:
@@ -115,13 +122,14 @@ class SqliteProjectStore(_SqliteStoreBase):
             connection.execute(
                 """
                 INSERT INTO projects (
-                    id, name, created_by, backend, repo, workdir, workdir_presets,
+                    id, name, created_by, backend, model, repo, workdir, workdir_presets,
                     group_chat_id, workspace_message_id, archived, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     name = excluded.name,
                     created_by = excluded.created_by,
                     backend = excluded.backend,
+                    model = excluded.model,
                     repo = excluded.repo,
                     workdir = excluded.workdir,
                     workdir_presets = excluded.workdir_presets,
@@ -136,6 +144,7 @@ class SqliteProjectStore(_SqliteStoreBase):
                     project.name,
                     project.created_by,
                     project.backend,
+                    project.model,
                     project.repo,
                     project.workdir,
                     json.dumps(project.workdir_presets, ensure_ascii=False),
@@ -176,6 +185,7 @@ class SqliteProjectStore(_SqliteStoreBase):
             name=row["name"],
             created_by=row["created_by"],
             backend=row["backend"],
+            model=row["model"],
             repo=row["repo"],
             workdir=row["workdir"],
             workdir_presets=list(presets),

@@ -36,6 +36,7 @@ WRITE_INTENT_KEYS = {
     "workspace.use_default_dir",
     "workspace.apply_preset_dir",
     "workspace.apply_entered_path",
+    "workspace.apply_model",
     "task.submit",
     "task.stop",
     "task.approve",
