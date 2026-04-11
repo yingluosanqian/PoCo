@@ -550,15 +550,26 @@ def build_workspace_overview_result(
     if context is not None:
         current_workdir = context.active_workdir
         workdir_source = context.workdir_source
-    elif project.workdir:
+    if current_workdir is None and project.workdir:
         current_workdir = project.workdir
         workdir_source = "default"
+    if current_workdir is None and latest_task is not None and latest_task.effective_workdir:
+        current_workdir = latest_task.effective_workdir
+        workdir_source = "task"
     latest_task_status = None
     latest_task_id = None
+    current_agent = project.backend
     if latest_task is not None:
         latest_task_status = latest_task.status.value
         latest_task_id = latest_task.id
-    current_model = project.model or "runner default"
+        current_agent = latest_task.agent_backend or project.backend
+    current_model = None
+    if latest_task is not None:
+        current_model = latest_task.effective_model or project.model
+    else:
+        current_model = project.model
+    if current_model == current_agent:
+        current_model = None
     stop_enabled = latest_task_status == "running" and latest_task_id is not None
     active_session_id = None
     active_session_summary = "No active session yet."
@@ -580,6 +591,7 @@ def build_workspace_overview_result(
                 "active_session_summary": active_session_summary,
                 "latest_task_status": latest_task_status,
                 "latest_task_id": latest_task_id,
+                "current_agent": current_agent,
                 "current_model": current_model,
                 "stop_enabled": stop_enabled,
                 "pending_approvals": 0,
@@ -732,9 +744,9 @@ def _workspace_choose_model_view_model(project) -> ViewModel:
         "workspace_choose_model",
         {
             "project": project.to_dict(),
-            "current_model": project.model or "runner default",
+            "current_model": project.model,
             "options": [
-                {"label": "Runner Default", "value": ""},
+                {"label": "Clear Model", "value": ""},
                 {"label": "gpt-5.4", "value": "gpt-5.4"},
                 {"label": "gpt-5.4-mini", "value": "gpt-5.4-mini"},
                 {"label": "gpt-5.3-codex", "value": "gpt-5.3-codex"},

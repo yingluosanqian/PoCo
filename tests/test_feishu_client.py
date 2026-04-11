@@ -102,10 +102,14 @@ class FeishuClientTest(unittest.TestCase):
 
         card = FeishuCardRenderer().render(instruction)
 
-        stop_button = card["body"]["elements"][1]
-        change_workdir_button = card["body"]["elements"][2]
-        change_model_button = card["body"]["elements"][3]
-        self.assertTrue(stop_button["disabled"])
+        self.assertEqual(
+            card["header"]["title"]["content"],
+            "[Idle] Workspace: PoCo (codex, no working dir)",
+        )
+        idle_hint = card["body"]["elements"][0]
+        change_workdir_button = card["body"]["elements"][1]
+        change_model_button = card["body"]["elements"][2]
+        self.assertIn("Stop is available only while a task is running.", idle_hint["text"]["content"])
         self.assertEqual(
             change_workdir_button["behaviors"][0]["value"]["surface"],
             "group",
@@ -171,8 +175,8 @@ class FeishuClientTest(unittest.TestCase):
         self.assertEqual(sent["receive_id"], "oc_group_proj_1")
         self.assertEqual(sent["receive_id_type"], "chat_id")
         card = sent["card"]
-        self.assertEqual(card["header"]["title"]["content"], "Workspace: PoCo")
-        change_model_button = card["body"]["elements"][3]
+        self.assertEqual(card["header"]["title"]["content"], "[Idle] Workspace: PoCo (codex, no working dir)")
+        change_model_button = card["body"]["elements"][2]
         self.assertEqual(change_model_button["behaviors"][0]["value"]["surface"], "group")
         self.assertEqual(project.workspace_message_id, "om_workspace_bootstrap_1")
         snapshot = recorder.snapshot()

@@ -258,7 +258,7 @@ Current interaction model:
 - DM project open now lands on a project config card with read-only entries for agent / repo / default dir / dir presets
 - newly created project groups now receive an initial workspace overview card
 - group workspace and task cards now route `Change Workdir` directly to the `Enter Path` card instead of an intermediate switcher page
-- group workspace cards are now intentionally compact: one summary block plus `Stop`, `Change Workdir`, and `Choose Model`
+- group workspace cards are now intentionally compact: workspace metadata is collapsed into the title, and the body keeps only `Stop`, `Change Workdir`, and `Choose Model`
 - `Choose Model` now opens a dedicated model-selection card; applying a model returns to the main workspace card
 - `Use Default` now updates the in-memory workspace context and becomes the first real write path for group-side workdir state
 - `Enter Path` now updates the same in-memory workspace context and becomes the second real write path, using manual source
@@ -274,13 +274,12 @@ Current interaction model:
 - When a task waits for confirmation, completes, fails, or is cancelled, PoCo now pushes a `task_status` card to the stored Feishu reply target
 - Waiting task cards now include `Approve` / `Reject` actions that resume or cancel the task through card callbacks
 - Once a task status card has been sent, later task-state notifications now try to update that same card in place before falling back to a new message
-- workspace cards now expose `Open Latest Task` when a latest project task exists
 - workspace cards now keep a bound message id and will also be refreshed with latest-task changes when task state changes
 - task status cards now prefer the agent's raw result over summary text, and long results are paginated instead of being replaced by a summary
 - task status cards now collapse task id, status, agent and effective workdir into the title; the body is reserved for model output or confirmation text instead of duplicated metadata
 - task status titles now lead with bracketed status, for example `[Running] Task: ... (codex, no working dir)`, to keep the scan path tighter on mobile
 - task and workspace cards now prefer direct action buttons over navigation-only buttons; task cards expose `Stop`, `Change Working Dir`, and `Change Model` instead of `Back`/`Refresh` style controls
-- workspace cards no longer try to show latest-result body; they now only keep latest-task status and navigation
+- workspace cards no longer try to show latest-result body; the title carries status / agent / workdir / current task, and the body stays action-only
 - running task cards now show throttled live output updates from the agent, instead of staying at a coarse `running` state
 
 If `POCO_FEISHU_DELIVERY_MODE=longconn` is enabled:

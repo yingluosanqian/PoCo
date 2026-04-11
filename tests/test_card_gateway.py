@@ -281,16 +281,16 @@ class FeishuCardGatewayTest(unittest.TestCase):
         self.assertEqual(response["card"]["data"]["schema"], "2.0")
         self.assertEqual(
             response["card"]["data"]["header"]["title"]["content"],
-            f"Workspace: {project.name}",
+            f"[Idle] Workspace: {project.name} (codex, no working dir)",
         )
-        stop_button = response["card"]["data"]["body"]["elements"][1]
-        self.assertTrue(stop_button["disabled"])
-        workdir_button = response["card"]["data"]["body"]["elements"][2]
+        stop_hint = response["card"]["data"]["body"]["elements"][0]
+        self.assertIn("Stop is available only while a task is running.", stop_hint["text"]["content"])
+        workdir_button = response["card"]["data"]["body"]["elements"][1]
         self.assertEqual(
             workdir_button["behaviors"][0]["value"]["intent_key"],
             "workspace.enter_path",
         )
-        change_model_button = response["card"]["data"]["body"]["elements"][3]
+        change_model_button = response["card"]["data"]["body"]["elements"][2]
         self.assertEqual(
             change_model_button["behaviors"][0]["value"]["surface"],
             "group",
@@ -302,7 +302,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
         updated_project = self.project_controller.get_project(project.id)
         self.assertEqual(updated_project.workspace_message_id, "om_card_2")
 
-    def test_workspace_open_includes_latest_task_summary_in_compact_block(self) -> None:
+    def test_workspace_open_title_includes_latest_task_summary(self) -> None:
         project = self.project_controller.create_project(
             name="PoCo",
             created_by="ou_demo_user",
@@ -340,9 +340,9 @@ class FeishuCardGatewayTest(unittest.TestCase):
 
         response = self.gateway.handle_action(payload)
 
-        summary_block = response["card"]["data"]["body"]["elements"][0]
-        self.assertIn(task.id, summary_block["content"])
-        self.assertIn("completed", summary_block["content"])
+        title = response["card"]["data"]["header"]["title"]["content"]
+        self.assertIn(task.id, title)
+        self.assertIn("[Complete]", title)
 
     def test_workspace_open_shows_latest_task_summary_when_task_exists(self) -> None:
         project = self.project_controller.create_project(
@@ -375,9 +375,8 @@ class FeishuCardGatewayTest(unittest.TestCase):
 
         response = self.gateway.handle_action(payload)
 
-        latest_task_block = response["card"]["data"]["body"]["elements"][0]
-        self.assertIn(task.id, latest_task_block["content"])
-        workdir_button = response["card"]["data"]["body"]["elements"][2]
+        self.assertIn(task.id, response["card"]["data"]["header"]["title"]["content"])
+        workdir_button = response["card"]["data"]["body"]["elements"][1]
         self.assertEqual(
             workdir_button["behaviors"][0]["value"]["intent_key"],
             "workspace.enter_path",
@@ -416,8 +415,11 @@ class FeishuCardGatewayTest(unittest.TestCase):
 
         response = self.gateway.handle_action(payload)
 
-        stop_button = response["card"]["data"]["body"]["elements"][1]
-        self.assertFalse(stop_button["disabled"])
+        self.assertEqual(
+            response["card"]["data"]["header"]["title"]["content"],
+            f"[Running] Workspace: {project.name} (stub, /srv/poco/api, {task.id})",
+        )
+        stop_button = response["card"]["data"]["body"]["elements"][0]
         self.assertEqual(stop_button["behaviors"][0]["value"]["intent_key"], "task.stop")
         self.assertEqual(stop_button["behaviors"][0]["value"]["task_id"], task.id)
 
@@ -856,8 +858,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
         context = self.workspace_controller.get_context(project)
         self.assertEqual(context.active_workdir, "/srv/poco/manual")
         self.assertEqual(context.workdir_source, "manual")
-        summary_block = response["card"]["data"]["body"]["elements"][0]
-        self.assertIn("/srv/poco/manual", summary_block["content"])
+        self.assertIn("/srv/poco/manual", response["card"]["data"]["header"]["title"]["content"])
 
     def test_workspace_apply_entered_path_rejects_empty_path(self) -> None:
         project = self.project_controller.create_project(

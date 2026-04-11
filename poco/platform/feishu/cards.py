@@ -307,24 +307,13 @@ def _render_workspace_overview(
     project = data["project"]
     latest_status = data.get("latest_task_status") or "none"
     latest_task_id = data.get("latest_task_id")
-    current_workdir = data.get("current_workdir") or "未设置"
-    current_model = data.get("current_model") or "runner default"
+    current_workdir = data.get("current_workdir") or "no working dir"
+    current_agent = data.get("current_agent") or project["backend"]
+    current_model = data.get("current_model")
     stop_enabled = bool(data.get("stop_enabled"))
-    latest_task_line = latest_task_id or "none"
-    elements: list[dict[str, Any]] = [
-        _markdown(
-            "\n".join(
-                [
-                    f"**Model**\n`{current_model}`",
-                    f"**Working Dir**\n`{current_workdir}`",
-                    f"**Task Status**\n`{latest_status}`",
-                    f"**Current Task**\n`{latest_task_line}`",
-                ]
-            )
-        ),
-    ]
-    elements.extend(
-        [
+    elements: list[dict[str, Any]] = []
+    if stop_enabled:
+        elements.append(
             _button(
                 label="Stop",
                 intent_value={
@@ -334,9 +323,12 @@ def _render_workspace_overview(
                     "task_id": latest_task_id or "",
                 },
                 name=f"stop_workspace_task_{project['id']}",
-                style="danger",
-                disabled=not stop_enabled,
-            ),
+            )
+        )
+    else:
+        elements.append(_plain_text("Stop is available only while a task is running."))
+    elements.extend(
+        [
             _button(
                 label="Change Workdir",
                 intent_value={
@@ -358,7 +350,14 @@ def _render_workspace_overview(
         ]
     )
     return _card_shell(
-        title=f"Workspace: {project['name']}",
+        title=_workspace_title(
+            project_name=project["name"],
+            status=latest_status,
+            task_id=latest_task_id,
+            agent=current_agent,
+            workdir=current_workdir,
+            model=current_model,
+        ),
         template="orange",
         elements=elements,
     )
@@ -492,12 +491,12 @@ def _render_workspace_choose_model(
     surface: str,
 ) -> dict[str, Any]:
     project = data["project"]
-    current_model = data.get("current_model") or "runner default"
+    current_model = data.get("current_model")
     options = data.get("options") or []
-    elements: list[dict[str, Any]] = [
-        _markdown(f"**Current Model**\n`{current_model}`"),
-        _markdown(data["note"]),
-    ]
+    elements: list[dict[str, Any]] = []
+    if current_model:
+        elements.append(_markdown(f"**Current Model**\n`{current_model}`"))
+    elements.append(_markdown(data["note"]))
     for option in options:
         elements.append(
             _button(
@@ -811,7 +810,6 @@ def _button(
     intent_value: dict[str, str],
     name: str,
     style: str = "default",
-    disabled: bool = False,
 ) -> dict[str, Any]:
     return {
         "tag": "button",
@@ -823,10 +821,7 @@ def _button(
         "width": "default",
         "size": "medium",
         "name": name,
-        "disabled": disabled,
-        "behaviors": []
-        if disabled
-        else [
+        "behaviors": [
             {
                 "type": "callback",
                 "value": intent_value,
@@ -877,6 +872,38 @@ def _task_title(
     if total_pages > 1:
         return f"{title} [{page}/{total_pages}]"
     return title
+
+
+def _workspace_title(
+    *,
+    project_name: str,
+    status: str,
+    task_id: str | None,
+    agent: str,
+    workdir: str,
+    model: str | None,
+) -> str:
+    status_label = _workspace_status_label(status)
+    details: list[str] = [agent, workdir]
+    if model:
+        details.append(model)
+    if task_id:
+        details.append(task_id)
+    return f"[{status_label}] Workspace: {project_name} ({', '.join(details)})"
+
+
+def _workspace_status_label(status: str) -> str:
+    if status == "completed":
+        return "Complete"
+    if status == "failed":
+        return "Failed"
+    if status == "running":
+        return "Running"
+    if status == "cancelled":
+        return "Stopped"
+    if status == "waiting_for_confirmation":
+        return "Waiting"
+    return "Idle"
 
 
 def _task_status_label(status: str) -> str:
