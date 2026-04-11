@@ -45,6 +45,12 @@ class TaskController:
         reply_receive_id_type: str | None = None,
     ) -> Task:
         with self._lock:
+            backend_session_id = None
+            if session_id and self._session_controller is not None:
+                try:
+                    backend_session_id = self._session_controller.get_session(session_id).backend_session_id
+                except ValueError:
+                    backend_session_id = None
             effective_model, resolved_workdir = self._runner.resolve_execution_context(
                 Task(
                     id="preview",
@@ -53,6 +59,7 @@ class TaskController:
                     source=source,
                     agent_backend=self._runner.name,
                     effective_model=effective_model,
+                    backend_session_id=backend_session_id,
                     project_id=project_id,
                     session_id=session_id,
                     effective_workdir=effective_workdir,
@@ -68,6 +75,7 @@ class TaskController:
                 source=source,
                 agent_backend=self._runner.name,
                 effective_model=effective_model,
+                backend_session_id=backend_session_id,
                 project_id=project_id,
                 session_id=session_id,
                 effective_workdir=resolved_workdir,
@@ -273,6 +281,7 @@ class TaskController:
             task.set_execution_context(
                 effective_model=effective_model,
                 effective_workdir=effective_workdir,
+                backend_session_id=task.backend_session_id,
             )
             if mode == "start":
                 task.set_status(TaskStatus.RUNNING)
@@ -295,6 +304,12 @@ class TaskController:
                 if task.status == TaskStatus.CANCELLED:
                     continue
                 if update.kind == "progress":
+                    if getattr(update, "backend_session_id", None):
+                        task.set_execution_context(
+                            effective_model=task.effective_model,
+                            effective_workdir=task.effective_workdir,
+                            backend_session_id=update.backend_session_id,
+                        )
                     if getattr(update, "output_chunk", None):
                         task.append_live_output(update.output_chunk)
                     task.add_event("runner_progress", update.message)
@@ -303,11 +318,23 @@ class TaskController:
                     task.set_status(TaskStatus.WAITING_FOR_CONFIRMATION)
                     task.add_event("confirmation_required", update.message)
                 elif update.kind == "completed":
+                    if getattr(update, "backend_session_id", None):
+                        task.set_execution_context(
+                            effective_model=task.effective_model,
+                            effective_workdir=task.effective_workdir,
+                            backend_session_id=update.backend_session_id,
+                        )
                     task.set_result(update.raw_result)
                     task.clear_live_output()
                     task.set_status(TaskStatus.COMPLETED)
                     task.add_event("task_completed", update.message)
                 elif update.kind == "failed":
+                    if getattr(update, "backend_session_id", None):
+                        task.set_execution_context(
+                            effective_model=task.effective_model,
+                            effective_workdir=task.effective_workdir,
+                            backend_session_id=update.backend_session_id,
+                        )
                     task.clear_live_output()
                     task.set_status(TaskStatus.FAILED)
                     task.add_event("task_failed", update.message)

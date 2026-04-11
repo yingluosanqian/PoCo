@@ -539,9 +539,13 @@ def _render_workdir_browser_html(
     parent_link = ""
     if parent_path:
         parent_query = urlencode({"project_id": project_id, "path": parent_path})
-        parent_link = f'<a class="dir-link" href="/ui/workdir?{parent_query}">..</a>'
+        parent_link = (
+            f'<a class="dir-link" href="/ui/workdir?{parent_query}">'
+            f"<strong>..</strong><span>{escape(parent_path)}</span></a>"
+        )
     child_links = "".join(
-        f'<a class="dir-link" href="/ui/workdir?{urlencode({"project_id": project_id, "path": item})}">{escape(Path(item).name or item)}</a>'
+        f'<a class="dir-link" href="/ui/workdir?{urlencode({"project_id": project_id, "path": item})}">'
+        f"<strong>{escape(Path(item).name or item)}</strong><span>{escape(item)}</span></a>"
         for item in child_dirs
     ) or '<p class="note">No child directories here.</p>'
     return f"""<!doctype html>
@@ -563,7 +567,10 @@ def _render_workdir_browser_html(
     button {{ border: 0; border-radius: 12px; padding: 12px 16px; background: #1f6feb; color: white; font-size: 15px; }}
     .secondary {{ background: #ece5d8; color: #222; }}
     .dirs {{ display: grid; gap: 8px; }}
-    .dir-link {{ display: block; padding: 12px 14px; border-radius: 12px; background: #f3eee3; color: #1f1f1f; text-decoration: none; }}
+    .dir-link {{ display: block; padding: 12px 14px; border-radius: 12px; background: #f3eee3; color: #1f1f1f; text-decoration: none; border: 1px solid #e0d8ca; }}
+    .dir-link strong {{ display: block; font-size: 15px; }}
+    .dir-link span {{ display: block; margin-top: 4px; color: #5c554b; font-size: 13px; word-break: break-all; }}
+    .section-note {{ margin: 0 0 12px; color: #5d5446; }}
     .note {{ margin: 10px 0 0; color: #5d5446; }}
     .error {{ color: #a12727; }}
     .success {{ color: #176d3a; }}
@@ -578,28 +585,31 @@ def _render_workdir_browser_html(
       <div class="path">{current_label}</div>
     </div>
     <div class="card">
-      <div class="label">Choose One Of Two Ways</div>
-      <p class="note">Type a path directly, or browse folders below like open-folder.</p>
-      <input id="workdir-input" value="{selected_label}" spellcheck="false" />
+      <div class="label">Browse Folders</div>
+      <p class="section-note">Option 1. Browse like open-folder, then apply the folder you want.</p>
+      <div class="path">{browse_label}</div>
       <div class="actions">
-        <button id="apply-button" type="button">Apply</button>
+        <button id="apply-browsed-button" type="button">Use This Folder</button>
         <a class="dir-link secondary" href="/ui/workdir?{urlencode({'project_id': project_id})}">Reset Browser</a>
       </div>
-      {status_block}
-      {error_block}
-    </div>
-    <div class="card">
-      <div class="label">Browsing</div>
-      <div class="path">{browse_label}</div>
       <div class="dirs">
         {parent_link}
         {child_links}
       </div>
     </div>
+    <div class="card">
+      <div class="label">Enter Path Manually</div>
+      <p class="section-note">Option 2. Type the full path yourself and apply it directly.</p>
+      <input id="workdir-input" value="{selected_label}" spellcheck="false" />
+      <div class="actions">
+        <button id="apply-button" type="button">Apply Typed Path</button>
+      </div>
+      {status_block}
+      {error_block}
+    </div>
   </div>
   <script>
-    document.getElementById("apply-button").addEventListener("click", async () => {{
-      const workdir = document.getElementById("workdir-input").value;
+    async function applyWorkdir(workdir) {{
       const response = await fetch("/api/projects/{escape(project_id)}/workdir", {{
         method: "POST",
         headers: {{ "Content-Type": "application/json" }},
@@ -611,6 +621,12 @@ def _render_workdir_browser_html(
         return;
       }}
       window.location.href = payload.redirect_url;
+    }}
+    document.getElementById("apply-button").addEventListener("click", async () => {{
+      await applyWorkdir(document.getElementById("workdir-input").value);
+    }});
+    document.getElementById("apply-browsed-button").addEventListener("click", async () => {{
+      await applyWorkdir("{selected_label}");
     }});
   </script>
 </body>

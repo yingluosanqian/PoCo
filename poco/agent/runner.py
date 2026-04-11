@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+import json
 import os
 import shutil
 import subprocess
@@ -21,6 +22,7 @@ class AgentRunUpdate:
     message: str
     output_chunk: str | None = None
     raw_result: str | None = None
+    backend_session_id: str | None = None
 
     @property
     def result_summary(self) -> str | None:
@@ -205,34 +207,17 @@ class CodexCliRunner:
 
         output_file_path: str | None = None
         process: subprocess.Popen[str] | None = None
+        backend_session_id = task.backend_session_id
         try:
             with tempfile.NamedTemporaryFile(prefix="poco-codex-", suffix=".txt", delete=False) as handle:
                 output_file_path = handle.name
 
-            command = [self._command]
-            if self._approval_policy:
-                command.extend(["-a", self._approval_policy])
-            command.extend(
-                [
-                    "exec",
-                    "-C",
-                    workdir,
-                    "-s",
-                    self._sandbox,
-                    "--skip-git-repo-check",
-                    "--color",
-                    "never",
-                    "-o",
-                    output_file_path,
-                    prompt,
-                ]
+            command = self._build_command(
+                task=task,
+                prompt=prompt,
+                workdir=workdir,
+                output_file_path=output_file_path,
             )
-            resolved_model = task.effective_model or self._model
-            if resolved_model:
-                command[command.index("exec") + 1:command.index("exec") + 1] = [
-                    "-m",
-                    resolved_model,
-                ]
 
             process = subprocess.Popen(
                 command,
@@ -251,11 +236,34 @@ class CodexCliRunner:
                     if not line:
                         continue
                     streamed_output.append(line)
-                    yield AgentRunUpdate(
-                        kind="progress",
-                        message="Codex output updated.",
-                        output_chunk=line,
-                    )
+                    event = _parse_json_event(line)
+                    if event is None:
+                        yield AgentRunUpdate(
+                            kind="progress",
+                            message="Codex output updated.",
+                            output_chunk=line,
+                            backend_session_id=backend_session_id,
+                        )
+                        continue
+                    if event.get("type") == "thread.started":
+                        backend_session_id = _optional_string(event.get("thread_id")) or backend_session_id
+                        yield AgentRunUpdate(
+                            kind="progress",
+                            message="Codex session ready.",
+                            backend_session_id=backend_session_id,
+                        )
+                        continue
+                    if event.get("type") == "item.completed":
+                        item = event.get("item") or {}
+                        if item.get("type") == "agent_message":
+                            text = _optional_string(item.get("text"))
+                            if text:
+                                yield AgentRunUpdate(
+                                    kind="progress",
+                                    message="Codex output updated.",
+                                    output_chunk=f"{text}\n",
+                                    backend_session_id=backend_session_id,
+                                )
                 process.stdout.close()
 
             returncode = process.wait(timeout=self._timeout_seconds)
@@ -266,7 +274,11 @@ class CodexCliRunner:
                     "".join(streamed_output),
                     "Codex CLI exited with a non-zero status.",
                 )
-                yield AgentRunUpdate(kind="failed", message=detail)
+                yield AgentRunUpdate(
+                    kind="failed",
+                    message=detail,
+                    backend_session_id=backend_session_id,
+                )
                 return
 
             raw_result = self._read_output_file(output_file_path)
@@ -275,6 +287,7 @@ class CodexCliRunner:
                 kind="completed",
                 message=message,
                 raw_result=raw_result or "Codex completed without a final response body.",
+                backend_session_id=backend_session_id,
             )
         except subprocess.TimeoutExpired:
             if process is not None:
@@ -284,11 +297,13 @@ class CodexCliRunner:
             yield AgentRunUpdate(
                 kind="failed",
                 message=f"Codex CLI timed out after {self._timeout_seconds} seconds.",
+                backend_session_id=backend_session_id,
             )
         except OSError as exc:
             yield AgentRunUpdate(
                 kind="failed",
                 message=f"Failed to start codex CLI: {exc}",
+                backend_session_id=backend_session_id,
             )
         finally:
             with self._lock:
@@ -312,6 +327,51 @@ class CodexCliRunner:
         if not content:
             return None
         return content
+
+    def _build_command(
+        self,
+        *,
+        task: Task,
+        prompt: str,
+        workdir: str,
+        output_file_path: str,
+    ) -> list[str]:
+        command = [self._command]
+        resolved_model = task.effective_model or self._model
+        if resolved_model:
+            command.extend(["-m", resolved_model])
+        if self._approval_policy:
+            command.extend(["-a", self._approval_policy])
+        if self._sandbox:
+            command.extend(["-s", self._sandbox])
+        command.extend(["exec"])
+        if task.backend_session_id:
+            command.extend(
+                [
+                    "resume",
+                    "--json",
+                    "--skip-git-repo-check",
+                    "-o",
+                    output_file_path,
+                    task.backend_session_id,
+                    prompt,
+                ]
+            )
+            return command
+        command.extend(
+            [
+                "--json",
+                "-C",
+                workdir,
+                "--skip-git-repo-check",
+                "--color",
+                "never",
+                "-o",
+                output_file_path,
+                prompt,
+            ]
+        )
+        return command
 
 
 def create_agent_runner(
@@ -361,6 +421,24 @@ def _normalized_prompt(prompt: str) -> str:
     if _requires_confirmation(prompt):
         return prompt.split(":", 1)[1].strip()
     return prompt.strip()
+
+
+def _parse_json_event(line: str) -> dict[str, object] | None:
+    text = line.strip()
+    if not text or not text.startswith("{"):
+        return None
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _optional_string(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def _first_non_empty(*candidates: str) -> str:

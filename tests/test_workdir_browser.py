@@ -45,8 +45,9 @@ class WorkdirBrowserTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         html = response.text
-        self.assertIn("Choose One Of Two Ways", html)
-        self.assertIn("Type a path directly, or browse folders below like open-folder.", html)
+        self.assertIn("Browse Folders", html)
+        self.assertIn("Enter Path Manually", html)
+        self.assertIn("Option 1. Browse like open-folder", html)
         self.assertIn("api", html)
         self.assertIn("web", html)
         self.assertIn(str(self.project_root), html)

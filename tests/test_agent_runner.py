@@ -86,15 +86,19 @@ class CodexCliRunnerTest(unittest.TestCase):
                     "poco.agent.runner.subprocess.Popen",
                     self._fake_popen_factory(
                         output_text="codex final answer",
-                        stream_lines=["step 1\n", "step 2\n"],
+                        stream_lines=[
+                            '{"type":"thread.started","thread_id":"thread_123"}\n',
+                            '{"type":"item.completed","item":{"type":"agent_message","text":"step 1"}}\n',
+                        ],
                     ),
                 ):
                     updates = list(runner.start(task))
 
             self.assertEqual(updates[1].kind, "progress")
-            self.assertEqual(updates[1].output_chunk, "step 1\n")
+            self.assertEqual(updates[1].backend_session_id, "thread_123")
             self.assertEqual(updates[-1].kind, "completed")
             self.assertEqual(updates[-1].result_summary, "codex final answer")
+            self.assertEqual(updates[-1].backend_session_id, "thread_123")
 
     def test_codex_prefers_task_effective_workdir(self) -> None:
         with tempfile.TemporaryDirectory() as default_tmpdir, tempfile.TemporaryDirectory() as task_tmpdir:
@@ -123,6 +127,36 @@ class CodexCliRunnerTest(unittest.TestCase):
             self.assertEqual(updates[-1].kind, "completed")
             self.assertEqual(captured["cwd"], task_tmpdir)
             self.assertEqual(captured["command"][captured["command"].index("-C") + 1], task_tmpdir)
+
+    def test_codex_resume_uses_existing_backend_session_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = CodexCliRunner(command="codex", workdir=tmpdir)
+            task = Task(
+                id="task_resume",
+                requester_id="ou_demo",
+                prompt="continue from before",
+                source="feishu",
+                status=TaskStatus.RUNNING,
+                agent_backend="codex",
+                backend_session_id="thread_123",
+            )
+            captured: dict[str, object] = {}
+
+            with patch("poco.agent.runner.shutil.which", return_value="/opt/homebrew/bin/codex"):
+                with patch(
+                    "poco.agent.runner.subprocess.Popen",
+                    self._fake_popen_factory(
+                        output_text="continued answer",
+                        stream_lines=['{"type":"thread.started","thread_id":"thread_123"}\n'],
+                        captured=captured,
+                    ),
+                ):
+                    updates = list(runner.start(task))
+
+            self.assertEqual(updates[-1].kind, "completed")
+            self.assertIn("resume", captured["command"])
+            self.assertIn("thread_123", captured["command"])
+            self.assertNotIn("-C", captured["command"])
 
     def test_codex_failure_maps_to_failed_update(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

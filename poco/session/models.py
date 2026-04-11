@@ -20,6 +20,7 @@ class Session:
     project_id: str
     created_by: str
     status: SessionStatus = SessionStatus.ACTIVE
+    backend_session_id: str | None = None
     latest_task_id: str | None = None
     latest_prompt: str | None = None
     latest_result_preview: str | None = None
@@ -34,7 +35,10 @@ class Session:
         prompt: str,
         status: str,
         result_preview: str | None,
+        backend_session_id: str | None = None,
     ) -> None:
+        if backend_session_id:
+            self.backend_session_id = backend_session_id
         self.latest_task_id = task_id
         self.latest_prompt = prompt
         self.latest_task_status = status
@@ -57,6 +61,7 @@ class Session:
             "project_id": self.project_id,
             "created_by": self.created_by,
             "status": self.status.value,
+            "backend_session_id": self.backend_session_id,
             "latest_task_id": self.latest_task_id,
             "latest_prompt": self.latest_prompt,
             "latest_result_preview": self.latest_result_preview,

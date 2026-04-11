@@ -62,6 +62,7 @@ class SessionController:
                 prompt=task.prompt,
                 status=task.status.value,
                 result_preview=task.result_summary,
+                backend_session_id=task.backend_session_id,
             )
             self._store.save(session)
             return session

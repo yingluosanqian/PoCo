@@ -38,12 +38,15 @@ class StatePersistenceTest(unittest.TestCase):
                     project_id=project.id,
                     created_by="ou_demo_user",
                 )
+                session.backend_session_id = "thread_123"
+                session_controller1._store.save(session)  # type: ignore[attr-defined]
                 task = task_controller1.create_task(
                     requester_id="ou_demo_user",
                     prompt="ship it",
                     source="feishu_group_message",
                     project_id=project.id,
                     session_id=session.id,
+                    effective_model="gpt-5.4",
                     effective_workdir="/srv/poco/api",
                     notification_message_id="om_task_demo",
                     reply_receive_id="oc_group_demo",
@@ -74,9 +77,11 @@ class StatePersistenceTest(unittest.TestCase):
                 self.assertEqual(recovered_task.notification_message_id, "om_task_demo")
                 self.assertEqual(recovered_task.project_id, recovered_project.id)
                 self.assertEqual(recovered_task.session_id, session.id)
+                self.assertEqual(recovered_task.backend_session_id, "thread_123")
                 self.assertEqual(recovered_task.raw_result, "done")
                 recovered_session = session_controller2.get_session(session.id)
                 self.assertEqual(recovered_session.latest_task_id, task.id)
+                self.assertEqual(recovered_session.backend_session_id, "thread_123")
 
 
 if __name__ == "__main__":

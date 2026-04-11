@@ -86,6 +86,7 @@
 - 已存在从群工作面到 task 执行参数的最小落地链，当前群文本 `/run` 会解析绑定 project，并把当前 `active_workdir` 固化到 task 的 `effective_workdir`
 - 已存在最小按-task 工作目录执行能力，当前 Codex runner 会优先在 task 指定目录下运行
 - 已存在最小单-project 串行队列语义，当前同一群在已有 active task 未结束时，新消息会进入 `queued` 状态，待前一条结束后自动启动
+- 已开始把群工作区映射到真实 Codex conversation thread，当前 session / task 会持久化 `backend_session_id`，后续消息不再默认新开空白 `exec`
 - 已存在最小 card-first 发任务链，当前系统仍保留 `task_composer` / `task.submit` 这条内部任务创建路径，并可继承当前 workdir、触发异步 dispatch
 - 已存在最小 task status card 链，当前等待确认和终态会发送 `task_status` card，并可通过卡片执行 `Approve` / `Reject`
 - 已存在最小 task card 原位更新链，当前 notifier 首次发送 task status card 后会记录 message id，并在后续状态变化时优先更新同一张卡

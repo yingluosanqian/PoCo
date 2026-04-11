@@ -57,6 +57,7 @@ class _SqliteStoreBase:
                     prompt TEXT NOT NULL,
                     agent_backend TEXT NOT NULL,
                     effective_model TEXT,
+                    backend_session_id TEXT,
                     project_id TEXT,
                     session_id TEXT,
                     effective_workdir TEXT,
@@ -81,6 +82,7 @@ class _SqliteStoreBase:
                     project_id TEXT NOT NULL,
                     created_by TEXT NOT NULL,
                     status TEXT NOT NULL,
+                    backend_session_id TEXT,
                     latest_task_id TEXT,
                     latest_prompt TEXT,
                     latest_result_preview TEXT,
@@ -114,6 +116,14 @@ class _SqliteStoreBase:
                 connection.execute("ALTER TABLE tasks ADD COLUMN session_id TEXT")
             if "effective_model" not in task_columns:
                 connection.execute("ALTER TABLE tasks ADD COLUMN effective_model TEXT")
+            if "backend_session_id" not in task_columns:
+                connection.execute("ALTER TABLE tasks ADD COLUMN backend_session_id TEXT")
+            session_columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(sessions)").fetchall()
+            }
+            if "backend_session_id" not in session_columns:
+                connection.execute("ALTER TABLE sessions ADD COLUMN backend_session_id TEXT")
 
 
 class SqliteProjectStore(_SqliteStoreBase):
@@ -203,17 +213,18 @@ class SqliteTaskStore(_SqliteStoreBase):
             connection.execute(
                 """
                 INSERT INTO tasks (
-                    id, source, requester_id, prompt, agent_backend, effective_model, project_id, session_id,
+                    id, source, requester_id, prompt, agent_backend, effective_model, backend_session_id, project_id, session_id,
                     effective_workdir, notification_message_id, reply_receive_id,
                     reply_receive_id_type, status, awaiting_confirmation_reason,
                     live_output, raw_result, result_summary, created_at, updated_at, events
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     source = excluded.source,
                     requester_id = excluded.requester_id,
                     prompt = excluded.prompt,
                     agent_backend = excluded.agent_backend,
                     effective_model = excluded.effective_model,
+                    backend_session_id = excluded.backend_session_id,
                     project_id = excluded.project_id,
                     session_id = excluded.session_id,
                     effective_workdir = excluded.effective_workdir,
@@ -236,6 +247,7 @@ class SqliteTaskStore(_SqliteStoreBase):
                     task.prompt,
                     task.agent_backend,
                     task.effective_model,
+                    task.backend_session_id,
                     task.project_id,
                     task.session_id,
                     task.effective_workdir,
@@ -298,6 +310,7 @@ class SqliteTaskStore(_SqliteStoreBase):
             prompt=row["prompt"],
             agent_backend=row["agent_backend"],
             effective_model=row["effective_model"],
+            backend_session_id=row["backend_session_id"],
             project_id=row["project_id"],
             session_id=row["session_id"],
             effective_workdir=row["effective_workdir"],
@@ -359,13 +372,14 @@ class SqliteSessionStore(_SqliteStoreBase):
             connection.execute(
                 """
                 INSERT INTO sessions (
-                    id, project_id, created_by, status, latest_task_id, latest_prompt,
+                    id, project_id, created_by, status, backend_session_id, latest_task_id, latest_prompt,
                     latest_result_preview, latest_task_status, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     project_id = excluded.project_id,
                     created_by = excluded.created_by,
                     status = excluded.status,
+                    backend_session_id = excluded.backend_session_id,
                     latest_task_id = excluded.latest_task_id,
                     latest_prompt = excluded.latest_prompt,
                     latest_result_preview = excluded.latest_result_preview,
@@ -378,6 +392,7 @@ class SqliteSessionStore(_SqliteStoreBase):
                     session.project_id,
                     session.created_by,
                     session.status.value,
+                    session.backend_session_id,
                     session.latest_task_id,
                     session.latest_prompt,
                     session.latest_result_preview,
@@ -411,6 +426,7 @@ class SqliteSessionStore(_SqliteStoreBase):
             project_id=row["project_id"],
             created_by=row["created_by"],
             status=SessionStatus(row["status"]),
+            backend_session_id=row["backend_session_id"],
             latest_task_id=row["latest_task_id"],
             latest_prompt=row["latest_prompt"],
             latest_result_preview=row["latest_result_preview"],

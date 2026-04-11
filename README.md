@@ -267,6 +267,7 @@ Current interaction model:
 - Group text `/run` now resolves the bound project and current workspace workdir, then stamps that into task execution context
 - Bound group workspaces now also treat ordinary plain-text messages as task prompts by default
 - Bound group workspaces now run tasks in a single-project queue: if one task is still active, the next message is queued instead of starting a parallel Codex run
+- codex-backed groups now persist the upstream Codex thread id and reuse it with `exec resume`, so follow-up messages continue the same Codex conversation instead of starting from a blank context
 - Group text-created tasks now reply with a single initial `task_status` card, and later live/terminal updates stay on that same card
 - Codex execution now prefers the task's `effective_workdir` over the global fallback directory
 - group card `task.submit` now reuses the same task-execution path and inherits the current workspace workdir

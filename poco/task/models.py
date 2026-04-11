@@ -41,6 +41,7 @@ class Task:
     prompt: str
     agent_backend: str = "unknown"
     effective_model: str | None = None
+    backend_session_id: str | None = None
     project_id: str | None = None
     session_id: str | None = None
     effective_workdir: str | None = None
@@ -73,9 +74,12 @@ class Task:
         *,
         effective_model: str | None = None,
         effective_workdir: str | None = None,
+        backend_session_id: str | None = None,
     ) -> None:
         self.effective_model = effective_model
         self.effective_workdir = effective_workdir
+        if backend_session_id is not None:
+            self.backend_session_id = backend_session_id
         self.updated_at = utc_now()
 
     def set_result(self, raw_result: str | None) -> None:
@@ -104,6 +108,7 @@ class Task:
             "prompt": self.prompt,
             "agent_backend": self.agent_backend,
             "effective_model": self.effective_model,
+            "backend_session_id": self.backend_session_id,
             "project_id": self.project_id,
             "session_id": self.session_id,
             "effective_workdir": self.effective_workdir,

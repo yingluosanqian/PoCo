@@ -57,6 +57,24 @@ class TaskControllerTest(unittest.TestCase):
         self.assertEqual(task.session_id, session.id)
         self.assertEqual(updated.latest_task_id, task.id)
 
+    def test_task_creation_inherits_backend_session_id_from_session(self) -> None:
+        session = self.session_controller.create_session(
+            project_id="proj_demo",
+            created_by="ou_demo",
+        )
+        session.backend_session_id = "thread_123"
+        self.session_controller._store.save(session)  # type: ignore[attr-defined]
+
+        task = self.controller.create_task(
+            requester_id="ou_demo",
+            prompt="continue",
+            source="feishu",
+            project_id="proj_demo",
+            session_id=session.id,
+        )
+
+        self.assertEqual(task.backend_session_id, "thread_123")
+
     def test_queue_task_marks_task_queued(self) -> None:
         task = self.controller.create_task(
             requester_id="ou_demo",

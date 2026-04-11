@@ -31,6 +31,7 @@ class SessionControllerTest(unittest.TestCase):
             prompt="fix the api handler",
             source="feishu_group_message",
             agent_backend="codex",
+            backend_session_id="thread_123",
             project_id="proj_1",
             session_id=session.id,
             status=TaskStatus.COMPLETED,
@@ -43,6 +44,7 @@ class SessionControllerTest(unittest.TestCase):
         assert updated is not None
         self.assertEqual(updated.latest_task_id, "task_1")
         self.assertEqual(updated.latest_task_status, "completed")
+        self.assertEqual(updated.backend_session_id, "thread_123")
         self.assertIn("patched", updated.summary_text())
 
 
