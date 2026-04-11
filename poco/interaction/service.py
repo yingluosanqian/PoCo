@@ -134,10 +134,19 @@ class InteractionService:
             reply_receive_id=reply_receive_id,
             reply_receive_id_type=reply_receive_id_type,
         )
+        dispatch_action = "start"
+        headline = "Task created."
+        if project_id and self._controller.has_active_task_for_project(
+            project_id,
+            exclude_task_id=task.id,
+        ):
+            task = self._controller.queue_task(task.id)
+            dispatch_action = None
+            headline = "Task queued."
         return InteractionResponse(
-            text=render_task_text(task, headline="Task created."),
+            text=render_task_text(task, headline=headline),
             task_id=task.id,
-            dispatch_action="start",
+            dispatch_action=dispatch_action,
         )
 
     def _task_lookup_response(self, task_id: str) -> InteractionResponse:
@@ -157,7 +166,7 @@ class InteractionService:
         return InteractionResponse(
             text=render_task_text(task, headline=headline),
             task_id=task.id,
-            dispatch_action="resume" if approved else None,
+            dispatch_action="resume" if approved else "advance_queue",
         )
 
     def _help_text(

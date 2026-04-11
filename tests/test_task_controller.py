@@ -57,6 +57,40 @@ class TaskControllerTest(unittest.TestCase):
         self.assertEqual(task.session_id, session.id)
         self.assertEqual(updated.latest_task_id, task.id)
 
+    def test_queue_task_marks_task_queued(self) -> None:
+        task = self.controller.create_task(
+            requester_id="ou_demo",
+            prompt="summarize the repository",
+            source="feishu",
+            project_id="proj_demo",
+        )
+
+        queued = self.controller.queue_task(task.id)
+
+        self.assertEqual(queued.status, TaskStatus.QUEUED)
+
+    def test_claim_next_queued_task_promotes_oldest_task(self) -> None:
+        first = self.controller.create_task(
+            requester_id="ou_demo",
+            prompt="first",
+            source="feishu",
+            project_id="proj_demo",
+        )
+        second = self.controller.create_task(
+            requester_id="ou_demo",
+            prompt="second",
+            source="feishu",
+            project_id="proj_demo",
+        )
+        self.controller.queue_task(first.id)
+        self.controller.queue_task(second.id)
+
+        claimed = self.controller.claim_next_queued_task("proj_demo")
+
+        self.assertIsNotNone(claimed)
+        self.assertEqual(claimed.id, first.id)
+        self.assertEqual(claimed.status, TaskStatus.CREATED)
+
     def test_confirm_prefix_moves_task_to_waiting_state(self) -> None:
         task = self.controller.create_task(
             requester_id="ou_demo",

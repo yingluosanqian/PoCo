@@ -77,7 +77,7 @@
 - 已存在真实 Feishu interactive card 发送能力，DM 消息当前可主动回发 project list card
 - 已存在 DM 首页卡片上的首批真实 callback 动作，当前至少可点击创建 project，并在真实飞书模式下自动拉起对应工作群；新群会收到第一张 workspace overview card
 - 已存在 DM `Project Config Card` 的最小实现，当前至少可只读展示 agent、repo、default workdir、workspace group，并进入对应的只读配置入口卡
-- 已移除多余的 Group `Workdir Switcher Card` 中间页，当前 `Change Workdir` 已直接进入 `Enter Path` 输入卡
+- 已将群侧 `Change Workdir` 主路径切到 browser 目录选择页，当前页面同时支持手工输入路径和目录浏览两种方式
 - 已将群首卡收敛为标题承载元信息 + 三个主动作，当前主动作仅保留 `Stop`、`Change Workdir`、`Choose Model`
 - 已存在最小 model 选择链路，当前 `Choose Model` 已可进入独立选择卡，apply 后会回到主 workspace 卡
 - 已存在最小 in-memory workspace context，当前 `Use Default` 已可把 `active_workdir` 和 `source=default` 写入当前群工作面的上下文状态
@@ -85,6 +85,7 @@
 - 已存在最小 preset 存储与应用链路，当前可在 DM 中新增 project-level presets，并在群工作面应用为 `source=preset`
 - 已存在从群工作面到 task 执行参数的最小落地链，当前群文本 `/run` 会解析绑定 project，并把当前 `active_workdir` 固化到 task 的 `effective_workdir`
 - 已存在最小按-task 工作目录执行能力，当前 Codex runner 会优先在 task 指定目录下运行
+- 已存在最小单-project 串行队列语义，当前同一群在已有 active task 未结束时，新消息会进入 `queued` 状态，待前一条结束后自动启动
 - 已存在最小 card-first 发任务链，当前系统仍保留 `task_composer` / `task.submit` 这条内部任务创建路径，并可继承当前 workdir、触发异步 dispatch
 - 已存在最小 task status card 链，当前等待确认和终态会发送 `task_status` card，并可通过卡片执行 `Approve` / `Reject`
 - 已存在最小 task card 原位更新链，当前 notifier 首次发送 task status card 后会记录 message id，并在后续状态变化时优先更新同一张卡

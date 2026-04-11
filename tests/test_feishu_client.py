@@ -100,7 +100,7 @@ class FeishuClientTest(unittest.TestCase):
             surface=Surface.GROUP,
         )
 
-        card = FeishuCardRenderer().render(instruction)
+        card = FeishuCardRenderer(app_base_url="https://poco.test").render(instruction)
 
         self.assertEqual(
             card["header"]["title"]["content"],
@@ -111,12 +111,8 @@ class FeishuClientTest(unittest.TestCase):
         change_model_button = card["body"]["elements"][2]
         self.assertIn("Stop is available only while a task is running.", idle_hint["text"]["content"])
         self.assertEqual(
-            change_workdir_button["behaviors"][0]["value"]["surface"],
-            "group",
-        )
-        self.assertEqual(
-            change_workdir_button["behaviors"][0]["value"]["intent_key"],
-            "workspace.enter_path",
+            change_workdir_button["url"],
+            "https://poco.test/ui/workdir?project_id=proj_1",
         )
         self.assertEqual(change_model_button["behaviors"][0]["value"]["surface"], "group")
         self.assertEqual(
@@ -160,7 +156,7 @@ class FeishuClientTest(unittest.TestCase):
         recorder = FeishuDebugRecorder()
         bootstrapper = FeishuProjectBootstrapper(
             message_client,  # type: ignore[arg-type]
-            renderer=FeishuCardRenderer(),
+            renderer=FeishuCardRenderer(app_base_url="https://poco.test"),
             project_controller=project_controller,
             debug_recorder=recorder,
         )
@@ -176,6 +172,10 @@ class FeishuClientTest(unittest.TestCase):
         self.assertEqual(sent["receive_id_type"], "chat_id")
         card = sent["card"]
         self.assertEqual(card["header"]["title"]["content"], "[Idle] Workspace: PoCo (codex, no working dir)")
+        self.assertEqual(
+            card["body"]["elements"][1]["url"],
+            f"https://poco.test/ui/workdir?project_id={project.id}",
+        )
         change_model_button = card["body"]["elements"][2]
         self.assertEqual(change_model_button["behaviors"][0]["value"]["surface"], "group")
         self.assertEqual(project.workspace_message_id, "om_workspace_bootstrap_1")

@@ -40,6 +40,8 @@ def render_task_text(task: Task, *, headline: str, result_limit: int = 1200) -> 
 
 
 def headline_for_notification(task: Task) -> str:
+    if task.status == TaskStatus.QUEUED:
+        return "Task queued."
     if task.status == TaskStatus.WAITING_FOR_CONFIRMATION:
         return "Task waiting for confirmation."
     if task.status == TaskStatus.COMPLETED:

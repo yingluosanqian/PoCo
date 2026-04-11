@@ -463,11 +463,19 @@ class TaskIntentHandler:
             reply_receive_id=reply_receive_id,
             reply_receive_id_type=reply_receive_id_type,
         )
+        message = f"Task created for {project.name}"
+        if self.task_controller.has_active_task_for_project(
+            project.id,
+            exclude_task_id=task.id,
+        ):
+            task = self.task_controller.queue_task(task.id)
+            message = f"Task queued for {project.name}"
         if self.dispatcher is not None:
-            self.dispatcher.dispatch_start(task.id)
+            if task.status.value == "created":
+                self.dispatcher.dispatch_start(task.id)
         return build_task_status_result(
             task,
-            message=f"Task created for {project.name}",
+            message=message,
         )
 
     def _open_task(self, intent: ActionIntent) -> IntentDispatchResult:
@@ -501,6 +509,8 @@ class TaskIntentHandler:
             task = self.task_controller.cancel_task(task_id)
         except (TaskStateError, ValueError) as exc:
             return _rejected(intent, str(exc))
+        if self.dispatcher is not None and task.project_id:
+            self.dispatcher.dispatch_next_queued(task.project_id)
         return build_task_status_result(
             task,
             message="Task stopped.",
@@ -512,6 +522,8 @@ class TaskIntentHandler:
             task = self.task_controller.resolve_confirmation(task_id, approved=False)
         except ValueError as exc:
             return _rejected(intent, str(exc))
+        if self.dispatcher is not None and task.project_id:
+            self.dispatcher.dispatch_next_queued(task.project_id)
         return build_task_status_result(
             task,
             message="Task rejected.",

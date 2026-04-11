@@ -199,6 +199,10 @@ class FeishuGateway:
                 self._dispatcher.dispatch_start(response.task_id)
             elif response.dispatch_action == "resume":
                 self._dispatcher.dispatch_resume(response.task_id)
+            elif response.dispatch_action == "advance_queue" and self._task_controller is not None:
+                task = self._task_controller.get_task(response.task_id)
+                if task.project_id:
+                    self._dispatcher.dispatch_next_queued(task.project_id)
 
         return {
             "ok": True,

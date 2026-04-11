@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import urlencode
 
 from poco.interaction.card_models import PlatformRenderInstruction
 
 
 class FeishuCardRenderer:
+    def __init__(self, *, app_base_url: str | None = None) -> None:
+        self._app_base_url = app_base_url.rstrip("/") if app_base_url else None
+
     def render(self, instruction: PlatformRenderInstruction) -> dict[str, Any]:
         if instruction.template_key == "project_list":
             return _render_project_list(instruction.template_data)
@@ -38,6 +42,7 @@ class FeishuCardRenderer:
             return _render_workspace_overview(
                 instruction.template_data,
                 surface=instruction.surface.value,
+                app_base_url=self._app_base_url,
             )
         if instruction.template_key == "workspace_use_default_dir":
             return _render_workspace_use_default_dir(
@@ -73,6 +78,7 @@ class FeishuCardRenderer:
             return _render_task_status(
                 instruction.template_data,
                 surface=instruction.surface.value,
+                app_base_url=self._app_base_url,
             )
         return _render_fallback(instruction.template_key, instruction.template_data)
 
@@ -303,6 +309,7 @@ def _render_workspace_overview(
     data: dict[str, Any],
     *,
     surface: str,
+    app_base_url: str | None,
 ) -> dict[str, Any]:
     project = data["project"]
     latest_status = data.get("latest_task_status") or "none"
@@ -310,6 +317,7 @@ def _render_workspace_overview(
     current_workdir = data.get("current_workdir") or "no working dir"
     current_agent = data.get("current_agent") or project["backend"]
     current_model = data.get("current_model")
+    workdir_url = workdir_browser_url(app_base_url, project_id=project["id"])
     stop_enabled = bool(data.get("stop_enabled"))
     elements: list[dict[str, Any]] = []
     if stop_enabled:
@@ -329,13 +337,14 @@ def _render_workspace_overview(
         elements.append(_plain_text("Stop is available only while a task is running."))
     elements.extend(
         [
-            _button(
+            _action_button(
                 label="Change Workdir",
+                url=workdir_url,
                 intent_value={
                     "intent_key": "workspace.enter_path",
                     "surface": surface,
                     "project_id": project["id"],
-                },
+                } if workdir_url is None else None,
                 name=f"enter_workdir_path_{project['id']}",
             ),
             _button(
@@ -575,6 +584,7 @@ def _render_task_status(
     data: dict[str, Any],
     *,
     surface: str,
+    app_base_url: str | None,
 ) -> dict[str, Any]:
     task = data["task"]
     status = task.get("status") or "unknown"
@@ -615,6 +625,8 @@ def _render_task_status(
         )
     elif status == "running":
         elements.append(_plain_text(live_output or "Waiting for agent output..."))
+    elif status == "queued":
+        elements.append(_plain_text("Queued. This task will start after the current task finishes."))
     else:
         elements.append(_plain_text(result_chunk))
         if total_pages > 1:
@@ -648,6 +660,7 @@ def _render_task_status(
                 )
 
     if task.get("project_id"):
+        workdir_url = workdir_browser_url(app_base_url, project_id=task["project_id"])
         if status in {"created", "running"}:
             elements.append(
                 _button(
@@ -662,13 +675,14 @@ def _render_task_status(
                 )
             )
         elements.append(
-            _button(
+            _action_button(
                 label="Change Working Dir",
+                url=workdir_url,
                 intent_value={
                     "intent_key": "workspace.enter_path",
                     "surface": surface,
                     "project_id": task["project_id"],
-                },
+                } if workdir_url is None else None,
                 name=f"task_change_workdir_{task['id']}",
             )
         )
@@ -831,6 +845,38 @@ def _button(
     }
 
 
+def _action_button(
+    *,
+    label: str,
+    name: str,
+    style: str = "default",
+    intent_value: dict[str, str] | None = None,
+    url: str | None = None,
+) -> dict[str, Any]:
+    if url is not None:
+        return {
+            "tag": "button",
+            "text": {
+                "tag": "plain_text",
+                "content": label,
+            },
+            "type": style,
+            "width": "default",
+            "size": "medium",
+            "name": name,
+            "url": url,
+            "margin": "0px 0px 12px 0px",
+        }
+    if intent_value is None:
+        raise ValueError("intent_value is required when url is not provided.")
+    return _button(
+        label=label,
+        intent_value=intent_value,
+        name=name,
+        style=style,
+    )
+
+
 def _input(
     *,
     name: str,
@@ -906,7 +952,15 @@ def _workspace_status_label(status: str) -> str:
     return "Idle"
 
 
+def workdir_browser_url(app_base_url: str | None, *, project_id: str) -> str | None:
+    if not app_base_url:
+        return None
+    return f"{app_base_url}/ui/workdir?{urlencode({'project_id': project_id})}"
+
+
 def _task_status_label(status: str) -> str:
+    if status == "queued":
+        return "Queued"
     if status == "waiting_for_confirmation":
         return "Waiting"
     if status == "completed":

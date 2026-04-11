@@ -23,12 +23,18 @@ class AsyncTaskDispatcher:
     def dispatch_resume(self, task_id: str) -> None:
         self._launch(lambda: self._run_resume(task_id))
 
+    def dispatch_next_queued(self, project_id: str) -> None:
+        next_task = self._controller.claim_next_queued_task(project_id)
+        if next_task is None:
+            return
+        self.dispatch_start(next_task.id)
+
     def _launch(self, target) -> None:  # type: ignore[no-untyped-def]
         Thread(target=target, daemon=True).start()
 
     def _run_start(self, task_id: str) -> None:
         try:
-            self._controller.start_task_execution_with_callback(
+            task = self._controller.start_task_execution_with_callback(
                 task_id,
                 on_update=self._notify_if_needed,
             )
@@ -38,10 +44,11 @@ class AsyncTaskDispatcher:
                 f"Unhandled dispatcher error: {exc}",
             )
             self._notify_if_needed(task)
+        self._dispatch_next_if_possible(task)
 
     def _run_resume(self, task_id: str) -> None:
         try:
-            self._controller.resume_task_execution_with_callback(
+            task = self._controller.resume_task_execution_with_callback(
                 task_id,
                 on_update=self._notify_if_needed,
             )
@@ -51,6 +58,7 @@ class AsyncTaskDispatcher:
                 f"Unhandled dispatcher error: {exc}",
             )
             self._notify_if_needed(task)
+        self._dispatch_next_if_possible(task)
 
     def notify_task(self, task: Task) -> None:
         self._notify_if_needed(task)
@@ -60,9 +68,21 @@ class AsyncTaskDispatcher:
             self._notifier.notify_task(task)
             return
         if task.status in {
+            TaskStatus.QUEUED,
             TaskStatus.WAITING_FOR_CONFIRMATION,
             TaskStatus.COMPLETED,
             TaskStatus.FAILED,
             TaskStatus.CANCELLED,
         }:
             self._notifier.notify_task(task)
+
+    def _dispatch_next_if_possible(self, task: Task) -> None:
+        if task.status not in {
+            TaskStatus.COMPLETED,
+            TaskStatus.FAILED,
+            TaskStatus.CANCELLED,
+        }:
+            return
+        if not task.project_id:
+            return
+        self.dispatch_next_queued(task.project_id)

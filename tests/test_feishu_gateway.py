@@ -72,6 +72,9 @@ class FakeDispatcher(AsyncTaskDispatcher):
     def dispatch_resume(self, task_id: str) -> None:
         self.actions.append(("resume", task_id))
 
+    def dispatch_next_queued(self, project_id: str) -> None:
+        self.actions.append(("next", project_id))
+
 
 class FeishuGatewayTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -366,6 +369,60 @@ class FeishuGatewayTest(unittest.TestCase):
         self.assertEqual(task.effective_workdir, "/srv/poco/api")
         self.assertIsNotNone(task.notification_message_id)
         self.assertEqual(response["reply_preview"], "[card] task_status:created")
+
+    def test_second_group_message_queues_when_first_is_still_active(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+            group_chat_id="oc_demo_chat",
+        )
+        self.workspace_controller.set_active_workdir(
+            project,
+            workdir="/srv/poco/api",
+            source="manual",
+        )
+        first_payload = {
+            "token": "verify-token",
+            "event": {
+                "sender": {"sender_id": {"open_id": "ou_demo_user"}},
+                "message": {
+                    "chat_type": "group",
+                    "chat_id": "oc_demo_chat",
+                    "content": json.dumps({"text": "first prompt"}),
+                },
+            },
+        }
+        second_payload = {
+            "token": "verify-token",
+            "event": {
+                "sender": {"sender_id": {"open_id": "ou_demo_user"}},
+                "message": {
+                    "chat_type": "group",
+                    "chat_id": "oc_demo_chat",
+                    "content": json.dumps({"text": "second prompt"}),
+                },
+            },
+        }
+
+        first = self.gateway.handle_event(
+            first_payload,
+            headers={},
+            raw_body=json.dumps(first_payload).encode("utf-8"),
+        )
+        second = self.gateway.handle_event(
+            second_payload,
+            headers={},
+            raw_body=json.dumps(second_payload).encode("utf-8"),
+        )
+
+        self.assertEqual(len(self.dispatcher.actions), 1)
+        self.assertEqual(self.dispatcher.actions[0][0], "start")
+        first_task = self.controller.get_task(first["task_id"])
+        second_task = self.controller.get_task(second["task_id"])
+        self.assertEqual(first_task.status.value, "created")
+        self.assertEqual(second_task.status.value, "queued")
+        self.assertEqual(second["reply_preview"], "[card] task_status:queued")
 
     def test_plain_group_message_persists_notification_message_id_with_sqlite_store(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:

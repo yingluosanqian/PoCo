@@ -64,6 +64,9 @@ class FakeTaskDispatcher:
     def dispatch_resume(self, task_id: str) -> None:
         self.actions.append(("resume", task_id))
 
+    def dispatch_next_queued(self, project_id: str) -> None:
+        self.actions.append(("next", project_id))
+
 
 class FeishuCardGatewayTest(unittest.TestCase):
     def setUp(self) -> None:

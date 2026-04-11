@@ -11,6 +11,7 @@ def utc_now() -> datetime:
 
 class TaskStatus(StrEnum):
     CREATED = "created"
+    QUEUED = "queued"
     RUNNING = "running"
     WAITING_FOR_CONFIRMATION = "waiting_for_confirmation"
     COMPLETED = "completed"

@@ -29,6 +29,9 @@ class StreamingRunner:
     def is_ready(self) -> tuple[bool, str]:
         return True, "ready"
 
+    def resolve_execution_context(self, task: Task) -> tuple[str | None, str | None]:
+        return task.effective_model, task.effective_workdir
+
     def start(self, task: Task):
         yield AgentRunUpdate(
             kind="progress",
@@ -118,6 +121,32 @@ class TaskDispatcherTest(unittest.TestCase):
         self.assertEqual(len(notifier.tasks), 2)
         self.assertEqual(notifier.tasks[0].status.value, "running")
         self.assertIn("line 1", notifier.tasks[0].live_output or "")
+
+    def test_dispatch_start_starts_next_queued_task_after_completion(self) -> None:
+        first = self.controller.create_task(
+            requester_id="ou_demo",
+            prompt="first task",
+            source="feishu",
+            project_id="proj_demo",
+            reply_receive_id="oc_demo_chat",
+            reply_receive_id_type="chat_id",
+        )
+        second = self.controller.create_task(
+            requester_id="ou_demo",
+            prompt="second task",
+            source="feishu",
+            project_id="proj_demo",
+            reply_receive_id="oc_demo_chat",
+            reply_receive_id_type="chat_id",
+        )
+        self.controller.queue_task(second.id)
+
+        self.dispatcher.dispatch_start(first.id)
+
+        updated_first = self.controller.get_task(first.id)
+        updated_second = self.controller.get_task(second.id)
+        self.assertEqual(updated_first.status.value, "completed")
+        self.assertEqual(updated_second.status.value, "completed")
 
 
 if __name__ == "__main__":

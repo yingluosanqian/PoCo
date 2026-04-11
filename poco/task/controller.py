@@ -99,6 +99,63 @@ class TaskController:
                 if task.project_id == project_id
             ]
 
+    def has_active_task_for_project(
+        self,
+        project_id: str,
+        *,
+        exclude_task_id: str | None = None,
+    ) -> bool:
+        with self._lock:
+            for task in self._store.list_all():
+                if task.project_id != project_id:
+                    continue
+                if exclude_task_id and task.id == exclude_task_id:
+                    continue
+                if task.status in {
+                    TaskStatus.CREATED,
+                    TaskStatus.RUNNING,
+                    TaskStatus.WAITING_FOR_CONFIRMATION,
+                }:
+                    return True
+            return False
+
+    def queue_task(
+        self,
+        task_id: str,
+        *,
+        reason: str = "Queued behind the current running task.",
+    ) -> Task:
+        with self._lock:
+            task = self.get_task(task_id)
+            if task.status != TaskStatus.CREATED:
+                raise TaskStateError(f"Task {task_id} is not in a queueable state.")
+            task.set_status(TaskStatus.QUEUED)
+            task.add_event("task_queued", reason)
+            self._store.save(task)
+            self._sync_session(task)
+            return task
+
+    def claim_next_queued_task(self, project_id: str) -> Task | None:
+        with self._lock:
+            if self.has_active_task_for_project(project_id):
+                return None
+            queued = sorted(
+                (
+                    task
+                    for task in self._store.list_all()
+                    if task.project_id == project_id and task.status == TaskStatus.QUEUED
+                ),
+                key=lambda task: task.created_at,
+            )
+            if not queued:
+                return None
+            task = queued[0]
+            task.set_status(TaskStatus.CREATED)
+            task.add_event("task_dequeued", "Task left the queue and is ready to start.")
+            self._store.save(task)
+            self._sync_session(task)
+            return task
+
     def resolve_confirmation(self, task_id: str, approved: bool) -> Task:
         with self._lock:
             task = self.get_task(task_id)
