@@ -39,6 +39,7 @@ class Task:
     requester_id: str
     prompt: str
     agent_backend: str = "unknown"
+    effective_model: str | None = None
     project_id: str | None = None
     session_id: str | None = None
     effective_workdir: str | None = None
@@ -66,6 +67,16 @@ class Task:
         self.notification_message_id = message_id
         self.updated_at = utc_now()
 
+    def set_execution_context(
+        self,
+        *,
+        effective_model: str | None = None,
+        effective_workdir: str | None = None,
+    ) -> None:
+        self.effective_model = effective_model
+        self.effective_workdir = effective_workdir
+        self.updated_at = utc_now()
+
     def set_result(self, raw_result: str | None) -> None:
         self.raw_result = raw_result
         self.result_summary = _result_preview(raw_result)
@@ -91,6 +102,7 @@ class Task:
             "requester_id": self.requester_id,
             "prompt": self.prompt,
             "agent_backend": self.agent_backend,
+            "effective_model": self.effective_model,
             "project_id": self.project_id,
             "session_id": self.session_id,
             "effective_workdir": self.effective_workdir,

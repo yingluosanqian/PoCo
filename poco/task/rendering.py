@@ -8,6 +8,7 @@ def render_task_text(task: Task, *, headline: str, result_limit: int = 1200) -> 
         headline,
         f"task_id={task.id}",
         f"agent_backend={task.agent_backend}",
+        f"effective_model={task.effective_model or task.agent_backend}",
         f"status={task.status.value}",
         f"source={task.source}",
         f"prompt={task.prompt}",

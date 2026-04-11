@@ -99,7 +99,6 @@ class FeishuGatewayTest(unittest.TestCase):
                     "project.open": ProjectIntentHandler(self.project_controller),
                     "project.bind_group": ProjectIntentHandler(self.project_controller),
                     "workspace.open": workspace_handler,
-                    "workspace.refresh": workspace_handler,
                 }
             ),
             renderer=FeishuCardRenderer(),

@@ -235,8 +235,6 @@ class WorkspaceIntentHandler:
     session_controller: SessionController | None = None
 
     def handle(self, intent: ActionIntent) -> IntentDispatchResult:
-        if intent.intent_key == "workspace.open_workdir_switcher":
-            return self._open_workdir_switcher(intent)
         if intent.intent_key == "workspace.use_default_dir":
             return self._open_use_default_dir(intent)
         if intent.intent_key == "workspace.choose_preset":
@@ -249,7 +247,7 @@ class WorkspaceIntentHandler:
             return self._apply_preset_dir(intent)
         if intent.intent_key == "workspace.apply_entered_path":
             return self._apply_entered_path(intent)
-        if intent.intent_key not in {"workspace.open", "workspace.refresh"}:
+        if intent.intent_key != "workspace.open":
             return _rejected(intent, f"Unsupported workspace intent: {intent.intent_key}")
         project = _get_project_or_reject(self.project_controller, intent)
         if isinstance(project, IntentDispatchResult):
@@ -267,20 +265,6 @@ class WorkspaceIntentHandler:
             latest_task=_latest_project_task(self.task_controller, project.id),
         )
 
-    def _open_workdir_switcher(self, intent: ActionIntent) -> IntentDispatchResult:
-        project = _get_project_or_reject(self.project_controller, intent)
-        if isinstance(project, IntentDispatchResult):
-            return project
-        context = self.workspace_controller.get_context(project)
-        return IntentDispatchResult(
-            status=DispatchStatus.OK,
-            intent_key=intent.intent_key,
-            resource_refs=ResourceRefs(project_id=project.id),
-            view_model=_workspace_workdir_switcher_view_model(project, context=context),
-            refresh_mode=RefreshMode.REPLACE_CURRENT,
-            message=f"Workdir switcher for {project.name}",
-        )
-
     def _open_use_default_dir(self, intent: ActionIntent) -> IntentDispatchResult:
         project = _get_project_or_reject(self.project_controller, intent)
         if isinstance(project, IntentDispatchResult):
@@ -324,7 +308,7 @@ class WorkspaceIntentHandler:
             status=DispatchStatus.OK,
             intent_key=intent.intent_key,
             resource_refs=ResourceRefs(project_id=project.id),
-            view_model=_workspace_workdir_switcher_view_model(project, context=context),
+            view_model=_workspace_enter_path_view_model(project, context=context),
             refresh_mode=RefreshMode.REPLACE_CURRENT,
             message=f"Using preset dir for {project.name}",
         )
@@ -369,114 +353,7 @@ class WorkspaceIntentHandler:
             status=DispatchStatus.OK,
             intent_key=intent.intent_key,
             resource_refs=ResourceRefs(project_id=project.id),
-            view_model=_workspace_workdir_switcher_view_model(project, context=context),
-            refresh_mode=RefreshMode.REPLACE_CURRENT,
-            message=f"Updated workdir for {project.name}",
-        )
-
-    def _open_workdir_switcher(self, intent: ActionIntent) -> IntentDispatchResult:
-        project = _get_project_or_reject(self.project_controller, intent)
-        if isinstance(project, IntentDispatchResult):
-            return project
-        context = self.workspace_controller.get_context(project)
-        return IntentDispatchResult(
-            status=DispatchStatus.OK,
-            intent_key=intent.intent_key,
-            resource_refs=ResourceRefs(project_id=project.id),
-            view_model=_workspace_workdir_switcher_view_model(project, context=context),
-            refresh_mode=RefreshMode.REPLACE_CURRENT,
-            message=f"Workdir switcher for {project.name}",
-        )
-
-    def _open_use_default_dir(self, intent: ActionIntent) -> IntentDispatchResult:
-        project = _get_project_or_reject(self.project_controller, intent)
-        if isinstance(project, IntentDispatchResult):
-            return project
-        try:
-            context = self.workspace_controller.use_default_workdir(project)
-        except WorkspaceContextError as exc:
-            return _rejected(intent, str(exc))
-        return IntentDispatchResult(
-            status=DispatchStatus.OK,
-            intent_key=intent.intent_key,
-            resource_refs=ResourceRefs(project_id=project.id),
-            view_model=_workspace_use_default_dir_view_model(project, context=context),
-            refresh_mode=RefreshMode.REPLACE_CURRENT,
-            message=f"Using default dir for {project.name}",
-        )
-
-    def _open_choose_preset(self, intent: ActionIntent) -> IntentDispatchResult:
-        project = _get_project_or_reject(self.project_controller, intent)
-        if isinstance(project, IntentDispatchResult):
-            return project
-        return IntentDispatchResult(
-            status=DispatchStatus.OK,
-            intent_key=intent.intent_key,
-            resource_refs=ResourceRefs(project_id=project.id),
-            view_model=_workspace_choose_preset_view_model(project),
-            refresh_mode=RefreshMode.REPLACE_CURRENT,
-            message=f"Preset dirs for {project.name}",
-        )
-
-    def _apply_preset_dir(self, intent: ActionIntent) -> IntentDispatchResult:
-        project = _get_project_or_reject(self.project_controller, intent)
-        if isinstance(project, IntentDispatchResult):
-            return project
-        preset = _extract_workdir_path(intent.payload)
-        try:
-            context = self.workspace_controller.use_preset_workdir(project, preset)
-        except WorkspaceContextError as exc:
-            return _rejected(intent, str(exc))
-        return IntentDispatchResult(
-            status=DispatchStatus.OK,
-            intent_key=intent.intent_key,
-            resource_refs=ResourceRefs(project_id=project.id),
-            view_model=_workspace_workdir_switcher_view_model(project, context=context),
-            refresh_mode=RefreshMode.REPLACE_CURRENT,
-            message=f"Using preset dir for {project.name}",
-        )
-
-    def _open_use_recent_dir(self, intent: ActionIntent) -> IntentDispatchResult:
-        project = _get_project_or_reject(self.project_controller, intent)
-        if isinstance(project, IntentDispatchResult):
-            return project
-        return IntentDispatchResult(
-            status=DispatchStatus.OK,
-            intent_key=intent.intent_key,
-            resource_refs=ResourceRefs(project_id=project.id),
-            view_model=_workspace_recent_dirs_view_model(project),
-            refresh_mode=RefreshMode.REPLACE_CURRENT,
-            message=f"Recent dirs for {project.name}",
-        )
-
-    def _open_enter_path(self, intent: ActionIntent) -> IntentDispatchResult:
-        project = _get_project_or_reject(self.project_controller, intent)
-        if isinstance(project, IntentDispatchResult):
-            return project
-        context = self.workspace_controller.get_context(project)
-        return IntentDispatchResult(
-            status=DispatchStatus.OK,
-            intent_key=intent.intent_key,
-            resource_refs=ResourceRefs(project_id=project.id),
             view_model=_workspace_enter_path_view_model(project, context=context),
-            refresh_mode=RefreshMode.REPLACE_CURRENT,
-            message=f"Manual dir entry for {project.name}",
-        )
-
-    def _apply_entered_path(self, intent: ActionIntent) -> IntentDispatchResult:
-        project = _get_project_or_reject(self.project_controller, intent)
-        if isinstance(project, IntentDispatchResult):
-            return project
-        workdir = _extract_workdir_path(intent.payload)
-        try:
-            context = self.workspace_controller.use_manual_workdir(project, workdir)
-        except WorkspaceContextError as exc:
-            return _rejected(intent, str(exc))
-        return IntentDispatchResult(
-            status=DispatchStatus.OK,
-            intent_key=intent.intent_key,
-            resource_refs=ResourceRefs(project_id=project.id),
-            view_model=_workspace_workdir_switcher_view_model(project, context=context),
             refresh_mode=RefreshMode.REPLACE_CURRENT,
             message=f"Updated workdir for {project.name}",
         )
@@ -758,18 +635,6 @@ def _project_dir_presets_view_model(project) -> ViewModel:
             "project": project.to_dict(),
             "presets": list(project.workdir_presets),
             "note": "Dir presets are project-level defaults managed from DM. They can be applied later from group workdir switcher cards.",
-        },
-    )
-
-
-def _workspace_workdir_switcher_view_model(project, *, context) -> ViewModel:
-    return ViewModel(
-        "workspace_workdir_switcher",
-        {
-            "project": project.to_dict(),
-            "current_agent": project.backend,
-            "current_workdir": context.active_workdir,
-            "source": context.workdir_source,
         },
     )
 

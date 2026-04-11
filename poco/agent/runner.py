@@ -42,6 +42,9 @@ class AgentRunner(Protocol):
     def cancel(self, task_id: str) -> bool:
         ...
 
+    def resolve_execution_context(self, task: Task) -> tuple[str | None, str | None]:
+        ...
+
 
 class StubAgentRunner:
     """A minimal stand-in for a real server-side agent executor."""
@@ -92,6 +95,9 @@ class StubAgentRunner:
     def cancel(self, task_id: str) -> bool:
         return False
 
+    def resolve_execution_context(self, task: Task) -> tuple[str | None, str | None]:
+        return self.name, task.effective_workdir
+
 
 class UnavailableAgentRunner:
     def __init__(self, *, name: str, reason: str) -> None:
@@ -109,6 +115,9 @@ class UnavailableAgentRunner:
 
     def cancel(self, task_id: str) -> bool:
         return False
+
+    def resolve_execution_context(self, task: Task) -> tuple[str | None, str | None]:
+        return self.name, task.effective_workdir
 
 
 class CodexCliRunner:
@@ -179,6 +188,9 @@ class CodexCliRunner:
             self._cancelled_tasks.add(task_id)
         process.kill()
         return True
+
+    def resolve_execution_context(self, task: Task) -> tuple[str | None, str | None]:
+        return self._model or self.name, task.effective_workdir or self._workdir
 
     def _execute_prompt(self, task: Task, prompt: str) -> Iterator[AgentRunUpdate]:
         executable = shutil.which(self._command)

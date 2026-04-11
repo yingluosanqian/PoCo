@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
 
-from poco.agent.runner import StubAgentRunner
+from poco.agent.runner import CodexCliRunner, StubAgentRunner
 from poco.session.controller import SessionController
 from poco.storage.memory import InMemorySessionStore, InMemoryTaskStore
 from poco.task.controller import TaskController
@@ -90,6 +91,27 @@ class TaskControllerTest(unittest.TestCase):
 
         self.assertEqual(cancelled.status, TaskStatus.CANCELLED)
         self.assertIsNone(cancelled.awaiting_confirmation_reason)
+
+    def test_codex_task_creation_resolves_default_execution_context(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            controller = TaskController(
+                store=InMemoryTaskStore(),
+                runner=CodexCliRunner(
+                    command="codex",
+                    workdir=tmpdir,
+                    model="gpt-5.4",
+                ),
+                session_controller=self.session_controller,
+            )
+
+            task = controller.create_task(
+                requester_id="ou_demo",
+                prompt="summarize the repository",
+                source="feishu",
+            )
+
+            self.assertEqual(task.effective_model, "gpt-5.4")
+            self.assertEqual(task.effective_workdir, tmpdir)
 
 
 if __name__ == "__main__":

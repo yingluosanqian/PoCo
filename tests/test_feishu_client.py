@@ -108,6 +108,10 @@ class FeishuClientTest(unittest.TestCase):
             change_workdir_button["behaviors"][0]["value"]["surface"],
             "group",
         )
+        self.assertEqual(
+            change_workdir_button["behaviors"][0]["value"]["intent_key"],
+            "workspace.enter_path",
+        )
         self.assertEqual(change_model_button["behaviors"][0]["value"]["surface"], "group")
         self.assertEqual(
             change_model_button["behaviors"][0]["value"]["intent_key"],
@@ -345,7 +349,7 @@ class FeishuClientTest(unittest.TestCase):
         self.assertEqual(approve_button["behaviors"][0]["value"]["intent_key"], "task.approve")
         self.assertEqual(approve_button["behaviors"][0]["value"]["task_id"], "task_1")
         self.assertEqual(stop_button["behaviors"][0]["value"]["intent_key"], "task.stop")
-        self.assertEqual(card["body"]["elements"][3]["behaviors"][0]["value"]["intent_key"], "workspace.open_workdir_switcher")
+        self.assertEqual(card["body"]["elements"][3]["behaviors"][0]["value"]["intent_key"], "workspace.enter_path")
         self.assertEqual(card["body"]["elements"][4]["behaviors"][0]["value"]["intent_key"], "project.configure_agent")
 
     def test_task_status_card_contains_result_when_completed(self) -> None:
@@ -383,7 +387,7 @@ class FeishuClientTest(unittest.TestCase):
         )
         result_block = card["body"]["elements"][0]
         self.assertIn("Done.", result_block["text"]["content"])
-        self.assertEqual(card["body"]["elements"][1]["behaviors"][0]["value"]["intent_key"], "workspace.open_workdir_switcher")
+        self.assertEqual(card["body"]["elements"][1]["behaviors"][0]["value"]["intent_key"], "workspace.enter_path")
         self.assertEqual(card["body"]["elements"][2]["behaviors"][0]["value"]["intent_key"], "project.configure_agent")
 
     def test_task_status_card_shows_live_output_when_running(self) -> None:
@@ -422,7 +426,7 @@ class FeishuClientTest(unittest.TestCase):
         live_block = card["body"]["elements"][0]
         self.assertIn("Step 1", live_block["text"]["content"])
         self.assertEqual(card["body"]["elements"][1]["behaviors"][0]["value"]["intent_key"], "task.stop")
-        self.assertEqual(card["body"]["elements"][2]["behaviors"][0]["value"]["intent_key"], "workspace.open_workdir_switcher")
+        self.assertEqual(card["body"]["elements"][2]["behaviors"][0]["value"]["intent_key"], "workspace.enter_path")
         self.assertEqual(card["body"]["elements"][3]["behaviors"][0]["value"]["intent_key"], "project.configure_agent")
 
     def test_task_status_card_adds_pagination_for_long_raw_result(self) -> None:
@@ -462,7 +466,7 @@ class FeishuClientTest(unittest.TestCase):
         next_button = card["body"]["elements"][1]
         self.assertEqual(next_button["behaviors"][0]["value"]["intent_key"], "task.open")
         self.assertEqual(next_button["behaviors"][0]["value"]["page"], "2")
-        self.assertEqual(card["body"]["elements"][2]["behaviors"][0]["value"]["intent_key"], "workspace.open_workdir_switcher")
+        self.assertEqual(card["body"]["elements"][2]["behaviors"][0]["value"]["intent_key"], "workspace.enter_path")
         self.assertEqual(card["body"]["elements"][3]["behaviors"][0]["value"]["intent_key"], "project.configure_agent")
 
 

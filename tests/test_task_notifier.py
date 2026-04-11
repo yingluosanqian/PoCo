@@ -166,7 +166,7 @@ class FeishuTaskNotifierTest(unittest.TestCase):
         )
         result_block = card["body"]["elements"][0]
         self.assertIn("Done.", result_block["text"]["content"])
-        self.assertEqual(card["body"]["elements"][1]["behaviors"][0]["value"]["intent_key"], "workspace.open_workdir_switcher")
+        self.assertEqual(card["body"]["elements"][1]["behaviors"][0]["value"]["intent_key"], "workspace.enter_path")
 
     def test_second_notification_updates_existing_task_card(self) -> None:
         client = FakeMessageClient()

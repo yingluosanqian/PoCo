@@ -39,11 +39,6 @@ class FeishuCardRenderer:
                 instruction.template_data,
                 surface=instruction.surface.value,
             )
-        if instruction.template_key == "workspace_workdir_switcher":
-            return _render_workspace_workdir_switcher(
-                instruction.template_data,
-                surface=instruction.surface.value,
-            )
         if instruction.template_key == "workspace_use_default_dir":
             return _render_workspace_use_default_dir(
                 instruction.template_data,
@@ -327,11 +322,11 @@ def _render_workspace_overview(
             _button(
                 label="Change Workdir",
                 intent_value={
-                    "intent_key": "workspace.open_workdir_switcher",
+                    "intent_key": "workspace.enter_path",
                     "surface": surface,
                     "project_id": project["id"],
                 },
-                name=f"open_workdir_switcher_{project['id']}",
+                name=f"enter_workdir_path_{project['id']}",
             ),
             _button(
                 label="Change Model",
@@ -349,72 +344,6 @@ def _render_workspace_overview(
         template="orange",
         elements=elements,
     )
-
-
-def _render_workspace_workdir_switcher(
-    data: dict[str, Any],
-    *,
-    surface: str,
-) -> dict[str, Any]:
-    project = data["project"]
-    current_agent = data.get("current_agent") or project["backend"]
-    current_workdir = data.get("current_workdir") or "未设置"
-    source = data.get("source") or "unset"
-    return _card_shell(
-        title=f"Workdir: {project['name']}",
-        template="indigo",
-        elements=[
-            _markdown(f"**Current Agent**\n`{current_agent}`"),
-            _markdown(f"**Current Workdir**\n`{current_workdir}`"),
-            _markdown(f"**Source**: `{source}`"),
-            _button(
-                label="Use Default",
-                intent_value={
-                    "intent_key": "workspace.use_default_dir",
-                    "surface": surface,
-                    "project_id": project["id"],
-                },
-                name=f"use_default_dir_{project['id']}",
-            ),
-            _button(
-                label="Choose Preset",
-                intent_value={
-                    "intent_key": "workspace.choose_preset",
-                    "surface": surface,
-                    "project_id": project["id"],
-                },
-                name=f"choose_preset_{project['id']}",
-            ),
-            _button(
-                label="Use Recent",
-                intent_value={
-                    "intent_key": "workspace.use_recent_dir",
-                    "surface": surface,
-                    "project_id": project["id"],
-                },
-                name=f"use_recent_dir_{project['id']}",
-            ),
-            _button(
-                label="Enter Path",
-                intent_value={
-                    "intent_key": "workspace.enter_path",
-                    "surface": surface,
-                    "project_id": project["id"],
-                },
-                name=f"enter_path_{project['id']}",
-            ),
-            _button(
-                label="Back To Workspace",
-                intent_value={
-                    "intent_key": "workspace.open",
-                    "surface": surface,
-                    "project_id": project["id"],
-                },
-                name=f"back_to_workspace_{project['id']}",
-            ),
-        ],
-    )
-
 
 def _render_workspace_use_default_dir(
     data: dict[str, Any],
@@ -464,13 +393,13 @@ def _render_workspace_choose_preset(
         [
             _markdown(data["note"]),
             _button(
-                label="Back To Workdir",
+                label="Back To Workspace",
                 intent_value={
-                    "intent_key": "workspace.open_workdir_switcher",
+                    "intent_key": "workspace.open",
                     "surface": surface,
                     "project_id": project["id"],
                 },
-                name=f"back_to_workdir_{project['id']}",
+                name=f"back_to_workspace_{project['id']}",
             ),
         ]
     )
@@ -527,13 +456,13 @@ def _render_workspace_enter_path(
                 name=f"apply_entered_path_{project['id']}",
             ),
             _button(
-                label="Back To Workdir",
+                label="Back To Workspace",
                 intent_value={
-                    "intent_key": "workspace.open_workdir_switcher",
+                    "intent_key": "workspace.open",
                     "surface": surface,
                     "project_id": project["id"],
                 },
-                name=f"back_to_workdir_{project['id']}",
+                name=f"back_to_workspace_{project['id']}",
             ),
         ],
     )
@@ -675,7 +604,7 @@ def _render_task_status(
             _button(
                 label="Change Working Dir",
                 intent_value={
-                    "intent_key": "workspace.open_workdir_switcher",
+                    "intent_key": "workspace.enter_path",
                     "surface": surface,
                     "project_id": task["project_id"],
                 },
@@ -698,7 +627,7 @@ def _render_task_status(
         title=_task_title(
             task_id=task["id"],
             status=status,
-            agent=task.get("agent_backend") or "unknown",
+            agent=task.get("effective_model") or task.get("agent_backend") or "unknown",
             workdir=workdir,
             page=page,
             total_pages=total_pages,
@@ -752,13 +681,13 @@ def _workspace_subcard(
             _markdown(summary),
             _markdown(note),
             _button(
-                label="Back To Workdir",
+                label="Back To Workspace",
                 intent_value={
-                    "intent_key": "workspace.open_workdir_switcher",
+                    "intent_key": "workspace.open",
                     "surface": surface,
                     "project_id": project_id,
                 },
-                name=f"back_to_workdir_{project_id}",
+                name=f"back_to_workspace_{project_id}",
             ),
         ],
     )

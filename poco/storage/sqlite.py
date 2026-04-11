@@ -55,6 +55,7 @@ class _SqliteStoreBase:
                     requester_id TEXT NOT NULL,
                     prompt TEXT NOT NULL,
                     agent_backend TEXT NOT NULL,
+                    effective_model TEXT,
                     project_id TEXT,
                     session_id TEXT,
                     effective_workdir TEXT,
@@ -104,6 +105,8 @@ class _SqliteStoreBase:
             }
             if "session_id" not in task_columns:
                 connection.execute("ALTER TABLE tasks ADD COLUMN session_id TEXT")
+            if "effective_model" not in task_columns:
+                connection.execute("ALTER TABLE tasks ADD COLUMN effective_model TEXT")
 
 
 class SqliteProjectStore(_SqliteStoreBase):
@@ -190,16 +193,17 @@ class SqliteTaskStore(_SqliteStoreBase):
             connection.execute(
                 """
                 INSERT INTO tasks (
-                    id, source, requester_id, prompt, agent_backend, project_id, session_id,
+                    id, source, requester_id, prompt, agent_backend, effective_model, project_id, session_id,
                     effective_workdir, notification_message_id, reply_receive_id,
                     reply_receive_id_type, status, awaiting_confirmation_reason,
                     live_output, raw_result, result_summary, created_at, updated_at, events
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     source = excluded.source,
                     requester_id = excluded.requester_id,
                     prompt = excluded.prompt,
                     agent_backend = excluded.agent_backend,
+                    effective_model = excluded.effective_model,
                     project_id = excluded.project_id,
                     session_id = excluded.session_id,
                     effective_workdir = excluded.effective_workdir,
@@ -221,6 +225,7 @@ class SqliteTaskStore(_SqliteStoreBase):
                     task.requester_id,
                     task.prompt,
                     task.agent_backend,
+                    task.effective_model,
                     task.project_id,
                     task.session_id,
                     task.effective_workdir,
@@ -282,6 +287,7 @@ class SqliteTaskStore(_SqliteStoreBase):
             requester_id=row["requester_id"],
             prompt=row["prompt"],
             agent_backend=row["agent_backend"],
+            effective_model=row["effective_model"],
             project_id=row["project_id"],
             session_id=row["session_id"],
             effective_workdir=row["effective_workdir"],

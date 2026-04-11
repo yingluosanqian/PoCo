@@ -44,15 +44,32 @@ class TaskController:
         reply_receive_id_type: str | None = None,
     ) -> Task:
         with self._lock:
+            effective_model, resolved_workdir = self._runner.resolve_execution_context(
+                Task(
+                    id="preview",
+                    requester_id=requester_id,
+                    prompt=prompt,
+                    source=source,
+                    agent_backend=self._runner.name,
+                    effective_model=None,
+                    project_id=project_id,
+                    session_id=session_id,
+                    effective_workdir=effective_workdir,
+                    notification_message_id=notification_message_id,
+                    reply_receive_id=reply_receive_id,
+                    reply_receive_id_type=reply_receive_id_type,
+                )
+            )
             task = Task(
                 id=uuid4().hex[:8],
                 requester_id=requester_id,
                 prompt=prompt,
                 source=source,
                 agent_backend=self._runner.name,
+                effective_model=effective_model,
                 project_id=project_id,
                 session_id=session_id,
-                effective_workdir=effective_workdir,
+                effective_workdir=resolved_workdir,
                 notification_message_id=notification_message_id,
                 reply_receive_id=reply_receive_id,
                 reply_receive_id_type=reply_receive_id_type,
@@ -194,6 +211,11 @@ class TaskController:
                 raise TaskStateError(f"Task {task_id} is not in a startable state.")
             if mode == "resume" and task.status != TaskStatus.RUNNING:
                 raise TaskStateError(f"Task {task_id} is not in a resumable state.")
+            effective_model, effective_workdir = self._runner.resolve_execution_context(task)
+            task.set_execution_context(
+                effective_model=effective_model,
+                effective_workdir=effective_workdir,
+            )
             if mode == "start":
                 task.set_status(TaskStatus.RUNNING)
                 task.add_event("task_started", "Task dispatched to the server-side runner.")

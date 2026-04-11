@@ -107,8 +107,6 @@ class FeishuCardGatewayTest(unittest.TestCase):
                     "project.add_dir_preset": self.project_handler,
                     "project.bind_group": self.project_handler,
                     "workspace.open": self.workspace_handler,
-                    "workspace.refresh": self.workspace_handler,
-                    "workspace.open_workdir_switcher": self.workspace_handler,
                     "workspace.use_default_dir": self.workspace_handler,
                     "workspace.choose_preset": self.workspace_handler,
                     "workspace.apply_preset_dir": self.workspace_handler,
@@ -286,7 +284,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
         workdir_button = response["card"]["data"]["body"]["elements"][5]
         self.assertEqual(
             workdir_button["behaviors"][0]["value"]["intent_key"],
-            "workspace.open_workdir_switcher",
+            "workspace.enter_path",
         )
         change_model_button = response["card"]["data"]["body"]["elements"][6]
         self.assertEqual(
@@ -377,7 +375,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
         workdir_button = response["card"]["data"]["body"]["elements"][5]
         self.assertEqual(
             workdir_button["behaviors"][0]["value"]["intent_key"],
-            "workspace.open_workdir_switcher",
+            "workspace.enter_path",
         )
 
     def test_task_composer_opens_from_workspace_card(self) -> None:
@@ -656,7 +654,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
         updated = self.task_controller.get_task(task.id)
         self.assertEqual(updated.status.value, "cancelled")
 
-    def test_workspace_switcher_card_opens_from_group(self) -> None:
+    def test_workspace_enter_path_card_opens_from_group(self) -> None:
         project = self.project_controller.create_project(
             name="PoCo",
             created_by="ou_demo_user",
@@ -669,10 +667,10 @@ class FeishuCardGatewayTest(unittest.TestCase):
                 "context": {"open_message_id": "om_card_workdir_1"},
                 "action": {
                     "value": {
-                        "intent_key": "workspace.open_workdir_switcher",
+                        "intent_key": "workspace.enter_path",
                         "surface": "group",
                         "project_id": project.id,
-                        "request_id": "req_workspace_workdir_switcher_1",
+                        "request_id": "req_workspace_enter_path_direct_1",
                     },
                 },
             }
@@ -680,17 +678,10 @@ class FeishuCardGatewayTest(unittest.TestCase):
 
         response = self.gateway.handle_action(payload)
 
-        self.assertEqual(response["instruction"]["template_key"], "workspace_workdir_switcher")
-        self.assertEqual(response["card"]["data"]["header"]["title"]["content"], "Workdir: PoCo")
-        use_default_button = response["card"]["data"]["body"]["elements"][3]
-        self.assertEqual(
-            use_default_button["behaviors"][0]["value"]["intent_key"],
-            "workspace.use_default_dir",
-        )
-        self.assertEqual(
-            use_default_button["behaviors"][0]["value"]["surface"],
-            "group",
-        )
+        self.assertEqual(response["instruction"]["template_key"], "workspace_enter_path")
+        self.assertEqual(response["card"]["data"]["header"]["title"]["content"], "Enter Path: PoCo")
+        input_box = response["card"]["data"]["body"]["elements"][1]
+        self.assertEqual(input_box["tag"], "input")
 
     def test_workspace_use_default_dir_updates_context(self) -> None:
         project = self.project_controller.create_project(
@@ -754,7 +745,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
         self.assertEqual(response["toast"]["type"], "warning")
         self.assertEqual(response["instruction"]["refresh_mode"], "ack_only")
 
-    def test_workspace_switcher_subcard_returns_to_switcher(self) -> None:
+    def test_workspace_enter_path_subcard_returns_to_workspace(self) -> None:
         project = self.project_controller.create_project(
             name="PoCo",
             created_by="ou_demo_user",
@@ -788,7 +779,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
         back_button = response["card"]["data"]["body"]["elements"][4]
         self.assertEqual(
             back_button["behaviors"][0]["value"]["intent_key"],
-            "workspace.open_workdir_switcher",
+            "workspace.open",
         )
 
     def test_workspace_apply_entered_path_updates_context(self) -> None:
@@ -818,12 +809,12 @@ class FeishuCardGatewayTest(unittest.TestCase):
 
         response = self.gateway.handle_action(payload)
 
-        self.assertEqual(response["instruction"]["template_key"], "workspace_workdir_switcher")
+        self.assertEqual(response["instruction"]["template_key"], "workspace_enter_path")
         context = self.workspace_controller.get_context(project)
         self.assertEqual(context.active_workdir, "/srv/poco/manual")
         self.assertEqual(context.workdir_source, "manual")
-        current_workdir_text = response["card"]["data"]["body"]["elements"][1]["content"]
-        self.assertIn("/srv/poco/manual", current_workdir_text)
+        current_workdir_input = response["card"]["data"]["body"]["elements"][1]
+        self.assertEqual(current_workdir_input["value"], "/srv/poco/manual")
 
     def test_workspace_apply_entered_path_rejects_empty_path(self) -> None:
         project = self.project_controller.create_project(
@@ -933,7 +924,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
 
         applied = self.gateway.handle_action(apply_payload)
 
-        self.assertEqual(applied["instruction"]["template_key"], "workspace_workdir_switcher")
+        self.assertEqual(applied["instruction"]["template_key"], "workspace_enter_path")
         context = self.workspace_controller.get_context(project)
         self.assertEqual(context.active_workdir, "/srv/poco/api")
         self.assertEqual(context.workdir_source, "preset")
