@@ -78,6 +78,19 @@ class TaskControllerTest(unittest.TestCase):
         self.assertEqual(approved.status, TaskStatus.COMPLETED)
         self.assertIsNotNone(approved.result_summary)
 
+    def test_cancelling_waiting_task_marks_it_cancelled(self) -> None:
+        task = self.controller.create_task(
+            requester_id="ou_demo",
+            prompt="confirm: deploy the patch",
+            source="feishu",
+        )
+        task = self.controller.start_task_execution(task.id)
+
+        cancelled = self.controller.cancel_task(task.id)
+
+        self.assertEqual(cancelled.status, TaskStatus.CANCELLED)
+        self.assertIsNone(cancelled.awaiting_confirmation_reason)
+
 
 if __name__ == "__main__":
     unittest.main()

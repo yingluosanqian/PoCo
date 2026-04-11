@@ -104,6 +104,28 @@ class TaskController:
             self._sync_session(task)
             return task
 
+    def cancel_task(self, task_id: str, *, reason: str = "Task stopped by user.") -> Task:
+        with self._lock:
+            task = self.get_task(task_id)
+            if task.status in {
+                TaskStatus.COMPLETED,
+                TaskStatus.FAILED,
+                TaskStatus.CANCELLED,
+            }:
+                raise TaskStateError(f"Task {task_id} is already terminal.")
+
+            cancel_runner = getattr(self._runner, "cancel", None)
+            if callable(cancel_runner):
+                cancel_runner(task.id)
+
+            task.awaiting_confirmation_reason = None
+            task.clear_live_output()
+            task.set_status(TaskStatus.CANCELLED)
+            task.add_event("task_cancelled", reason)
+            self._store.save(task)
+            self._sync_session(task)
+            return task
+
     def start_task_execution(self, task_id: str) -> Task:
         return self._start_or_resume(task_id, mode="start")
 
@@ -190,6 +212,8 @@ class TaskController:
         for update in updates:
             with self._lock:
                 task = self.get_task(task_id)
+                if task.status == TaskStatus.CANCELLED:
+                    continue
                 if update.kind == "progress":
                     if getattr(update, "output_chunk", None):
                         task.append_live_output(update.output_chunk)

@@ -150,6 +150,23 @@ class CodexCliRunnerTest(unittest.TestCase):
             self.assertEqual(updates[-1].kind, "failed")
             self.assertIn("codex failed", updates[-1].message)
 
+    def test_cancel_kills_active_process(self) -> None:
+        class FakePopen:
+            def __init__(self) -> None:
+                self.killed = False
+
+            def kill(self) -> None:
+                self.killed = True
+
+        runner = CodexCliRunner(command="codex", workdir="/tmp")
+        process = FakePopen()
+        runner._active_processes["task_cancel"] = process  # type: ignore[attr-defined]
+
+        cancelled = runner.cancel("task_cancel")
+
+        self.assertTrue(cancelled)
+        self.assertTrue(process.killed)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -106,6 +106,7 @@ class FeishuTaskNotifierTest(unittest.TestCase):
         )
         approve_button = card["body"]["elements"][1]
         self.assertEqual(approve_button["behaviors"][0]["value"]["intent_key"], "task.approve")
+        self.assertEqual(card["body"]["elements"][2]["behaviors"][0]["value"]["intent_key"], "task.stop")
         snapshot = recorder.snapshot()
         self.assertEqual(snapshot["outbound_attempts"][0]["text_preview"], "[card] task_status:waiting_for_confirmation")
 
@@ -136,6 +137,7 @@ class FeishuTaskNotifierTest(unittest.TestCase):
         )
         live_block = card["body"]["elements"][0]
         self.assertIn("line 1", live_block["text"]["content"])
+        self.assertEqual(card["body"]["elements"][1]["behaviors"][0]["value"]["intent_key"], "task.stop")
 
     def test_completed_task_sends_result_card(self) -> None:
         client = FakeMessageClient()
@@ -164,6 +166,7 @@ class FeishuTaskNotifierTest(unittest.TestCase):
         )
         result_block = card["body"]["elements"][0]
         self.assertIn("Done.", result_block["text"]["content"])
+        self.assertEqual(card["body"]["elements"][1]["behaviors"][0]["value"]["intent_key"], "workspace.open_workdir_switcher")
 
     def test_second_notification_updates_existing_task_card(self) -> None:
         client = FakeMessageClient()

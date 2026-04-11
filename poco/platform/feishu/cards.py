@@ -290,15 +290,6 @@ def _render_project_dir_presets(
                 style="primary",
                 name=f"add_dir_preset_{project['id']}",
             ),
-            _button(
-                label="Back To Project",
-                intent_value={
-                    "intent_key": "project.open",
-                    "surface": surface,
-                    "project_id": project["id"],
-                },
-                name=f"back_to_project_{project['id']}",
-            ),
         ]
     )
     return _card_shell(
@@ -331,19 +322,6 @@ def _render_workspace_overview(
         _markdown(latest_task_line),
         _markdown(f"**pending approvals**: `{pending_approvals}`"),
     ]
-    if latest_task_id:
-        elements.append(
-            _button(
-                label="Open Latest Task",
-                intent_value={
-                    "intent_key": "task.open",
-                    "surface": surface,
-                    "project_id": project["id"],
-                    "task_id": latest_task_id,
-                },
-                name=f"open_latest_task_{project['id']}",
-            )
-        )
     elements.extend(
         [
             _button(
@@ -356,22 +334,13 @@ def _render_workspace_overview(
                 name=f"open_workdir_switcher_{project['id']}",
             ),
             _button(
-                label="Refresh",
+                label="Change Model",
                 intent_value={
-                    "intent_key": "workspace.refresh",
+                    "intent_key": "project.configure_agent",
                     "surface": surface,
                     "project_id": project["id"],
                 },
-                name=f"refresh_workspace_{project['id']}",
-            ),
-            _button(
-                label="Back To Project",
-                intent_value={
-                    "intent_key": "project.open",
-                    "surface": surface,
-                    "project_id": project["id"],
-                },
-                name=f"back_to_project_{project['id']}",
+                name=f"configure_workspace_agent_{project['id']}",
             ),
         ]
     )
@@ -644,14 +613,14 @@ def _render_task_status(
         )
         elements.append(
             _button(
-                label="Reject",
+                label="Stop",
                 intent_value={
-                    "intent_key": "task.reject",
+                    "intent_key": "task.stop",
                     "surface": surface,
                     "project_id": task.get("project_id") or "",
                     "task_id": task["id"],
                 },
-                name=f"reject_task_{task['id']}",
+                name=f"stop_task_{task['id']}",
             )
         )
     elif status == "running":
@@ -689,15 +658,39 @@ def _render_task_status(
                 )
 
     if task.get("project_id"):
+        if status in {"created", "running"}:
+            elements.append(
+                _button(
+                    label="Stop",
+                    intent_value={
+                        "intent_key": "task.stop",
+                        "surface": surface,
+                        "project_id": task["project_id"],
+                        "task_id": task["id"],
+                    },
+                    name=f"stop_task_{task['id']}",
+                )
+            )
         elements.append(
             _button(
-                label="Back To Workspace",
+                label="Change Working Dir",
                 intent_value={
-                    "intent_key": "workspace.open",
+                    "intent_key": "workspace.open_workdir_switcher",
                     "surface": surface,
                     "project_id": task["project_id"],
                 },
-                name=f"task_back_to_workspace_{task['id']}",
+                name=f"task_change_workdir_{task['id']}",
+            )
+        )
+        elements.append(
+            _button(
+                label="Change Model",
+                intent_value={
+                    "intent_key": "project.configure_agent",
+                    "surface": surface,
+                    "project_id": task["project_id"],
+                },
+                name=f"task_change_model_{task['id']}",
             )
         )
 
@@ -740,15 +733,6 @@ def _config_subcard(
         elements=[
             _markdown(summary),
             _markdown(note),
-            _button(
-                label="Back To Project",
-                intent_value={
-                    "intent_key": "project.open",
-                    "surface": surface,
-                    "project_id": project_id,
-                },
-                name=f"back_to_project_{project_id}",
-            ),
         ],
     )
 

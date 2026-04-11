@@ -92,6 +92,7 @@
 - 已存在群对话式 task intake，当前绑定 project 的群普通文本消息也会默认创建 task，并继承当前 workdir
 - 已存在最小结果保真链，当前 `Task` 已保存 `raw_result`，task status card 会优先展示原始结果，超长结果可分页查看
 - 已存在最小 task 卡信息收敛，当前 task id、status、agent、effective workdir 已进入标题，卡片正文默认只承载模型输出或确认说明
+- 已存在 task/workspace 卡动作收敛，当前 task 卡已去掉 `Back To Workspace`，workspace 卡已去掉 `Open Latest Task`、`Refresh`、`Back To Project`，改为更直接的动作按钮
 - 已存在最小运行期透明链，当前 running task 可携带 `live_output`，并驱动节流后的 task card 原位更新
 - 已存在 group 文本直达单卡链，当前群文本创建 task 时会先收到一张初始 task card，后续状态与 live output 都会更新这张卡
 - 已存在默认 sqlite 状态后端，当前 `project`、`workspace context` 和 `task` 已可跨服务重启恢复

@@ -118,6 +118,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
                     "task.open_composer": self.task_handler,
                     "task.open": self.task_handler,
                     "task.submit": self.task_handler,
+                    "task.stop": self.task_handler,
                     "task.approve": self.task_handler,
                     "task.reject": self.task_handler,
                 }
@@ -287,10 +288,14 @@ class FeishuCardGatewayTest(unittest.TestCase):
             workdir_button["behaviors"][0]["value"]["intent_key"],
             "workspace.open_workdir_switcher",
         )
-        refresh_button = response["card"]["data"]["body"]["elements"][6]
+        change_model_button = response["card"]["data"]["body"]["elements"][6]
         self.assertEqual(
-            refresh_button["behaviors"][0]["value"]["surface"],
+            change_model_button["behaviors"][0]["value"]["surface"],
             "group",
+        )
+        self.assertEqual(
+            change_model_button["behaviors"][0]["value"]["intent_key"],
+            "project.configure_agent",
         )
         updated_project = self.project_controller.get_project(project.id)
         self.assertEqual(updated_project.workspace_message_id, "om_card_2")
@@ -336,7 +341,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
         session_block = response["card"]["data"]["body"]["elements"][0]
         self.assertIn(session.id, session_block["content"])
 
-    def test_workspace_open_shows_latest_task_button_when_task_exists(self) -> None:
+    def test_workspace_open_shows_latest_task_summary_when_task_exists(self) -> None:
         project = self.project_controller.create_project(
             name="PoCo",
             created_by="ou_demo_user",
@@ -367,10 +372,9 @@ class FeishuCardGatewayTest(unittest.TestCase):
 
         response = self.gateway.handle_action(payload)
 
-        latest_button = response["card"]["data"]["body"]["elements"][5]
-        self.assertEqual(latest_button["behaviors"][0]["value"]["intent_key"], "task.open")
-        self.assertEqual(latest_button["behaviors"][0]["value"]["task_id"], task.id)
-        workdir_button = response["card"]["data"]["body"]["elements"][6]
+        latest_task_block = response["card"]["data"]["body"]["elements"][3]
+        self.assertIn(task.id, latest_task_block["content"])
+        workdir_button = response["card"]["data"]["body"]["elements"][5]
         self.assertEqual(
             workdir_button["behaviors"][0]["value"]["intent_key"],
             "workspace.open_workdir_switcher",
@@ -614,6 +618,44 @@ class FeishuCardGatewayTest(unittest.TestCase):
         updated = self.task_controller.get_task(task.id)
         self.assertEqual(updated.status.value, "cancelled")
 
+    def test_task_stop_replaces_card_with_cancelled_status(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+            group_chat_id="oc_group_proj_1",
+        )
+        task = self.task_controller.create_task(
+            requester_id="ou_demo_user",
+            prompt="run the patch",
+            source="feishu_card",
+            project_id=project.id,
+            effective_workdir="/srv/poco/api",
+            reply_receive_id="oc_group_proj_1",
+            reply_receive_id_type="chat_id",
+        )
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_task_stop_1"},
+                "action": {
+                    "value": {
+                        "intent_key": "task.stop",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "task_id": task.id,
+                        "request_id": "req_task_stop_1",
+                    },
+                },
+            }
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        self.assertEqual(response["instruction"]["template_key"], "task_status")
+        updated = self.task_controller.get_task(task.id)
+        self.assertEqual(updated.status.value, "cancelled")
+
     def test_workspace_switcher_card_opens_from_group(self) -> None:
         project = self.project_controller.create_project(
             name="PoCo",
@@ -841,7 +883,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
         self.assertEqual(response["instruction"]["template_key"], "project_dir_presets")
         updated = self.project_controller.get_project(project.id)
         self.assertEqual(updated.workdir_presets, ["/srv/poco/api"])
-        add_button = response["card"]["data"]["body"]["elements"][-2]
+        add_button = response["card"]["data"]["body"]["elements"][-1]
         self.assertEqual(add_button["behaviors"][0]["value"]["intent_key"], "project.add_dir_preset")
 
     def test_workspace_choose_preset_lists_and_applies_presets(self) -> None:
@@ -948,8 +990,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
 
         self.assertEqual(response["instruction"]["template_key"], "project_agent_config")
         self.assertEqual(response["card"]["data"]["header"]["title"]["content"], "Agent: PoCo")
-        back_button = response["card"]["data"]["body"]["elements"][2]
-        self.assertEqual(back_button["behaviors"][0]["value"]["intent_key"], "project.open")
+        self.assertEqual(len(response["card"]["data"]["body"]["elements"]), 2)
 
     def test_project_list_action_returns_project_list_card(self) -> None:
         self.project_controller.create_project(

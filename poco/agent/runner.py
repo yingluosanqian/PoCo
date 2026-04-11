@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from threading import RLock
 from typing import Literal, Protocol
 
 from poco.task.models import Task
@@ -36,6 +37,9 @@ class AgentRunner(Protocol):
         ...
 
     def resume_after_confirmation(self, task: Task) -> Iterator[AgentRunUpdate]:
+        ...
+
+    def cancel(self, task_id: str) -> bool:
         ...
 
 
@@ -85,6 +89,9 @@ class StubAgentRunner:
             ),
         ]
 
+    def cancel(self, task_id: str) -> bool:
+        return False
+
 
 class UnavailableAgentRunner:
     def __init__(self, *, name: str, reason: str) -> None:
@@ -99,6 +106,9 @@ class UnavailableAgentRunner:
 
     def resume_after_confirmation(self, task: Task) -> Iterator[AgentRunUpdate]:
         return [AgentRunUpdate(kind="failed", message=self._reason)]
+
+    def cancel(self, task_id: str) -> bool:
+        return False
 
 
 class CodexCliRunner:
@@ -120,6 +130,9 @@ class CodexCliRunner:
         self._sandbox = sandbox
         self._approval_policy = approval_policy
         self._timeout_seconds = timeout_seconds
+        self._lock = RLock()
+        self._active_processes: dict[str, subprocess.Popen[str]] = {}
+        self._cancelled_tasks: set[str] = set()
 
     def is_ready(self) -> tuple[bool, str]:
         executable = shutil.which(self._command)
@@ -157,6 +170,15 @@ class CodexCliRunner:
         ]
         updates.extend(self._execute_prompt(task, _normalized_prompt(task.prompt)))
         return updates
+
+    def cancel(self, task_id: str) -> bool:
+        with self._lock:
+            process = self._active_processes.get(task_id)
+            if process is None:
+                return False
+            self._cancelled_tasks.add(task_id)
+        process.kill()
+        return True
 
     def _execute_prompt(self, task: Task, prompt: str) -> Iterator[AgentRunUpdate]:
         executable = shutil.which(self._command)
@@ -208,6 +230,8 @@ class CodexCliRunner:
                 text=True,
                 bufsize=1,
             )
+            with self._lock:
+                self._active_processes[task.id] = process
             streamed_output: list[str] = []
             if process.stdout is not None:
                 for line in process.stdout:
@@ -222,6 +246,8 @@ class CodexCliRunner:
                 process.stdout.close()
 
             returncode = process.wait(timeout=self._timeout_seconds)
+            if self._consume_cancelled(task.id):
+                return
             if returncode != 0:
                 detail = _first_non_empty(
                     "".join(streamed_output),
@@ -240,6 +266,8 @@ class CodexCliRunner:
         except subprocess.TimeoutExpired:
             if process is not None:
                 process.kill()
+            if self._consume_cancelled(task.id):
+                return
             yield AgentRunUpdate(
                 kind="failed",
                 message=f"Codex CLI timed out after {self._timeout_seconds} seconds.",
@@ -250,8 +278,18 @@ class CodexCliRunner:
                 message=f"Failed to start codex CLI: {exc}",
             )
         finally:
+            with self._lock:
+                self._active_processes.pop(task.id, None)
+                self._cancelled_tasks.discard(task.id)
             if output_file_path:
                 Path(output_file_path).unlink(missing_ok=True)
+
+    def _consume_cancelled(self, task_id: str) -> bool:
+        with self._lock:
+            if task_id not in self._cancelled_tasks:
+                return False
+            self._cancelled_tasks.discard(task_id)
+            return True
 
     def _read_output_file(self, output_file_path: str) -> str | None:
         path = Path(output_file_path)

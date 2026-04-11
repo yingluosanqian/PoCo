@@ -103,14 +103,16 @@ class FeishuClientTest(unittest.TestCase):
         card = FeishuCardRenderer().render(instruction)
 
         change_workdir_button = card["body"]["elements"][5]
-        refresh_button = card["body"]["elements"][6]
-        back_button = card["body"]["elements"][7]
+        change_model_button = card["body"]["elements"][6]
         self.assertEqual(
             change_workdir_button["behaviors"][0]["value"]["surface"],
             "group",
         )
-        self.assertEqual(refresh_button["behaviors"][0]["value"]["surface"], "group")
-        self.assertEqual(back_button["behaviors"][0]["value"]["surface"], "group")
+        self.assertEqual(change_model_button["behaviors"][0]["value"]["surface"], "group")
+        self.assertEqual(
+            change_model_button["behaviors"][0]["value"]["intent_key"],
+            "project.configure_agent",
+        )
 
     def test_project_bootstrapper_sends_workspace_card_to_created_group(self) -> None:
         class FakeMessageClient:
@@ -164,8 +166,8 @@ class FeishuClientTest(unittest.TestCase):
         self.assertEqual(sent["receive_id_type"], "chat_id")
         card = sent["card"]
         self.assertEqual(card["header"]["title"]["content"], "Workspace: PoCo")
-        refresh_button = card["body"]["elements"][6]
-        self.assertEqual(refresh_button["behaviors"][0]["value"]["surface"], "group")
+        change_model_button = card["body"]["elements"][6]
+        self.assertEqual(change_model_button["behaviors"][0]["value"]["surface"], "group")
         self.assertEqual(project.workspace_message_id, "om_workspace_bootstrap_1")
         snapshot = recorder.snapshot()
         self.assertEqual(snapshot["outbound_attempts"][0]["source"], "project_workspace_bootstrap")
@@ -339,10 +341,12 @@ class FeishuClientTest(unittest.TestCase):
         )
         self.assertEqual(card["body"]["elements"][0]["text"]["content"], "Need approval before deploy.")
         approve_button = card["body"]["elements"][1]
-        reject_button = card["body"]["elements"][2]
+        stop_button = card["body"]["elements"][2]
         self.assertEqual(approve_button["behaviors"][0]["value"]["intent_key"], "task.approve")
         self.assertEqual(approve_button["behaviors"][0]["value"]["task_id"], "task_1")
-        self.assertEqual(reject_button["behaviors"][0]["value"]["intent_key"], "task.reject")
+        self.assertEqual(stop_button["behaviors"][0]["value"]["intent_key"], "task.stop")
+        self.assertEqual(card["body"]["elements"][3]["behaviors"][0]["value"]["intent_key"], "workspace.open_workdir_switcher")
+        self.assertEqual(card["body"]["elements"][4]["behaviors"][0]["value"]["intent_key"], "project.configure_agent")
 
     def test_task_status_card_contains_result_when_completed(self) -> None:
         task = {
@@ -379,6 +383,8 @@ class FeishuClientTest(unittest.TestCase):
         )
         result_block = card["body"]["elements"][0]
         self.assertIn("Done.", result_block["text"]["content"])
+        self.assertEqual(card["body"]["elements"][1]["behaviors"][0]["value"]["intent_key"], "workspace.open_workdir_switcher")
+        self.assertEqual(card["body"]["elements"][2]["behaviors"][0]["value"]["intent_key"], "project.configure_agent")
 
     def test_task_status_card_shows_live_output_when_running(self) -> None:
         task = {
@@ -415,6 +421,9 @@ class FeishuClientTest(unittest.TestCase):
         )
         live_block = card["body"]["elements"][0]
         self.assertIn("Step 1", live_block["text"]["content"])
+        self.assertEqual(card["body"]["elements"][1]["behaviors"][0]["value"]["intent_key"], "task.stop")
+        self.assertEqual(card["body"]["elements"][2]["behaviors"][0]["value"]["intent_key"], "workspace.open_workdir_switcher")
+        self.assertEqual(card["body"]["elements"][3]["behaviors"][0]["value"]["intent_key"], "project.configure_agent")
 
     def test_task_status_card_adds_pagination_for_long_raw_result(self) -> None:
         task = {
@@ -453,6 +462,8 @@ class FeishuClientTest(unittest.TestCase):
         next_button = card["body"]["elements"][1]
         self.assertEqual(next_button["behaviors"][0]["value"]["intent_key"], "task.open")
         self.assertEqual(next_button["behaviors"][0]["value"]["page"], "2")
+        self.assertEqual(card["body"]["elements"][2]["behaviors"][0]["value"]["intent_key"], "workspace.open_workdir_switcher")
+        self.assertEqual(card["body"]["elements"][3]["behaviors"][0]["value"]["intent_key"], "project.configure_agent")
 
 
 if __name__ == "__main__":

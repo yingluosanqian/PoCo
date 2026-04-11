@@ -14,7 +14,7 @@ from poco.interaction.card_models import (
 from poco.project.bootstrap import ProjectBootstrapError, ProjectBootstrapper
 from poco.project.controller import ProjectConfigError, ProjectController, ProjectNotFoundError
 from poco.session.controller import SessionController
-from poco.task.controller import TaskController, TaskNotFoundError
+from poco.task.controller import TaskController, TaskNotFoundError, TaskStateError
 from poco.task.dispatcher import AsyncTaskDispatcher
 from poco.workspace.controller import WorkspaceContextController, WorkspaceContextError
 
@@ -497,6 +497,8 @@ class TaskIntentHandler:
             return self._submit_task(intent)
         if intent.intent_key == "task.open":
             return self._open_task(intent)
+        if intent.intent_key == "task.stop":
+            return self._stop_task(intent)
         if intent.intent_key == "task.approve":
             return self._approve_task(intent)
         if intent.intent_key == "task.reject":
@@ -576,6 +578,17 @@ class TaskIntentHandler:
         return build_task_status_result(
             task,
             message="Task approved. Resuming execution.",
+        )
+
+    def _stop_task(self, intent: ActionIntent) -> IntentDispatchResult:
+        task_id = _required_id(intent.task_id, "task_id")
+        try:
+            task = self.task_controller.cancel_task(task_id)
+        except (TaskStateError, ValueError) as exc:
+            return _rejected(intent, str(exc))
+        return build_task_status_result(
+            task,
+            message="Task stopped.",
         )
 
     def _reject_task(self, intent: ActionIntent) -> IntentDispatchResult:
