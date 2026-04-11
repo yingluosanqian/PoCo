@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+import os
+import tempfile
 import unittest
 
 from poco.platform.feishu.debug import FeishuDebugRecorder
 from poco.project.controller import ProjectController
 from poco.project.models import Project
 from poco.storage.memory import InMemoryProjectStore, InMemoryWorkspaceContextStore
+from poco.storage.sqlite import SqliteTaskStore
+from poco.task.controller import TaskController
 from poco.task.models import Task, TaskStatus
 from poco.task.notifier import FeishuTaskNotifier
+from poco.agent.runner import StubAgentRunner
 from poco.workspace.controller import WorkspaceContextController
 
 
@@ -249,6 +254,43 @@ class FeishuTaskNotifierTest(unittest.TestCase):
         self.assertEqual(len(client.sent_cards), 0)
         snapshot = recorder.snapshot()
         self.assertEqual(snapshot["errors"][0]["stage"], "task_notifier_update")
+
+    def test_notification_message_id_is_persisted_for_sqlite_backed_tasks(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            controller = TaskController(
+                store=SqliteTaskStore(os.path.join(tempdir, "poco.db")),
+                runner=StubAgentRunner(),
+            )
+            client = FakeMessageClient()
+            notifier = FeishuTaskNotifier(
+                client,  # type: ignore[arg-type]
+                task_controller=controller,
+            )
+            task = controller.create_task(
+                requester_id="ou_demo",
+                prompt="confirm: deploy",
+                source="feishu_card",
+                project_id="proj_1",
+                effective_workdir="/srv/poco/api",
+                reply_receive_id="oc_group_1",
+                reply_receive_id_type="chat_id",
+            )
+            task.set_status(TaskStatus.WAITING_FOR_CONFIRMATION)
+            task.awaiting_confirmation_reason = "Need explicit approval."
+            controller._store.save(task)  # type: ignore[attr-defined]
+
+            notifier.notify_task(controller.get_task(task.id))
+            reloaded = controller.get_task(task.id)
+            self.assertEqual(reloaded.notification_message_id, "om_task_status_1")
+
+            reloaded.awaiting_confirmation_reason = None
+            reloaded.set_status(TaskStatus.COMPLETED)
+            reloaded.set_result("Done.")
+            controller._store.save(reloaded)  # type: ignore[attr-defined]
+            notifier.notify_task(controller.get_task(task.id))
+
+            self.assertEqual(len(client.sent_cards), 1)
+            self.assertEqual(len(client.updated_cards), 1)
 
 
 if __name__ == "__main__":

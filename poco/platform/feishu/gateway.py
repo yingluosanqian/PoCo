@@ -162,6 +162,10 @@ class FeishuGateway:
                         card=card,
                     )
                     task.set_notification_message_id(result.message_id)
+                    task = self._task_controller.bind_notification_message(
+                        task.id,
+                        result.message_id,
+                    )
                     reply_preview = f"[card] task_status:{task.status.value}"
                 else:
                     self._record_outbound_attempt(

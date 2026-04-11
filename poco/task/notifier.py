@@ -10,6 +10,7 @@ from poco.platform.feishu.cards import FeishuCardRenderer
 from poco.platform.feishu.debug import FeishuDebugRecorder
 from poco.project.controller import ProjectController
 from poco.session.controller import SessionController
+from poco.task.controller import TaskController
 from poco.task.models import Task, TaskStatus
 from poco.task.rendering import headline_for_notification, render_task_text
 from poco.workspace.controller import WorkspaceContextController
@@ -33,6 +34,7 @@ class FeishuTaskNotifier:
         renderer: FeishuCardRenderer | None = None,
         project_controller: ProjectController | None = None,
         session_controller: SessionController | None = None,
+        task_controller: TaskController | None = None,
         workspace_controller: WorkspaceContextController | None = None,
         debug_recorder: FeishuDebugRecorder | None = None,
     ) -> None:
@@ -40,6 +42,7 @@ class FeishuTaskNotifier:
         self._renderer = renderer or FeishuCardRenderer()
         self._project_controller = project_controller
         self._session_controller = session_controller
+        self._task_controller = task_controller
         self._workspace_controller = workspace_controller
         self._debug_recorder = debug_recorder
         self._last_running_update_at: dict[str, float] = {}
@@ -109,6 +112,11 @@ class FeishuTaskNotifier:
                     card=card,
                 )
                 task.set_notification_message_id(result.message_id)
+                if self._task_controller is not None:
+                    task = self._task_controller.bind_notification_message(
+                        task.id,
+                        result.message_id,
+                    )
                 self._sync_workspace_card(task)
                 return
             except Exception as exc:

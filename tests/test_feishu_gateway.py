@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import tempfile
 import unittest
 
 from poco.interaction.service import InteractionService
@@ -18,6 +20,7 @@ from poco.platform.feishu.verification import (
 from poco.project.controller import ProjectController
 from poco.session.controller import SessionController
 from poco.storage.memory import InMemoryProjectStore, InMemorySessionStore, InMemoryTaskStore, InMemoryWorkspaceContextStore
+from poco.storage.sqlite import SqliteTaskStore
 from poco.task.controller import TaskController
 from poco.task.dispatcher import AsyncTaskDispatcher
 from poco.agent.runner import StubAgentRunner
@@ -364,6 +367,58 @@ class FeishuGatewayTest(unittest.TestCase):
         self.assertEqual(task.effective_workdir, "/srv/poco/api")
         self.assertIsNotNone(task.notification_message_id)
         self.assertEqual(response["reply_preview"], "[card] task_status:created")
+
+    def test_plain_group_message_persists_notification_message_id_with_sqlite_store(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            controller = TaskController(
+                store=SqliteTaskStore(os.path.join(tempdir, "poco.db")),
+                runner=StubAgentRunner(),
+                session_controller=self.session_controller,
+            )
+            interaction = InteractionService(controller, session_controller=self.session_controller)
+            gateway = FeishuGateway(
+                interaction,
+                request_verifier=FeishuRequestVerifier(verification_token="verify-token"),
+                message_client=self.message_client,
+                dispatcher=self.dispatcher,
+                card_gateway=self.card_gateway,
+                task_controller=controller,
+                card_renderer=FeishuCardRenderer(),
+                debug_recorder=self.debug_recorder,
+                project_controller=self.project_controller,
+                workspace_controller=self.workspace_controller,
+            )
+            project = self.project_controller.create_project(
+                name="PoCo",
+                created_by="ou_demo_user",
+                backend="codex",
+                group_chat_id="oc_demo_chat",
+            )
+            self.workspace_controller.set_active_workdir(
+                project,
+                workdir="/srv/poco/api",
+                source="manual",
+            )
+            payload = {
+                "token": "verify-token",
+                "event": {
+                    "sender": {"sender_id": {"open_id": "ou_demo_user"}},
+                    "message": {
+                        "chat_type": "group",
+                        "chat_id": "oc_demo_chat",
+                        "content": json.dumps({"text": "summarize the repository"}),
+                    },
+                },
+            }
+
+            response = gateway.handle_event(
+                payload,
+                headers={},
+                raw_body=json.dumps(payload).encode("utf-8"),
+            )
+
+            task = controller.get_task(response["task_id"])
+            self.assertEqual(task.notification_message_id, "om_1")
 
     def test_unknown_slash_command_in_group_returns_help_instead_of_task(self) -> None:
         self.project_controller.create_project(

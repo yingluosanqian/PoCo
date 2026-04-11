@@ -94,6 +94,7 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
             renderer=card_renderer,
             project_controller=project_controller,
             session_controller=session_controller,
+            task_controller=controller,
             workspace_controller=workspace_controller,
             debug_recorder=feishu_debug,
         )

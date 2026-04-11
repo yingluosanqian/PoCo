@@ -321,6 +321,7 @@ Example webhook payload:
 - Running-state card update failures no longer fallback to new-card fanout.
 - PoCo now keeps a minimal persisted `active session` per project, and workspace cards show that session instead of a placeholder.
 - PoCo now treats each project group as one stable session, instead of exposing multi-session lifecycle controls in the group UI.
+- In sqlite-backed runtime, task card message ids are now persisted immediately so follow-up updates do not fan out into fresh cards.
 - `/run <prompt>`
 - `/status <task_id>`
 - `/approve <task_id>`

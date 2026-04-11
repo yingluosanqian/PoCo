@@ -105,6 +105,7 @@
 - task 是否已经自动挂到 active session
 - workspace card 是否已经展示真实 active session
 - session 模型是否已经收敛为“一个群一个稳定 session”
+- sqlite 模式下 task `notification_message_id` 是否已经在首发时持久化，避免后续更新退化成重复发卡
 
 ### 当前轮已知未验证区域
 
