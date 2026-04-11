@@ -320,7 +320,7 @@ Example webhook payload:
 - Group text-created tasks now reply with a single initial `task_status` card, and later live/terminal updates stay on that same card.
 - Running-state card update failures no longer fallback to new-card fanout.
 - PoCo now keeps a minimal persisted `active session` per project, and workspace cards show that session instead of a placeholder.
-- Workspace cards now expose `New Session` and `Close Session` so the current workflow boundary is user-visible.
+- PoCo now treats each project group as one stable session, instead of exposing multi-session lifecycle controls in the group UI.
 - `/run <prompt>`
 - `/status <task_id>`
 - `/approve <task_id>`

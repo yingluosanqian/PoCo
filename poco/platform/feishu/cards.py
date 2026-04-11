@@ -330,28 +330,7 @@ def _render_workspace_overview(
         _markdown(f"**workdir source**: `{workdir_source}`"),
         _markdown(latest_task_line),
         _markdown(f"**pending approvals**: `{pending_approvals}`"),
-        _button(
-            label="New Session",
-            intent_value={
-                "intent_key": "session.new",
-                "surface": surface,
-                "project_id": project["id"],
-            },
-            name=f"new_session_{project['id']}",
-        ),
     ]
-    if active_session_id:
-        elements.append(
-            _button(
-                label="Close Session",
-                intent_value={
-                    "intent_key": "session.close",
-                    "surface": surface,
-                    "project_id": project["id"],
-                },
-                name=f"close_session_{project['id']}",
-            )
-        )
     if latest_task_id:
         elements.append(
             _button(

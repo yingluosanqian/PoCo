@@ -104,7 +104,7 @@
 - 已新增最小 `Session` 模型与持久化 store，当前 task 会保存 `session_id`
 - 文本消息和 card 提交两条 task 创建路径都会自动解析并复用当前 active session
 - task 生命周期会同步刷新 session handoff，workspace card 已开始展示真实 active session summary
-- 已新增 `SessionIntentHandler`，workspace 首卡已提供 `New Session` 和 `Close Session`
+- session 实现已收敛为 group-bound stable session，不再注册 session lifecycle intents
 
 ### 当前明确未实现
 

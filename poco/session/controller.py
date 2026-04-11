@@ -3,7 +3,7 @@ from __future__ import annotations
 from threading import RLock
 from uuid import uuid4
 
-from poco.session.models import Session, SessionStatus, utc_now
+from poco.session.models import Session, SessionStatus
 from poco.storage.protocols import SessionStore
 from poco.task.models import Task
 
@@ -21,8 +21,7 @@ class SessionController:
         with self._lock:
             for session in self._store.list_all():
                 if session.project_id == project_id and session.status == SessionStatus.ACTIVE:
-                    session.status = SessionStatus.CLOSED
-                    self._store.save(session)
+                    return session
             session = Session(
                 id=uuid4().hex[:8],
                 project_id=project_id,
@@ -49,9 +48,6 @@ class SessionController:
             return active
 
     def get_or_create_active_session(self, *, project_id: str, created_by: str) -> Session:
-        existing = self.get_active_session(project_id)
-        if existing is not None:
-            return existing
         return self.create_session(project_id=project_id, created_by=created_by)
 
     def sync_from_task(self, task: Task) -> Session | None:
@@ -67,15 +63,5 @@ class SessionController:
                 status=task.status.value,
                 result_preview=task.result_summary,
             )
-            self._store.save(session)
-            return session
-
-    def close_active_session(self, project_id: str) -> Session | None:
-        with self._lock:
-            session = self.get_active_session(project_id)
-            if session is None:
-                return None
-            session.status = SessionStatus.CLOSED
-            session.updated_at = utc_now()
             self._store.save(session)
             return session

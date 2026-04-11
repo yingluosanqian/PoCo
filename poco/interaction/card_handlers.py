@@ -374,54 +374,6 @@ class WorkspaceIntentHandler:
             message=f"Updated workdir for {project.name}",
         )
 
-
-@dataclass(slots=True)
-class SessionIntentHandler:
-    project_controller: ProjectController
-    workspace_controller: WorkspaceContextController
-    session_controller: SessionController
-    task_controller: TaskController | None = None
-
-    def handle(self, intent: ActionIntent) -> IntentDispatchResult:
-        if intent.intent_key == "session.new":
-            return self._new_session(intent)
-        if intent.intent_key == "session.close":
-            return self._close_session(intent)
-        return _rejected(intent, f"Unsupported session intent: {intent.intent_key}")
-
-    def _new_session(self, intent: ActionIntent) -> IntentDispatchResult:
-        project = _get_project_or_reject(self.project_controller, intent)
-        if isinstance(project, IntentDispatchResult):
-            return project
-        session = self.session_controller.create_session(
-            project_id=project.id,
-            created_by=intent.actor_id,
-        )
-        context = self.workspace_controller.get_context(project)
-        return build_workspace_overview_result(
-            project,
-            context=context,
-            active_session=session,
-            latest_task=_latest_project_task(self.task_controller, project.id),
-            message=f"Started a new session for {project.name}",
-        )
-
-    def _close_session(self, intent: ActionIntent) -> IntentDispatchResult:
-        project = _get_project_or_reject(self.project_controller, intent)
-        if isinstance(project, IntentDispatchResult):
-            return project
-        session = self.session_controller.close_active_session(project.id)
-        if session is None:
-            return _rejected(intent, f"No active session to close for {project.name}")
-        context = self.workspace_controller.get_context(project)
-        return build_workspace_overview_result(
-            project,
-            context=context,
-            active_session=None,
-            latest_task=_latest_project_task(self.task_controller, project.id),
-            message=f"Closed active session for {project.name}",
-        )
-
     def _open_workdir_switcher(self, intent: ActionIntent) -> IntentDispatchResult:
         project = _get_project_or_reject(self.project_controller, intent)
         if isinstance(project, IntentDispatchResult):

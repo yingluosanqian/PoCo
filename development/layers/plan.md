@@ -118,4 +118,4 @@
 - richer handoff summary
 - session timeline
 
-其中 `new session / close session` 已进入实现；下一轮重点可转向 `continue` 与 session timeline。
+其中 session 模型已收敛为“一个群一个稳定 session”；下一轮重点可转向 session timeline，而不是 session 切换。

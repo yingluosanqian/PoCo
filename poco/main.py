@@ -12,7 +12,7 @@ from poco.agent.runner import create_agent_runner
 from poco.config import Settings
 from poco.demo import DemoCommandRequest
 from poco.interaction.card_dispatcher import CardActionDispatcher
-from poco.interaction.card_handlers import ProjectIntentHandler, SessionIntentHandler, TaskIntentHandler, WorkspaceIntentHandler
+from poco.interaction.card_handlers import ProjectIntentHandler, TaskIntentHandler, WorkspaceIntentHandler
 from poco.interaction.service import InteractionService
 from poco.platform.feishu.client import FeishuAccessTokenProvider, FeishuApiError, FeishuMessageClient
 from poco.platform.feishu.card_gateway import FeishuCardActionGateway
@@ -111,12 +111,6 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
         controller,
         session_controller=session_controller,
     )
-    session_intent_handler = SessionIntentHandler(
-        project_controller,
-        workspace_controller,
-        session_controller,
-        controller,
-    )
     task_intent_handler = TaskIntentHandler(
         project_controller,
         workspace_controller,
@@ -138,8 +132,6 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
             "project.archive": project_intent_handler,
             "workspace.open": workspace_intent_handler,
             "workspace.refresh": workspace_intent_handler,
-            "session.new": session_intent_handler,
-            "session.close": session_intent_handler,
             "workspace.open_workdir_switcher": workspace_intent_handler,
             "workspace.use_default_dir": workspace_intent_handler,
             "workspace.choose_preset": workspace_intent_handler,
