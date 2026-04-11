@@ -102,7 +102,7 @@ class FeishuTaskNotifierTest(unittest.TestCase):
         card = client.sent_cards[0]["card"]
         self.assertEqual(
             card["header"]["title"]["content"],
-            "Task: task_wait (Waiting, codex, /srv/poco/api)",
+            "[Waiting] Task: task_wait (codex, /srv/poco/api)",
         )
         approve_button = card["body"]["elements"][1]
         self.assertEqual(approve_button["behaviors"][0]["value"]["intent_key"], "task.approve")
@@ -132,7 +132,7 @@ class FeishuTaskNotifierTest(unittest.TestCase):
         card = client.sent_cards[0]["card"]
         self.assertEqual(
             card["header"]["title"]["content"],
-            "Task: task_running (Running, codex, /srv/poco/api)",
+            "[Running] Task: task_running (codex, /srv/poco/api)",
         )
         live_block = card["body"]["elements"][0]
         self.assertIn("line 1", live_block["text"]["content"])
@@ -160,7 +160,7 @@ class FeishuTaskNotifierTest(unittest.TestCase):
         card = client.sent_cards[0]["card"]
         self.assertEqual(
             card["header"]["title"]["content"],
-            "Task: task_done (Complete, codex, /srv/poco/api)",
+            "[Complete] Task: task_done (codex, /srv/poco/api)",
         )
         result_block = card["body"]["elements"][0]
         self.assertIn("Done.", result_block["text"]["content"])

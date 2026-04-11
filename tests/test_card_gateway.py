@@ -461,7 +461,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
         self.assertEqual(self.task_dispatcher.actions, [("start", task.id)])
         self.assertEqual(
             response["card"]["data"]["header"]["title"]["content"],
-            f"Task: {task.id} (Created, stub, /srv/poco/api)",
+            f"[Created] Task: {task.id} (stub, /srv/poco/api)",
         )
 
     def test_task_open_returns_existing_task_status_card(self) -> None:
@@ -498,7 +498,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
         self.assertEqual(response["instruction"]["template_key"], "task_status")
         self.assertEqual(
             response["card"]["data"]["header"]["title"]["content"],
-            f"Task: {task.id} (Created, stub, /srv/poco/api)",
+            f"[Created] Task: {task.id} (stub, /srv/poco/api)",
         )
 
     def test_task_submit_rejects_empty_prompt(self) -> None:
@@ -569,7 +569,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
         self.assertEqual(response["instruction"]["template_key"], "task_status")
         self.assertEqual(
             response["card"]["data"]["header"]["title"]["content"],
-            f"Task: {task.id} (Running, stub, /srv/poco/api)",
+            f"[Running] Task: {task.id} (stub, /srv/poco/api)",
         )
         updated = self.task_controller.get_task(task.id)
         self.assertEqual(updated.status.value, "running")

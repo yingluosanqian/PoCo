@@ -619,7 +619,7 @@ def _render_task_status(
 ) -> dict[str, Any]:
     task = data["task"]
     status = task.get("status") or "unknown"
-    workdir = task.get("effective_workdir") or "未设置"
+    workdir = task.get("effective_workdir") or "no working dir"
     live_output = task.get("live_output") or ""
     raw_result = task.get("raw_result") or task.get("result_summary") or "No result yet."
     requested_page = _normalize_page(data.get("result_page"))
@@ -894,7 +894,7 @@ def _task_title(
     page: int,
     total_pages: int,
 ) -> str:
-    title = f"Task: {task_id} ({_task_status_label(status)}, {agent}, {workdir})"
+    title = f"[{_task_status_label(status)}] Task: {task_id} ({agent}, {workdir})"
     if total_pages > 1:
         return f"{title} [{page}/{total_pages}]"
     return title

@@ -276,6 +276,7 @@ Current interaction model:
 - workspace cards now keep a bound message id and will also be refreshed with latest-task changes when task state changes
 - task status cards now prefer the agent's raw result over summary text, and long results are paginated instead of being replaced by a summary
 - task status cards now collapse task id, status, agent and effective workdir into the title; the body is reserved for model output or confirmation text instead of duplicated metadata
+- task status titles now lead with bracketed status, for example `[Running] Task: ... (codex, no working dir)`, to keep the scan path tighter on mobile
 - workspace cards no longer try to show latest-result body; they now only keep latest-task status and navigation
 - running task cards now show throttled live output updates from the agent, instead of staying at a coarse `running` state
 
