@@ -144,6 +144,22 @@ class TaskControllerTest(unittest.TestCase):
         self.assertEqual(cancelled.status, TaskStatus.CANCELLED)
         self.assertIsNone(cancelled.awaiting_confirmation_reason)
 
+    def test_cancelling_running_task_preserves_existing_output(self) -> None:
+        task = self.controller.create_task(
+            requester_id="ou_demo",
+            prompt="write the next section",
+            source="feishu",
+        )
+        task.set_status(TaskStatus.RUNNING)
+        task.append_live_output("partial streamed output")
+        self.controller._store.save(task)  # type: ignore[attr-defined]
+
+        cancelled = self.controller.cancel_task(task.id)
+
+        self.assertEqual(cancelled.status, TaskStatus.CANCELLED)
+        self.assertEqual(cancelled.raw_result, "partial streamed output")
+        self.assertEqual(cancelled.live_output, "partial streamed output")
+
     def test_codex_task_creation_resolves_default_execution_context(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             controller = TaskController(

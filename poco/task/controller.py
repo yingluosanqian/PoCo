@@ -202,7 +202,8 @@ class TaskController:
                 cancel_runner(task.id)
 
             task.awaiting_confirmation_reason = None
-            task.clear_live_output()
+            if task.live_output and not task.raw_result:
+                task.set_result(task.live_output)
             task.set_status(TaskStatus.CANCELLED)
             task.add_event("task_cancelled", reason)
             self._store.save(task)
