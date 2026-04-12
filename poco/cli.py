@@ -9,6 +9,8 @@ import sys
 import time
 from getpass import getpass
 from pathlib import Path
+from urllib.error import URLError
+from urllib.request import urlopen
 
 from poco.config import DEFAULT_CONFIG_PATH, DEFAULT_RUNTIME_DIR, load_file_config
 
@@ -128,6 +130,21 @@ def _server_command(host: str, port: int) -> list[str]:
     ]
 
 
+def _health_url(host: str, port: int) -> str:
+    return f"http://{host}:{port}/health"
+
+
+def _fetch_health(host: str, port: int) -> dict[str, object] | None:
+    try:
+        with urlopen(_health_url(host, port), timeout=1.0) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (OSError, URLError, TimeoutError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return payload
+
+
 def command_start(args: argparse.Namespace) -> int:
     existing = _read_pid()
     if existing and _is_running(existing):
@@ -187,6 +204,48 @@ def command_restart(args: argparse.Namespace) -> int:
     return command_start(args)
 
 
+def command_status(args: argparse.Namespace) -> int:
+    pid = _read_pid()
+    config = _read_config()
+    if pid is None:
+        print("PoCo status: stopped")
+        print(f"Config: {_config_path()}")
+        print(f"Feishu App ID: {_mask(str(config.get('POCO_FEISHU_APP_ID') or ''))}")
+        print("PID: <not running>")
+        print(f"Log: {LOG_PATH}")
+        return 0
+
+    running = _is_running(pid)
+    if not running:
+        print("PoCo status: stale pid")
+        print(f"Config: {_config_path()}")
+        print(f"Feishu App ID: {_mask(str(config.get('POCO_FEISHU_APP_ID') or ''))}")
+        print(f"PID: {pid} (not running)")
+        print(f"Log: {LOG_PATH}")
+        return 0
+
+    print("PoCo status: running")
+    print(f"Config: {_config_path()}")
+    print(f"Feishu App ID: {_mask(str(config.get('POCO_FEISHU_APP_ID') or ''))}")
+    print(f"PID: {pid}")
+    print(f"Log: {LOG_PATH}")
+
+    health = _fetch_health(args.host, args.port)
+    if health is None:
+        print(f"Health: unavailable at {_health_url(args.host, args.port)}")
+        return 0
+
+    print(
+        "Health: "
+        f"mode={health.get('mode')} "
+        f"delivery={health.get('feishu_delivery_mode')} "
+        f"listener_ready={health.get('feishu_listener_ready')} "
+        f"agent={health.get('agent_backend')} "
+        f"agent_ready={health.get('agent_ready')}"
+    )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="poco")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -201,6 +260,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     shutdown_parser = subparsers.add_parser("shutdown", help="Stop the background PoCo process.")
     shutdown_parser.set_defaults(func=command_shutdown)
+
+    status_parser = subparsers.add_parser("status", help="Show PoCo runtime status.")
+    status_parser.add_argument("--host", default=DEFAULT_HOST)
+    status_parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+    status_parser.set_defaults(func=command_status)
 
     restart_parser = subparsers.add_parser("restart", help="Restart the background PoCo process.")
     restart_parser.add_argument("--host", default=DEFAULT_HOST)

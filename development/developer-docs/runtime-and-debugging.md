@@ -12,6 +12,7 @@ poco start
 
 ```bash
 poco config
+poco status
 poco shutdown
 poco restart
 ```

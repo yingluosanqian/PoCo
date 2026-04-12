@@ -154,6 +154,7 @@ PoCo now defaults to Feishu `longconn`, so the normal local/mobile-first path do
 Useful lifecycle commands:
 
 ```bash
+poco status
 poco shutdown
 poco restart
 ```
