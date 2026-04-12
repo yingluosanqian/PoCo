@@ -985,6 +985,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
                         "surface": "group",
                         "project_id": project.id,
                         "request_id": "req_workspace_apply_path_1",
+                        "mode": "manual",
                     },
                     "form_value": {
                         "workdir": "/srv/poco/manual",
@@ -1017,6 +1018,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
                         "surface": "group",
                         "project_id": project.id,
                         "request_id": "req_workspace_apply_path_1b",
+                        "mode": "browse",
                     },
                     "form_value": {
                         "browse_path": "/srv/poco/api",
@@ -1049,6 +1051,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
                         "surface": "group",
                         "project_id": project.id,
                         "request_id": "req_workspace_apply_path_2",
+                        "mode": "manual",
                     },
                     "form_value": {
                         "workdir": "   ",

@@ -440,7 +440,11 @@ class WorkspaceIntentHandler:
         project = _get_project_or_reject(self.project_controller, intent)
         if isinstance(project, IntentDispatchResult):
             return project
-        workdir = _extract_workdir_path(intent.payload) or _extract_browse_path(intent.payload) or ""
+        mode = _optional_string(intent.payload.get("mode")) or "manual"
+        if mode == "browse":
+            workdir = _extract_browse_path(intent.payload) or ""
+        else:
+            workdir = _extract_workdir_path(intent.payload)
         try:
             context = self.workspace_controller.use_manual_workdir(project, workdir)
         except WorkspaceContextError as exc:

@@ -628,6 +628,7 @@ def _render_workspace_enter_path(
                                             "intent_key": "workspace.enter_path",
                                             "surface": surface,
                                             "project_id": project["id"],
+                                            "mode": "browse",
                                         },
                                     }
                                 ],
@@ -648,6 +649,7 @@ def _render_workspace_enter_path(
                                             "intent_key": "workspace.apply_entered_path",
                                             "surface": surface,
                                             "project_id": project["id"],
+                                            "mode": "browse",
                                         },
                                     }
                                 ],
@@ -668,6 +670,7 @@ def _render_workspace_enter_path(
                                             "surface": surface,
                                             "project_id": project["id"],
                                             "browse_path": browse_path,
+                                            "mode": "manual",
                                         },
                                     }
                                 ],
@@ -687,6 +690,7 @@ def _render_workspace_enter_path(
                                             "intent_key": "workspace.open",
                                             "surface": surface,
                                             "project_id": project["id"],
+                                            "mode": "browse",
                                         },
                                     }
                                 ],
@@ -745,13 +749,14 @@ def _render_workspace_enter_path(
                             "behaviors": [
                                 {
                                     "type": "callback",
-                                    "value": {
-                                        "intent_key": "workspace.apply_entered_path",
-                                        "surface": surface,
-                                        "project_id": project["id"],
-                                    },
-                                }
-                            ],
+                                        "value": {
+                                            "intent_key": "workspace.apply_entered_path",
+                                            "surface": surface,
+                                            "project_id": project["id"],
+                                            "mode": "manual",
+                                        },
+                                    }
+                                ],
                             "margin": "0px 0px 12px 0px",
                         },
                         {
@@ -764,14 +769,15 @@ def _render_workspace_enter_path(
                             "behaviors": [
                                 {
                                     "type": "callback",
-                                    "value": {
-                                        "intent_key": "workspace.enter_path",
-                                        "surface": surface,
-                                        "project_id": project["id"],
-                                        "browse_path": browse_path,
-                                    },
-                                }
-                            ],
+                                        "value": {
+                                            "intent_key": "workspace.enter_path",
+                                            "surface": surface,
+                                            "project_id": project["id"],
+                                            "browse_path": browse_path,
+                                            "mode": "browse",
+                                        },
+                                    }
+                                ],
                             "margin": "0px 0px 12px 0px",
                         },
                         {
@@ -784,13 +790,14 @@ def _render_workspace_enter_path(
                             "behaviors": [
                                 {
                                     "type": "callback",
-                                    "value": {
-                                        "intent_key": "workspace.open",
-                                        "surface": surface,
-                                        "project_id": project["id"],
-                                    },
-                                }
-                            ],
+                                        "value": {
+                                            "intent_key": "workspace.open",
+                                            "surface": surface,
+                                            "project_id": project["id"],
+                                            "mode": "manual",
+                                        },
+                                    }
+                                ],
                             "margin": "0px 0px 12px 0px",
                         },
                     ),

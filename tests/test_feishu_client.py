@@ -282,9 +282,13 @@ class FeishuClientTest(unittest.TestCase):
         self.assertEqual(action_row["tag"], "column_set")
         self.assertEqual(open_button["form_action_type"], "submit")
         self.assertEqual(open_button["behaviors"][0]["value"]["intent_key"], "workspace.enter_path")
+        self.assertEqual(open_button["behaviors"][0]["value"]["mode"], "browse")
         self.assertEqual(apply_button["behaviors"][0]["value"]["intent_key"], "workspace.apply_entered_path")
+        self.assertEqual(apply_button["behaviors"][0]["value"]["mode"], "browse")
         self.assertEqual(manual_shortcut["behaviors"][0]["value"]["intent_key"], "workspace.enter_path_manual")
+        self.assertEqual(manual_shortcut["behaviors"][0]["value"]["mode"], "manual")
         self.assertEqual(cancel_button["behaviors"][0]["value"]["intent_key"], "workspace.open")
+        self.assertEqual(cancel_button["behaviors"][0]["value"]["mode"], "browse")
 
     def test_workspace_manual_path_card_contains_input_and_back_to_browse(self) -> None:
         project = Project(
@@ -328,8 +332,11 @@ class FeishuClientTest(unittest.TestCase):
         cancel_button = action_row["columns"][2]["elements"][0]
         self.assertEqual(input_box["tag"], "input")
         self.assertEqual(apply_button["behaviors"][0]["value"]["intent_key"], "workspace.apply_entered_path")
+        self.assertEqual(apply_button["behaviors"][0]["value"]["mode"], "manual")
         self.assertEqual(back_button["behaviors"][0]["value"]["intent_key"], "workspace.enter_path")
+        self.assertEqual(back_button["behaviors"][0]["value"]["mode"], "browse")
         self.assertEqual(cancel_button["behaviors"][0]["value"]["intent_key"], "workspace.open")
+        self.assertEqual(cancel_button["behaviors"][0]["value"]["mode"], "manual")
 
     def test_project_dir_presets_card_contains_input_and_add(self) -> None:
         project = Project(
