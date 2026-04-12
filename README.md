@@ -4,6 +4,8 @@ PoCo is a Python-first MVP scaffold for controlling server-side AI agent workflo
 
 ## Quick Start
 
+Install from source:
+
 ```bash
 python3 -m pip install -e .
 poco config
@@ -14,6 +16,12 @@ Then verify:
 
 ```bash
 poco status
+```
+
+When published, the install command should be:
+
+```bash
+python3 -m pip install pocket-coding
 ```
 
 ## Current Scope

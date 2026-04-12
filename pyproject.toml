@@ -1,5 +1,5 @@
 [project]
-name = "poco"
+name = "pocket-coding"
 version = "0.4.0"
 description = "PoCo: pocket coding for server-side AI agents through mobile messaging entrypoints."
 readme = "README.md"
