@@ -8,6 +8,7 @@ from poco.interaction.card_handlers import build_workspace_overview_result
 from poco.interaction.card_models import DispatchStatus, IntentDispatchResult, RefreshMode, ResourceRefs, Surface, ViewModel
 from poco.platform.feishu.client import (
     FeishuAccessTokenProvider,
+    FeishuChatDeleteForbiddenError,
     FeishuChatNotFoundError,
     FeishuMessageClient,
 )
@@ -116,6 +117,19 @@ class FeishuClientTest(unittest.TestCase):
 
             with self.assertRaises(FeishuChatNotFoundError):
                 self.client.delete_group_chat(chat_id="oc_group_missing")
+
+    def test_delete_group_chat_raises_forbidden_for_permission_denied(self) -> None:
+        with (
+            patch.object(self.token_provider, "get_token", return_value="tenant-token"),
+            patch("poco.platform.feishu.client._request_json") as request_json,
+        ):
+            request_json.return_value = {
+                "code": 232017,
+                "msg": "forbidden",
+            }
+
+            with self.assertRaises(FeishuChatDeleteForbiddenError):
+                self.client.delete_group_chat(chat_id="oc_group_forbidden")
 
     def test_workspace_renderer_uses_group_surface_for_workspace_cards(self) -> None:
         project = Project(

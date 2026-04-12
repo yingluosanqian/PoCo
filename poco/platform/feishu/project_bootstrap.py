@@ -3,7 +3,12 @@ from __future__ import annotations
 from poco.interaction.card_dispatcher import build_render_instruction
 from poco.interaction.card_handlers import build_workspace_overview_result
 from poco.interaction.card_models import Surface
-from poco.platform.feishu.client import FeishuApiError, FeishuChatNotFoundError, FeishuMessageClient
+from poco.platform.feishu.client import (
+    FeishuApiError,
+    FeishuChatDeleteForbiddenError,
+    FeishuChatNotFoundError,
+    FeishuMessageClient,
+)
 from poco.platform.feishu.cards import FeishuCardRenderer
 from poco.platform.feishu.debug import FeishuDebugRecorder
 from poco.project.bootstrap import (
@@ -130,6 +135,21 @@ class FeishuProjectBootstrapper:
                     },
                 )
             raise ProjectBootstrapError("Project group not found.") from exc
+        except FeishuChatDeleteForbiddenError as exc:
+            if self._debug_recorder is not None:
+                self._debug_recorder.record_error(
+                    stage="project_group_destroy",
+                    message=str(exc),
+                    context={
+                        "project_id": project.id,
+                        "project_name": project.name,
+                        "group_chat_id": project.group_chat_id,
+                        "actor_id": actor_id,
+                    },
+                )
+            raise ProjectBootstrapError(
+                "Project group could not be dismissed by the app. Delete the group manually in Feishu, or keep the group and only delete the project record."
+            ) from exc
         except FeishuApiError as exc:
             if self._debug_recorder is not None:
                 self._debug_recorder.record_error(

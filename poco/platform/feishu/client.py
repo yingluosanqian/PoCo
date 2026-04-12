@@ -18,6 +18,10 @@ class FeishuChatNotFoundError(FeishuApiError):
     pass
 
 
+class FeishuChatDeleteForbiddenError(FeishuApiError):
+    pass
+
+
 @dataclass(frozen=True, slots=True)
 class FeishuSendResult:
     message_id: str | None
@@ -195,6 +199,10 @@ class FeishuMessageClient:
         if code == 232006:
             raise FeishuChatNotFoundError(
                 f"Feishu group chat not found: chat_id={chat_id}"
+            )
+        if code == 232017:
+            raise FeishuChatDeleteForbiddenError(
+                "Feishu rejected group deletion. The app likely does not have permission to dismiss this group."
             )
         if code != 0:
             raise FeishuApiError(
