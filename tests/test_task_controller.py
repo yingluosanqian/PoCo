@@ -7,6 +7,7 @@ from poco.agent.runner import CodexCliRunner, StubAgentRunner
 from poco.session.controller import SessionController
 from poco.storage.memory import InMemorySessionStore, InMemoryTaskStore
 from poco.task.controller import TaskController
+from poco.task.models import Task
 from poco.task.models import TaskStatus
 
 
@@ -202,6 +203,68 @@ class TaskControllerTest(unittest.TestCase):
             self.assertEqual(task.effective_model, "gpt-5.4")
             self.assertEqual(task.effective_sandbox, "workspace-write")
             self.assertEqual(task.effective_workdir, tmpdir)
+
+    def test_runner_updates_are_closed_when_store_save_raises(self) -> None:
+        class ClosingRunner:
+            name = "closing"
+
+            def __init__(self) -> None:
+                self.closed = False
+
+            def is_ready(self):
+                return True, "ok"
+
+            def resolve_execution_context(self, task: Task):
+                return None, task.effective_workdir, task.effective_sandbox
+
+            def cancel(self, task_id: str) -> bool:
+                return False
+
+            def start(self, task: Task):
+                try:
+                    yield type(
+                        "Update",
+                        (),
+                        {
+                            "kind": "progress",
+                            "message": "runner progress",
+                            "output_chunk": "x",
+                            "backend_session_id": None,
+                        },
+                    )()
+                finally:
+                    self.closed = True
+
+            def resume_after_confirmation(self, task: Task):
+                return self.start(task)
+
+        class FailingStore(InMemoryTaskStore):
+            def __init__(self) -> None:
+                super().__init__()
+                self.save_calls = 0
+
+            def save(self, task):
+                self.save_calls += 1
+                if self.save_calls >= 3:
+                    raise RuntimeError("save failed")
+                return super().save(task)
+
+        runner = ClosingRunner()
+        controller = TaskController(
+            store=FailingStore(),
+            runner=runner,
+            session_controller=self.session_controller,
+        )
+        task = controller.create_task(
+            requester_id="ou_demo",
+            prompt="stream output",
+            source="feishu",
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "save failed"):
+            controller.start_task_execution(task.id)
+
+        self.assertTrue(runner.closed)
 
 
 if __name__ == "__main__":

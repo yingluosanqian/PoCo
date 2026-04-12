@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
@@ -27,8 +28,17 @@ class _SqliteStoreBase:
         connection.row_factory = sqlite3.Row
         return connection
 
+    @contextmanager
+    def _connection(self):
+        connection = self._connect()
+        try:
+            with connection:
+                yield connection
+        finally:
+            connection.close()
+
     def _ensure_schema(self) -> None:
-        with self._connect() as connection:
+        with self._connection() as connection:
             connection.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS projects (
@@ -146,7 +156,7 @@ class _SqliteStoreBase:
 
 class SqliteProjectStore(_SqliteStoreBase):
     def save(self, project: Project) -> Project:
-        with self._connect() as connection:
+        with self._connection() as connection:
             connection.execute(
                 """
                 INSERT INTO projects (
@@ -190,7 +200,7 @@ class SqliteProjectStore(_SqliteStoreBase):
         return project
 
     def get(self, project_id: str) -> Project | None:
-        with self._connect() as connection:
+        with self._connection() as connection:
             row = connection.execute(
                 "SELECT * FROM projects WHERE id = ?",
                 (project_id,),
@@ -200,14 +210,14 @@ class SqliteProjectStore(_SqliteStoreBase):
         return self._row_to_project(row)
 
     def list_all(self) -> list[Project]:
-        with self._connect() as connection:
+        with self._connection() as connection:
             rows = connection.execute(
                 "SELECT * FROM projects ORDER BY created_at ASC"
             ).fetchall()
         return [self._row_to_project(row) for row in rows]
 
     def delete(self, project_id: str) -> None:
-        with self._connect() as connection:
+        with self._connection() as connection:
             connection.execute("DELETE FROM projects WHERE id = ?", (project_id,))
 
     def _row_to_project(self, row: sqlite3.Row) -> Project:
@@ -234,7 +244,7 @@ class SqliteProjectStore(_SqliteStoreBase):
 
 class SqliteTaskStore(_SqliteStoreBase):
     def save(self, task: Task) -> Task:
-        with self._connect() as connection:
+        with self._connection() as connection:
             connection.execute(
                 """
                 INSERT INTO tasks (
@@ -306,7 +316,7 @@ class SqliteTaskStore(_SqliteStoreBase):
         return task
 
     def get(self, task_id: str) -> Task | None:
-        with self._connect() as connection:
+        with self._connection() as connection:
             row = connection.execute(
                 "SELECT * FROM tasks WHERE id = ?",
                 (task_id,),
@@ -316,14 +326,14 @@ class SqliteTaskStore(_SqliteStoreBase):
         return self._row_to_task(row)
 
     def list_all(self) -> list[Task]:
-        with self._connect() as connection:
+        with self._connection() as connection:
             rows = connection.execute(
                 "SELECT * FROM tasks ORDER BY created_at ASC"
             ).fetchall()
         return [self._row_to_task(row) for row in rows]
 
     def delete_by_project_id(self, project_id: str) -> None:
-        with self._connect() as connection:
+        with self._connection() as connection:
             connection.execute("DELETE FROM tasks WHERE project_id = ?", (project_id,))
 
     def _row_to_task(self, row: sqlite3.Row) -> Task:
@@ -365,7 +375,7 @@ class SqliteTaskStore(_SqliteStoreBase):
 
 class SqliteWorkspaceContextStore(_SqliteStoreBase):
     def save(self, context: WorkspaceContext) -> WorkspaceContext:
-        with self._connect() as connection:
+        with self._connection() as connection:
             connection.execute(
                 """
                 INSERT INTO workspace_contexts (
@@ -386,7 +396,7 @@ class SqliteWorkspaceContextStore(_SqliteStoreBase):
         return context
 
     def get(self, project_id: str) -> WorkspaceContext | None:
-        with self._connect() as connection:
+        with self._connection() as connection:
             row = connection.execute(
                 "SELECT * FROM workspace_contexts WHERE project_id = ?",
                 (project_id,),
@@ -401,7 +411,7 @@ class SqliteWorkspaceContextStore(_SqliteStoreBase):
         )
 
     def delete(self, project_id: str) -> None:
-        with self._connect() as connection:
+        with self._connection() as connection:
             connection.execute(
                 "DELETE FROM workspace_contexts WHERE project_id = ?",
                 (project_id,),
@@ -410,7 +420,7 @@ class SqliteWorkspaceContextStore(_SqliteStoreBase):
 
 class SqliteSessionStore(_SqliteStoreBase):
     def save(self, session: Session) -> Session:
-        with self._connect() as connection:
+        with self._connection() as connection:
             connection.execute(
                 """
                 INSERT INTO sessions (
@@ -446,7 +456,7 @@ class SqliteSessionStore(_SqliteStoreBase):
         return session
 
     def get(self, session_id: str) -> Session | None:
-        with self._connect() as connection:
+        with self._connection() as connection:
             row = connection.execute(
                 "SELECT * FROM sessions WHERE id = ?",
                 (session_id,),
@@ -456,14 +466,14 @@ class SqliteSessionStore(_SqliteStoreBase):
         return self._row_to_session(row)
 
     def list_all(self) -> list[Session]:
-        with self._connect() as connection:
+        with self._connection() as connection:
             rows = connection.execute(
                 "SELECT * FROM sessions ORDER BY created_at ASC"
             ).fetchall()
         return [self._row_to_session(row) for row in rows]
 
     def delete_by_project_id(self, project_id: str) -> None:
-        with self._connect() as connection:
+        with self._connection() as connection:
             connection.execute("DELETE FROM sessions WHERE project_id = ?", (project_id,))
 
     def _row_to_session(self, row: sqlite3.Row) -> Session:

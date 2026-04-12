@@ -340,64 +340,69 @@ class TaskController:
         *,
         on_update: Callable[[Task], None] | None = None,
     ) -> Task:
-        for update in updates:
-            with self._lock:
-                task = self.get_task(task_id)
-                if task.status == TaskStatus.CANCELLED:
-                    continue
-                if update.kind == "progress":
-                    if getattr(update, "backend_session_id", None):
-                        task.set_execution_context(
-                            effective_backend_config=task.effective_backend_config,
-                            effective_model=task.effective_model,
-                            effective_sandbox=task.effective_sandbox,
-                            effective_workdir=task.effective_workdir,
-                            backend_session_id=update.backend_session_id,
-                        )
-                    if getattr(update, "output_chunk", None):
-                        task.append_live_output(update.output_chunk)
-                    task.add_event("runner_progress", update.message)
-                elif update.kind == "confirmation_required":
-                    task.awaiting_confirmation_reason = update.message
-                    task.set_status(TaskStatus.WAITING_FOR_CONFIRMATION)
-                    task.add_event("confirmation_required", update.message)
-                elif update.kind == "completed":
-                    if getattr(update, "backend_session_id", None):
-                        task.set_execution_context(
-                            effective_backend_config=task.effective_backend_config,
-                            effective_model=task.effective_model,
-                            effective_sandbox=task.effective_sandbox,
-                            effective_workdir=task.effective_workdir,
-                            backend_session_id=update.backend_session_id,
-                        )
-                    task.set_result(update.raw_result)
-                    task.clear_live_output()
-                    task.set_status(TaskStatus.COMPLETED)
-                    task.add_event("task_completed", update.message)
-                elif update.kind == "failed":
-                    if getattr(update, "backend_session_id", None):
-                        task.set_execution_context(
-                            effective_backend_config=task.effective_backend_config,
-                            effective_model=task.effective_model,
-                            effective_sandbox=task.effective_sandbox,
-                            effective_workdir=task.effective_workdir,
-                            backend_session_id=update.backend_session_id,
-                        )
-                    task.clear_live_output()
-                    task.set_status(TaskStatus.FAILED)
-                    task.add_event("task_failed", update.message)
-                else:
-                    raise TaskStateError(f"Unsupported runner update kind: {update.kind}")
-                self._store.save(task)
-                self._sync_session(task)
-            should_callback = True
-            if update.kind == "progress" and not getattr(update, "output_chunk", None):
-                should_callback = False
-            if on_update is not None and should_callback:
-                on_update(task)
+        close_updates = getattr(updates, "close", None)
+        try:
+            for update in updates:
+                with self._lock:
+                    task = self.get_task(task_id)
+                    if task.status == TaskStatus.CANCELLED:
+                        continue
+                    if update.kind == "progress":
+                        if getattr(update, "backend_session_id", None):
+                            task.set_execution_context(
+                                effective_backend_config=task.effective_backend_config,
+                                effective_model=task.effective_model,
+                                effective_sandbox=task.effective_sandbox,
+                                effective_workdir=task.effective_workdir,
+                                backend_session_id=update.backend_session_id,
+                            )
+                        if getattr(update, "output_chunk", None):
+                            task.append_live_output(update.output_chunk)
+                        task.add_event("runner_progress", update.message)
+                    elif update.kind == "confirmation_required":
+                        task.awaiting_confirmation_reason = update.message
+                        task.set_status(TaskStatus.WAITING_FOR_CONFIRMATION)
+                        task.add_event("confirmation_required", update.message)
+                    elif update.kind == "completed":
+                        if getattr(update, "backend_session_id", None):
+                            task.set_execution_context(
+                                effective_backend_config=task.effective_backend_config,
+                                effective_model=task.effective_model,
+                                effective_sandbox=task.effective_sandbox,
+                                effective_workdir=task.effective_workdir,
+                                backend_session_id=update.backend_session_id,
+                            )
+                        task.set_result(update.raw_result)
+                        task.clear_live_output()
+                        task.set_status(TaskStatus.COMPLETED)
+                        task.add_event("task_completed", update.message)
+                    elif update.kind == "failed":
+                        if getattr(update, "backend_session_id", None):
+                            task.set_execution_context(
+                                effective_backend_config=task.effective_backend_config,
+                                effective_model=task.effective_model,
+                                effective_sandbox=task.effective_sandbox,
+                                effective_workdir=task.effective_workdir,
+                                backend_session_id=update.backend_session_id,
+                            )
+                        task.clear_live_output()
+                        task.set_status(TaskStatus.FAILED)
+                        task.add_event("task_failed", update.message)
+                    else:
+                        raise TaskStateError(f"Unsupported runner update kind: {update.kind}")
+                    self._store.save(task)
+                    self._sync_session(task)
+                should_callback = True
+                if update.kind == "progress" and not getattr(update, "output_chunk", None):
+                    should_callback = False
+                if on_update is not None and should_callback:
+                    on_update(task)
 
-        with self._lock:
-            return self.get_task(task_id)
+            with self._lock:
+                return self.get_task(task_id)
+        finally:
+            if callable(close_updates):
+                close_updates()
 
     def _sync_session(self, task: Task) -> None:
         if self._session_controller is None:
