@@ -602,7 +602,7 @@ def _render_task_status(
 
     awaiting = task.get("awaiting_confirmation_reason")
     if awaiting:
-        elements.append(_markdown(_as_code_block(awaiting)))
+        elements.append(_markdown(awaiting))
         elements.append(
             _button(
                 label="Approve",
@@ -629,11 +629,11 @@ def _render_task_status(
             )
         )
     elif status == "running":
-        elements.append(_markdown(_as_code_block(live_output or "Waiting for agent output...")))
+        elements.append(_markdown(live_output or "Waiting for agent output..."))
     elif status == "queued":
-        elements.append(_markdown(_as_code_block("Queued. This task will start after the current task finishes.")))
+        elements.append(_markdown("Queued. This task will start after the current task finishes."))
     else:
-        elements.append(_markdown(_as_code_block(result_chunk)))
+        elements.append(_markdown(result_chunk))
         if total_pages > 1:
             if page > 1:
                 elements.append(
