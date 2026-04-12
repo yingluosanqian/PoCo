@@ -66,7 +66,11 @@ class FeishuTaskNotifier:
                 else Surface.DM
             )
             instruction = build_render_instruction(
-                build_task_status_result(task, message=headline_for_notification(task)),
+                build_task_status_result(
+                    task,
+                    task_controller=self._task_controller,
+                    message=headline_for_notification(task),
+                ),
                 surface=surface,
             )
             card = self._renderer.render(instruction)
@@ -217,6 +221,7 @@ class FeishuTaskNotifier:
                     else None
                 ),
                 latest_task=task,
+                task_controller=self._task_controller,
                 message=f"Workspace synced for {project.name}",
             ),
             surface=Surface.GROUP,
@@ -268,6 +273,7 @@ class FeishuTaskNotifier:
                     else None
                 ),
                 latest_task=task,
+                task_controller=self._task_controller,
                 message=f"Workspace restored for {project.name}",
             ),
             surface=Surface.GROUP,

@@ -232,6 +232,9 @@ def _request_codex_model_list(command: str) -> dict[str, object]:
     except Exception:
         return {}
     finally:
+        for stream in (process.stdin, process.stdout, process.stderr):
+            if stream is not None:
+                stream.close()
         process.kill()
         try:
             process.wait(timeout=1)

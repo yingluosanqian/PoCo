@@ -153,7 +153,11 @@ class FeishuGateway:
                         else Surface.DM
                     )
                     instruction = build_render_instruction(
-                        build_task_status_result(task, message=response.text),
+                        build_task_status_result(
+                            task,
+                            task_controller=self._task_controller,
+                            message=response.text,
+                        ),
                         surface=surface,
                     )
                     card = self._card_renderer.render(instruction)
@@ -416,6 +420,7 @@ class FeishuGateway:
                 project,
                 context=context,
                 latest_task=latest_task,
+                task_controller=self._task_controller,
             ),
             surface=Surface.GROUP,
         )

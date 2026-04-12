@@ -328,6 +328,7 @@ class WorkspaceIntentHandler:
             context=context,
             active_session=_active_project_session(self.session_controller, project.id),
             latest_task=_latest_project_task(self.task_controller, project.id),
+            task_controller=self.task_controller,
         )
 
     def _open_use_default_dir(self, intent: ActionIntent) -> IntentDispatchResult:
@@ -461,6 +462,7 @@ class WorkspaceIntentHandler:
                 context=context,
                 active_session=_active_project_session(self.session_controller, project.id),
                 latest_task=_latest_project_task(self.task_controller, project.id),
+                task_controller=self.task_controller,
             ).view_model,
             refresh_mode=RefreshMode.REPLACE_CURRENT,
             message=f"Updated workdir for {project.name}",
@@ -510,6 +512,7 @@ class WorkspaceIntentHandler:
             context=context,
             active_session=_active_project_session(self.session_controller, project.id),
             latest_task=_latest_project_task(self.task_controller, project.id),
+            task_controller=self.task_controller,
             message=f"Agent updated for {project.name}",
         )
 
@@ -596,6 +599,7 @@ class TaskIntentHandler:
                 self.dispatcher.dispatch_start(task.id)
         return build_task_status_result(
             task,
+            task_controller=self.task_controller,
             message=message,
         )
 
@@ -607,6 +611,7 @@ class TaskIntentHandler:
             return _rejected(intent, str(exc))
         return build_task_status_result(
             task,
+            task_controller=self.task_controller,
             message=f"Opened task: {task.id}",
             result_page=_positive_int(intent.payload.get("page"), default=1),
         )
@@ -621,6 +626,7 @@ class TaskIntentHandler:
             self.dispatcher.dispatch_resume(task.id)
         return build_task_status_result(
             task,
+            task_controller=self.task_controller,
             message="Task approved. Resuming execution.",
         )
 
@@ -634,6 +640,7 @@ class TaskIntentHandler:
             self.dispatcher.dispatch_next_queued(task.project_id)
         return build_task_status_result(
             task,
+            task_controller=self.task_controller,
             message="Task stopped.",
         )
 
@@ -647,6 +654,7 @@ class TaskIntentHandler:
             self.dispatcher.dispatch_next_queued(task.project_id)
         return build_task_status_result(
             task,
+            task_controller=self.task_controller,
             message="Task rejected.",
         )
 
@@ -676,6 +684,7 @@ def build_workspace_overview_result(
     context=None,
     active_session=None,
     latest_task=None,
+    task_controller: TaskController | None = None,
     message: str | None = None,
 ) -> IntentDispatchResult:
     current_workdir = None
@@ -709,6 +718,7 @@ def build_workspace_overview_result(
     if active_session is not None:
         active_session_id = active_session.id
         active_session_summary = active_session.summary_text()
+    queue_count = task_controller.get_queue_count(project.id) if task_controller is not None else 0
     return IntentDispatchResult(
         status=DispatchStatus.OK,
         intent_key="workspace.open",
@@ -730,6 +740,7 @@ def build_workspace_overview_result(
                 "pending_approvals": 0,
                 "current_workdir": current_workdir,
                 "workdir_source": workdir_source,
+                "queue_count": queue_count,
             },
         ),
         refresh_mode=RefreshMode.REPLACE_CURRENT,
@@ -740,9 +751,19 @@ def build_workspace_overview_result(
 def build_task_status_result(
     task,
     *,
+    task_controller: TaskController | None = None,
     message: str | None = None,
     result_page: int = 1,
 ) -> IntentDispatchResult:
+    queue_position = None
+    blocking_task_id = None
+    if task_controller is not None:
+        queue_position = task_controller.get_queue_position(task.id)
+        if task.project_id and task.status.value == "queued":
+            for candidate in task_controller.list_tasks_for_project(task.project_id):
+                if candidate.status.value in {"created", "running", "waiting_for_confirmation"}:
+                    blocking_task_id = candidate.id
+                    break
     return IntentDispatchResult(
         status=DispatchStatus.OK,
         intent_key="task.status",
@@ -756,6 +777,8 @@ def build_task_status_result(
             {
                 "task": task.to_dict(),
                 "result_page": result_page,
+                "queue_position": queue_position,
+                "blocking_task_id": blocking_task_id,
             },
         ),
         refresh_mode=RefreshMode.REPLACE_CURRENT,

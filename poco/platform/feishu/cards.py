@@ -434,6 +434,7 @@ def _render_workspace_overview(
     current_workdir = data.get("current_workdir") or "no working dir"
     current_agent = data.get("current_agent") or project["backend"]
     current_model = data.get("current_model")
+    queue_count = int(data.get("queue_count") or 0)
     stop_enabled = bool(data.get("stop_enabled"))
     config_locked = latest_status in {"created", "queued", "running", "waiting_for_confirmation"}
     elements: list[dict[str, Any]] = []
@@ -483,6 +484,7 @@ def _render_workspace_overview(
             agent=current_agent,
             workdir=current_workdir,
             model=current_model,
+            queue_count=queue_count,
         ),
         template="orange",
         elements=elements,
@@ -971,6 +973,8 @@ def _render_task_status(
     app_base_url: str | None,
 ) -> dict[str, Any]:
     task = data["task"]
+    queue_position = data.get("queue_position")
+    blocking_task_id = data.get("blocking_task_id")
     status = task.get("status") or "unknown"
     workdir = task.get("effective_workdir") or "no working dir"
     live_output = task.get("live_output") or ""
@@ -1044,7 +1048,14 @@ def _render_task_status(
         else:
             elements.append(_markdown("Waiting for agent output..."))
     elif status == "queued":
-        elements.append(_markdown("Queued. This task will start after the current task finishes."))
+        details: list[str] = []
+        if queue_position:
+            details.append(f"Queue position: **{queue_position}**")
+        if blocking_task_id:
+            details.append(f"Waiting for task `{blocking_task_id}` to finish.")
+        if not details:
+            details.append("Queued. Waiting for the current task to finish.")
+        elements.append(_markdown("\n".join(details)))
     else:
         result_chunk, page, total_pages = _paginate_text(raw_result, page=requested_page)
         elements.append(_markdown(result_chunk))
@@ -1525,6 +1536,7 @@ def _workspace_title(
     agent: str,
     workdir: str,
     model: str | None,
+    queue_count: int,
 ) -> str:
     status_label = _workspace_status_label(status)
     details: list[str] = [agent, workdir]
@@ -1532,6 +1544,8 @@ def _workspace_title(
         details.append(model)
     if task_id:
         details.append(task_id)
+    if queue_count > 0:
+        details.append(f"queue {queue_count}")
     return f"[{status_label}] Workspace: {project_name} ({', '.join(details)})"
 
 

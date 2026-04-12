@@ -168,6 +168,45 @@ class FeishuClientTest(unittest.TestCase):
             "workspace.choose_agent",
         )
 
+    def test_workspace_renderer_shows_queue_count_in_title(self) -> None:
+        project = Project(
+            id="proj_queue",
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+        )
+        instruction = build_render_instruction(
+            IntentDispatchResult(
+                status=DispatchStatus.OK,
+                intent_key="workspace.open",
+                resource_refs=ResourceRefs(project_id=project.id),
+                view_model=ViewModel(
+                    "workspace_overview",
+                    {
+                        "project": project.to_dict(),
+                        "latest_task_status": "running",
+                        "latest_task_id": "task_run_1",
+                        "current_agent": "codex",
+                        "current_model": None,
+                        "stop_enabled": True,
+                        "pending_approvals": 0,
+                        "current_workdir": "/srv/poco/api",
+                        "workdir_source": "manual",
+                        "queue_count": 2,
+                    },
+                ),
+                refresh_mode=RefreshMode.REPLACE_CURRENT,
+            ),
+            surface=Surface.GROUP,
+        )
+
+        card = FeishuCardRenderer().render(instruction)
+
+        self.assertEqual(
+            card["header"]["title"]["content"],
+            "[Running] Workspace: PoCo (codex, /srv/poco/api, task_run_1, queue 2)",
+        )
+
     def test_project_bootstrapper_sends_workspace_card_to_created_group(self) -> None:
         class FakeMessageClient:
             def __init__(self) -> None:
@@ -807,6 +846,44 @@ class FeishuClientTest(unittest.TestCase):
         self.assertEqual(card["header"]["template"], "grey")
         self.assertEqual(card["body"]["elements"][0]["tag"], "markdown")
         self.assertEqual(card["body"]["elements"][1]["tag"], "column_set")
+
+    def test_task_status_card_shows_queue_position_and_blocking_task(self) -> None:
+        task = {
+            "id": "task_queue_1",
+            "project_id": "proj_1",
+            "agent_backend": "codex",
+            "effective_workdir": "/srv/poco/api",
+            "prompt": "queued work",
+            "status": "queued",
+            "awaiting_confirmation_reason": None,
+            "raw_result": None,
+        }
+        card = FeishuCardRenderer().render(
+            build_render_instruction(
+                IntentDispatchResult(
+                    status=DispatchStatus.OK,
+                    intent_key="task.status",
+                    resource_refs=ResourceRefs(project_id="proj_1", task_id="task_queue_1"),
+                    view_model=ViewModel(
+                        "task_status",
+                        {
+                            "task": task,
+                            "queue_position": 2,
+                            "blocking_task_id": "task_run_1",
+                        },
+                    ),
+                    refresh_mode=RefreshMode.REPLACE_CURRENT,
+                ),
+                surface=Surface.GROUP,
+            )
+        )
+
+        self.assertEqual(
+            card["header"]["title"]["content"],
+            "[Queued] Task: task_queue_1 (codex, /srv/poco/api)",
+        )
+        self.assertIn("Queue position: **2**", card["body"]["elements"][0]["content"])
+        self.assertIn("Waiting for task `task_run_1` to finish.", card["body"]["elements"][0]["content"])
 
 
 if __name__ == "__main__":

@@ -109,6 +109,27 @@ class TaskControllerTest(unittest.TestCase):
         self.assertEqual(claimed.id, first.id)
         self.assertEqual(claimed.status, TaskStatus.CREATED)
 
+    def test_get_queue_count_and_position(self) -> None:
+        first = self.controller.create_task(
+            requester_id="ou_demo",
+            prompt="first",
+            source="feishu",
+            project_id="proj_demo",
+        )
+        second = self.controller.create_task(
+            requester_id="ou_demo",
+            prompt="second",
+            source="feishu",
+            project_id="proj_demo",
+        )
+
+        self.controller.queue_task(first.id)
+        self.controller.queue_task(second.id)
+
+        self.assertEqual(self.controller.get_queue_count("proj_demo"), 2)
+        self.assertEqual(self.controller.get_queue_position(first.id), 1)
+        self.assertEqual(self.controller.get_queue_position(second.id), 2)
+
     def test_confirm_prefix_moves_task_to_waiting_state(self) -> None:
         task = self.controller.create_task(
             requester_id="ou_demo",

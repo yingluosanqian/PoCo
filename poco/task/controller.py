@@ -171,6 +171,32 @@ class TaskController:
             self._sync_session(task)
             return task
 
+    def get_queue_count(self, project_id: str) -> int:
+        with self._lock:
+            return sum(
+                1
+                for task in self._store.list_all()
+                if task.project_id == project_id and task.status == TaskStatus.QUEUED
+            )
+
+    def get_queue_position(self, task_id: str) -> int | None:
+        with self._lock:
+            task = self.get_task(task_id)
+            if task.project_id is None or task.status != TaskStatus.QUEUED:
+                return None
+            queued = sorted(
+                (
+                    item
+                    for item in self._store.list_all()
+                    if item.project_id == task.project_id and item.status == TaskStatus.QUEUED
+                ),
+                key=lambda item: item.created_at,
+            )
+            for index, item in enumerate(queued, start=1):
+                if item.id == task.id:
+                    return index
+            return None
+
     def resolve_confirmation(self, task_id: str, approved: bool) -> Task:
         with self._lock:
             task = self.get_task(task_id)
