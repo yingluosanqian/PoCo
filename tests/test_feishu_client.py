@@ -359,14 +359,10 @@ class FeishuClientTest(unittest.TestCase):
         self.assertIn("Need approval before deploy.", card["body"]["elements"][0]["content"])
         approve_button = card["body"]["elements"][1]
         stop_button = card["body"]["elements"][2]
-        action_row = card["body"]["elements"][3]
-        workdir_lock = action_row["columns"][0]["elements"][0]
-        model_lock = action_row["columns"][1]["elements"][0]
         self.assertEqual(approve_button["behaviors"][0]["value"]["intent_key"], "task.approve")
         self.assertEqual(approve_button["behaviors"][0]["value"]["task_id"], "task_1")
         self.assertEqual(stop_button["behaviors"][0]["value"]["intent_key"], "task.stop")
-        self.assertIn("Working Dir · locked", workdir_lock["text"]["content"])
-        self.assertIn("Model · locked", model_lock["text"]["content"])
+        self.assertEqual(len(card["body"]["elements"]), 3)
 
     def test_task_status_card_contains_result_when_completed(self) -> None:
         task = {
@@ -444,14 +440,10 @@ class FeishuClientTest(unittest.TestCase):
             "[Running] Task: task_run_1 (codex, /srv/poco/api)",
         )
         live_block = card["body"]["elements"][0]
-        action_row = card["body"]["elements"][2]
-        workdir_lock = action_row["columns"][0]["elements"][0]
-        model_lock = action_row["columns"][1]["elements"][0]
         self.assertEqual(live_block["tag"], "markdown")
         self.assertIn("Step 1", live_block["content"])
         self.assertEqual(card["body"]["elements"][1]["behaviors"][0]["value"]["intent_key"], "task.stop")
-        self.assertIn("Working Dir · locked", workdir_lock["text"]["content"])
-        self.assertIn("Model · locked", model_lock["text"]["content"])
+        self.assertEqual(len(card["body"]["elements"]), 2)
 
     def test_task_status_card_adds_pagination_for_long_raw_result(self) -> None:
         task = {

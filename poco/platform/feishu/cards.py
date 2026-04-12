@@ -409,33 +409,30 @@ def _render_workspace_overview(
         )
     else:
         elements.append(_plain_text("Stop is available only while a task is running."))
-    elements.append(
-        _two_up(
-            _locked_or_action_button(
-                locked=config_locked,
-                label="Working Dir",
-                locked_reason="Working Dir is unavailable while a task is active.",
-                url=workdir_url,
-                intent_value={
-                    "intent_key": "workspace.enter_path",
-                    "surface": surface,
-                    "project_id": project["id"],
-                } if workdir_url is None else None,
-                name=f"enter_workdir_path_{project['id']}",
-            ),
-            _locked_or_action_button(
-                locked=config_locked,
-                label="Model",
-                locked_reason="Model is unavailable while a task is active.",
-                intent_value={
-                    "intent_key": "workspace.choose_model",
-                    "surface": surface,
-                    "project_id": project["id"],
-                },
-                name=f"choose_workspace_model_{project['id']}",
-            ),
+    if not config_locked:
+        elements.append(
+            _two_up(
+                _action_button(
+                    label="Working Dir",
+                    url=workdir_url,
+                    intent_value={
+                        "intent_key": "workspace.enter_path",
+                        "surface": surface,
+                        "project_id": project["id"],
+                    } if workdir_url is None else None,
+                    name=f"enter_workdir_path_{project['id']}",
+                ),
+                _action_button(
+                    label="Model",
+                    intent_value={
+                        "intent_key": "workspace.choose_model",
+                        "surface": surface,
+                        "project_id": project["id"],
+                    },
+                    name=f"choose_workspace_model_{project['id']}",
+                ),
+            )
         )
-    )
     return _card_shell(
         title=_workspace_title(
             project_name=project["name"],
@@ -753,33 +750,30 @@ def _render_task_status(
                     name=f"stop_task_{task['id']}",
                 )
             )
-        elements.append(
-            _two_up(
-                _locked_or_action_button(
-                    locked=config_locked,
-                    label="Working Dir",
-                    locked_reason="Working Dir is unavailable while this task is active.",
-                    url=workdir_url,
-                    intent_value={
-                        "intent_key": "workspace.enter_path",
-                        "surface": surface,
-                        "project_id": task["project_id"],
-                    } if workdir_url is None else None,
-                    name=f"task_change_workdir_{task['id']}",
-                ),
-                _locked_or_action_button(
-                    locked=config_locked,
-                    label="Model",
-                    locked_reason="Model is unavailable while this task is active.",
-                    intent_value={
-                        "intent_key": "workspace.choose_model",
-                        "surface": surface,
-                        "project_id": task["project_id"],
-                    },
-                    name=f"task_choose_model_{task['id']}",
-                ),
+        if not config_locked:
+            elements.append(
+                _two_up(
+                    _action_button(
+                        label="Working Dir",
+                        url=workdir_url,
+                        intent_value={
+                            "intent_key": "workspace.enter_path",
+                            "surface": surface,
+                            "project_id": task["project_id"],
+                        } if workdir_url is None else None,
+                        name=f"task_change_workdir_{task['id']}",
+                    ),
+                    _action_button(
+                        label="Model",
+                        intent_value={
+                            "intent_key": "workspace.choose_model",
+                            "surface": surface,
+                            "project_id": task["project_id"],
+                        },
+                        name=f"task_choose_model_{task['id']}",
+                    ),
+                )
             )
-        )
 
     return _card_shell(
         title=_task_title(

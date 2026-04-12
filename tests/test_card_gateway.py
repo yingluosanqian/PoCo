@@ -407,12 +407,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
         response = self.gateway.handle_action(payload)
 
         self.assertIn(task.id, response["card"]["data"]["header"]["title"]["content"])
-        action_row = response["card"]["data"]["body"]["elements"][1]
-        workdir_lock = action_row["columns"][0]["elements"][0]
-        self.assertIn(
-            "Working Dir · locked",
-            workdir_lock["text"]["content"],
-        )
+        self.assertEqual(len(response["card"]["data"]["body"]["elements"]), 1)
 
     def test_workspace_open_enables_stop_when_latest_task_is_running(self) -> None:
         project = self.project_controller.create_project(
@@ -452,13 +447,9 @@ class FeishuCardGatewayTest(unittest.TestCase):
             f"[Running] Workspace: {project.name} (stub, /srv/poco/api, {task.id})",
         )
         stop_button = response["card"]["data"]["body"]["elements"][0]
-        action_row = response["card"]["data"]["body"]["elements"][1]
-        workdir_lock = action_row["columns"][0]["elements"][0]
-        model_lock = action_row["columns"][1]["elements"][0]
         self.assertEqual(stop_button["behaviors"][0]["value"]["intent_key"], "task.stop")
         self.assertEqual(stop_button["behaviors"][0]["value"]["task_id"], task.id)
-        self.assertIn("Working Dir · locked", workdir_lock["text"]["content"])
-        self.assertIn("Model · locked", model_lock["text"]["content"])
+        self.assertEqual(len(response["card"]["data"]["body"]["elements"]), 1)
 
     def test_task_composer_opens_from_workspace_card(self) -> None:
         project = self.project_controller.create_project(
