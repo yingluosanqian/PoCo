@@ -602,6 +602,138 @@ class CursorAgentRunnerTest(unittest.TestCase):
             self.assertEqual(updates[-1].kind, "completed")
             self.assertEqual(updates[-1].raw_result, "Hello world")
 
+    def test_cursor_runner_handles_assistant_message_events_and_terminal_result(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = CursorAgentRunner(command="cursor-agent", workdir=tmpdir, model="gpt-5")
+            task = Task(
+                id="cursor_task_new_protocol",
+                requester_id="ou_demo",
+                prompt="say hi",
+                source="feishu",
+                status=TaskStatus.RUNNING,
+                agent_backend="cursor_agent",
+            )
+
+            class FakeStdout:
+                def __init__(self) -> None:
+                    self.exhausted = False
+                    self._lines = iter(
+                        [
+                            '{"type":"system","subtype":"init","session_id":"session_abc"}\n',
+                            '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"hello"}]},"session_id":"session_abc"}\n',
+                            '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"。\\n\\n"}]},"session_id":"session_abc"}\n',
+                            '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"world"}]},"session_id":"session_abc"}\n',
+                            '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"。"}]},"session_id":"session_abc"}\n',
+                            '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"hello。\\n\\nworld。"}]},"session_id":"session_abc"}\n',
+                            '{"type":"result","subtype":"success","is_error":false,"result":"hello。\\n\\nworld。","session_id":"session_abc"}\n',
+                        ]
+                    )
+
+                def readline(self) -> str:
+                    line = next(self._lines, "")
+                    if not line:
+                        self.exhausted = True
+                    return line
+
+            class FakeStderr:
+                exhausted = True
+
+                def readline(self) -> str:
+                    return ""
+
+            class FakePopen:
+                def __init__(self) -> None:
+                    self.stdout = FakeStdout()
+                    self.stderr = FakeStderr()
+                    self.returncode = 0
+                    self.killed = False
+
+                def poll(self):  # type: ignore[no-untyped-def]
+                    return None
+
+                def kill(self) -> None:
+                    self.killed = True
+                    self.returncode = -9
+
+            fake_process = FakePopen()
+            with (
+                patch("poco.agent.runner.shutil.which", return_value="/Users/yihanc/.local/bin/cursor-agent"),
+                patch("poco.agent.runner.subprocess.Popen", return_value=fake_process),
+                patch(
+                    "poco.agent.runner.select.select",
+                    side_effect=lambda readers, *_args: ([reader for reader in readers if not getattr(reader, "exhausted", True)], [], []),
+                ),
+            ):
+                updates = list(runner.start(task))
+
+            self.assertEqual(updates[1].backend_session_id, "session_abc")
+            self.assertEqual(
+                [u.output_chunk for u in updates if u.output_chunk],
+                ["hello", "。\n\n", "world", "。"],
+            )
+            self.assertEqual(updates[-1].kind, "completed")
+            self.assertEqual(updates[-1].raw_result, "hello。\n\nworld。")
+
+    def test_cursor_runner_completes_on_result_without_waiting_for_process_exit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = CursorAgentRunner(command="cursor-agent", workdir=tmpdir, model="gpt-5")
+            task = Task(
+                id="cursor_task_result_exit",
+                requester_id="ou_demo",
+                prompt="say hi",
+                source="feishu",
+                status=TaskStatus.RUNNING,
+                agent_backend="cursor_agent",
+            )
+
+            class FakeStdout:
+                def __init__(self) -> None:
+                    self.exhausted = False
+                    self._lines = iter(
+                        [
+                            '{"type":"result","subtype":"success","is_error":false,"result":"hi","session_id":"session_wait"}\n',
+                        ]
+                    )
+
+                def readline(self) -> str:
+                    line = next(self._lines, "")
+                    if not line:
+                        self.exhausted = True
+                    return line
+
+            class FakeStderr:
+                exhausted = True
+
+                def readline(self) -> str:
+                    return ""
+
+            class FakePopen:
+                def __init__(self) -> None:
+                    self.stdout = FakeStdout()
+                    self.stderr = FakeStderr()
+                    self.returncode = 0
+
+                def poll(self):  # type: ignore[no-untyped-def]
+                    return None
+
+                def kill(self) -> None:
+                    return None
+
+            fake_process = FakePopen()
+            with (
+                patch("poco.agent.runner.shutil.which", return_value="/Users/yihanc/.local/bin/cursor-agent"),
+                patch("poco.agent.runner.subprocess.Popen", return_value=fake_process),
+                patch(
+                    "poco.agent.runner.select.select",
+                    side_effect=lambda readers, *_args: ([reader for reader in readers if not getattr(reader, "exhausted", True)], [], []),
+                ),
+            ):
+                updates = list(runner.start(task))
+
+            self.assertEqual(updates[1].backend_session_id, "session_wait")
+            self.assertEqual(updates[-1].kind, "completed")
+            self.assertEqual(updates[-1].raw_result, "hi")
+
     def test_cursor_runner_resumes_existing_session(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             runner = CursorAgentRunner(command="cursor-agent", workdir=tmpdir, model="gpt-5")
@@ -730,6 +862,72 @@ class CursorAgentRunnerTest(unittest.TestCase):
             self.assertIn("plan", captured["command"])
             self.assertIn("--sandbox", captured["command"])
             self.assertIn("disabled", captured["command"])
+
+    def test_cursor_runner_maps_legacy_model_and_sandbox_values(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = CursorAgentRunner(
+                command="cursor-agent",
+                workdir=tmpdir,
+                model="gpt-5",
+                mode="default",
+                sandbox="workspace-write",
+            )
+            task = Task(
+                id="cursor_task_legacy_config",
+                requester_id="ou_demo",
+                prompt="run",
+                source="feishu",
+                status=TaskStatus.RUNNING,
+                agent_backend="cursor_agent",
+                effective_backend_config={"mode": "default", "sandbox": "workspace-write"},
+            )
+            captured: dict[str, object] = {}
+
+            class FakeStdout:
+                def __init__(self) -> None:
+                    self.exhausted = False
+                    self._lines = iter(['{"type":"result","subtype":"success","is_error":false,"result":"done","session_id":"chat_legacy"}\n'])
+
+                def readline(self) -> str:
+                    line = next(self._lines, "")
+                    if not line:
+                        self.exhausted = True
+                    return line
+
+            class FakeStderr:
+                exhausted = True
+
+                def readline(self) -> str:
+                    return ""
+
+            class FakePopen:
+                def __init__(self, command, **kwargs):  # type: ignore[no-untyped-def]
+                    captured["command"] = command
+                    self.stdout = FakeStdout()
+                    self.stderr = FakeStderr()
+                    self.returncode = 0
+
+                def poll(self):  # type: ignore[no-untyped-def]
+                    return None
+
+                def kill(self) -> None:
+                    return None
+
+            with (
+                patch("poco.agent.runner.shutil.which", return_value="/Users/yihanc/.local/bin/cursor-agent"),
+                patch("poco.agent.runner.subprocess.Popen", FakePopen),
+                patch(
+                    "poco.agent.runner.select.select",
+                    side_effect=lambda readers, *_args: ([reader for reader in readers if not getattr(reader, "exhausted", True)], [], []),
+                ),
+            ):
+                updates = list(runner.start(task))
+
+            self.assertEqual(updates[-1].kind, "completed")
+            self.assertIn("--model", captured["command"])
+            self.assertIn("auto", captured["command"])
+            self.assertIn("--sandbox", captured["command"])
+            self.assertIn("enabled", captured["command"])
 
 
 class CocoRunnerTest(unittest.TestCase):
@@ -940,6 +1138,103 @@ class CocoRunnerTest(unittest.TestCase):
 
             self.assertEqual([u.output_chunk for u in updates if u.output_chunk], ["你", "好", "？"])
             self.assertEqual(updates[-1].raw_result, "你好？")
+
+    def test_coco_runner_preserves_whitespace_in_partial_chunks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = CocoRunner(command="traecli", workdir=tmpdir, model="GPT-5.2")
+            task = Task(
+                id="coco_task_whitespace",
+                requester_id="ou_demo",
+                prompt="format text",
+                source="feishu",
+                status=TaskStatus.RUNNING,
+                agent_backend="coco",
+            )
+            fake_process = MagicMock()
+
+            class FakeSession:
+                def __init__(self, **kwargs):  # type: ignore[no-untyped-def]
+                    self.reads = iter(
+                        [
+                            {
+                                "method": "session/update",
+                                "params": {
+                                    "sessionId": "session_whitespace",
+                                    "update": {
+                                        "sessionUpdate": "agent_message_chunk",
+                                        "_meta": {"id": "m1", "type": "partial", "lastChunk": False},
+                                        "content": {"type": "text", "text": "cpp\n"},
+                                    },
+                                },
+                            },
+                            {
+                                "method": "session/update",
+                                "params": {
+                                    "sessionId": "session_whitespace",
+                                    "update": {
+                                        "sessionUpdate": "agent_message_chunk",
+                                        "_meta": {"id": "m2", "type": "partial", "lastChunk": False},
+                                        "content": {"type": "text", "text": "#include <iostream>\n"},
+                                    },
+                                },
+                            },
+                            {
+                                "method": "session/update",
+                                "params": {
+                                    "sessionId": "session_whitespace",
+                                    "update": {
+                                        "sessionUpdate": "agent_message_chunk",
+                                        "_meta": {"id": "m3", "type": "partial", "lastChunk": False},
+                                        "content": {"type": "text", "text": "int main() {\n  return 0;\n}\n"},
+                                    },
+                                },
+                            },
+                            {
+                                "id": 91,
+                                "result": {"stopReason": "end_turn"},
+                            },
+                        ]
+                    )
+
+                def initialize(self) -> None:
+                    return None
+
+                def open_session(self, *, session_id: str | None, cwd: str) -> dict[str, object]:
+                    return {"sessionId": "session_whitespace"}
+
+                def set_mode(self, *, session_id: str, mode_id: str) -> None:
+                    return None
+
+                def set_model(self, *, session_id: str, model_id: str) -> None:
+                    return None
+
+                def start_prompt(self, *, session_id: str, prompt: str) -> int:
+                    return 91
+
+                def drain_pending_notifications(self) -> list[dict[str, object]]:
+                    return []
+
+                def read_next_message(self) -> dict[str, object] | None:
+                    return next(self.reads, None)
+
+                def failure_detail(self, default: str) -> str:
+                    return default
+
+            with (
+                patch("poco.agent.runner.shutil.which", return_value="/Users/bytedance/.local/bin/traecli"),
+                patch("poco.agent.runner.subprocess.Popen", return_value=fake_process),
+                patch("poco.agent.runner._TraeAcpClient", FakeSession),
+            ):
+                updates = list(runner.start(task))
+
+            self.assertEqual(
+                [u.output_chunk for u in updates if u.output_chunk],
+                ["cpp\n", "#include <iostream>\n", "int main() {\n  return 0;\n}\n"],
+            )
+            self.assertEqual(
+                updates[-1].raw_result,
+                "cpp\n#include <iostream>\nint main() {\n  return 0;\n}",
+            )
 
     def test_coco_runner_loads_existing_session_and_applies_yolo_mode(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

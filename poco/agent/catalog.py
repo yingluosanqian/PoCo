@@ -98,7 +98,7 @@ _BACKEND_DESCRIPTORS: dict[str, BackendDescriptor] = {
                 ),
             ),
         ),
-        default_config={"model": "gpt-5", "mode": "default", "sandbox": "default"},
+        default_config={"model": "auto", "mode": "default", "sandbox": "default"},
     ),
     "coco": BackendDescriptor(
         key="coco",

@@ -761,9 +761,11 @@ class CursorAgentRunner:
             yield AgentRunUpdate(kind="failed", message=f"Cursor Agent workdir does not exist: {workdir}")
             return
 
-        resolved_model = task.effective_model or self._model
+        resolved_model = _normalize_cursor_model(task.effective_model or self._model)
         resolved_mode = _string_or_none(task.effective_backend_config.get("mode")) or self._mode
-        resolved_sandbox = _string_or_none(task.effective_backend_config.get("sandbox")) or self._sandbox
+        resolved_sandbox = _normalize_cursor_sandbox(
+            _string_or_none(task.effective_backend_config.get("sandbox")) or self._sandbox
+        )
         command = [
             self._command,
             "-p",
@@ -858,6 +860,25 @@ class CursorAgentRunner:
                     extracted_final_text = _extract_cursor_final_text(event)
                     if extracted_final_text:
                         final_text = extracted_final_text
+                    terminal_result = _extract_cursor_terminal_result(event)
+                    if terminal_result is not None:
+                        if terminal_result.get("is_error"):
+                            yield AgentRunUpdate(
+                                kind="failed",
+                                message=_string_or_none(terminal_result.get("result"))
+                                or "".join(stderr_lines).strip()
+                                or "Cursor Agent reported an error.",
+                                backend_session_id=backend_session_id,
+                            )
+                            return
+                        raw_result = final_text or live_text or "Cursor Agent completed without a final response body."
+                        yield AgentRunUpdate(
+                            kind="completed",
+                            message="Task completed by the cursor_agent runner.",
+                            raw_result=raw_result,
+                            backend_session_id=backend_session_id,
+                        )
+                        return
 
             if self._consume_cancelled(task.id):
                 return
@@ -868,7 +889,7 @@ class CursorAgentRunner:
                     backend_session_id=backend_session_id,
                 )
                 return
-            raw_result = final_text or live_text.strip() or "Cursor Agent completed without a final response body."
+            raw_result = final_text or live_text or "Cursor Agent completed without a final response body."
             yield AgentRunUpdate(
                 kind="completed",
                 message="Task completed by the cursor_agent runner.",
@@ -1479,6 +1500,24 @@ def _extract_claude_message_text(message: dict[str, object]) -> str | None:
     return "".join(parts)
 
 
+def _extract_message_text_preserving_whitespace(message: dict[str, object]) -> str | None:
+    content = message.get("content")
+    if not isinstance(content, list):
+        return None
+    parts: list[str] = []
+    for item in content:
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") != "text":
+            continue
+        text = _string_or_none(item.get("text"))
+        if text is not None:
+            parts.append(text)
+    if not parts:
+        return None
+    return "".join(parts)
+
+
 def _extract_cursor_session_id(event: dict[str, object]) -> str | None:
     for key in ("chatId", "sessionId", "session_id", "conversationId", "conversation_id"):
         value = _optional_string(event.get(key))
@@ -1491,6 +1530,24 @@ def _extract_cursor_session_id(event: dict[str, object]) -> str | None:
             if value:
                 return value
     return None
+
+
+def _normalize_cursor_model(model: str | None) -> str | None:
+    if model == "gpt-5":
+        return "auto"
+    return model
+
+
+def _normalize_cursor_sandbox(sandbox: str | None) -> str | None:
+    if sandbox in {None, "", "default"}:
+        return sandbox
+    if sandbox in {"enabled", "disabled"}:
+        return sandbox
+    if sandbox in {"read-only", "workspace-write"}:
+        return "enabled"
+    if sandbox == "danger-full-access":
+        return "disabled"
+    return sandbox
 
 
 def _extract_cursor_output_chunk(
@@ -1516,6 +1573,18 @@ def _extract_cursor_output_chunk(
             if partial_message.startswith(current_live_text):
                 return partial_message[len(current_live_text):] or None, partial_message
             return partial_message, partial_message
+    if _optional_string(event.get("type")) == "assistant":
+        message = event.get("message")
+        if isinstance(message, dict):
+            full_text = _extract_message_text_preserving_whitespace(message)
+            if full_text is None:
+                return None, current_live_text
+            if full_text.startswith(current_live_text):
+                delta = full_text[len(current_live_text):] or None
+                return delta, full_text
+            if current_live_text and full_text in current_live_text:
+                return None, current_live_text
+            return full_text, current_live_text + full_text
     return None, current_live_text
 
 
@@ -1534,11 +1603,22 @@ def _extract_cursor_final_text(event: dict[str, object]) -> str | None:
             value = _optional_string(assistant.get(key))
             if value:
                 return value
+    message = event.get("message")
+    if isinstance(message, dict):
+        extracted = _extract_message_text_preserving_whitespace(message)
+        if extracted:
+            return extracted
     for key in ("message", "content", "text"):
         value = event.get(key)
         if isinstance(value, str) and value.strip():
             return value.strip()
     return None
+
+
+def _extract_cursor_terminal_result(event: dict[str, object]) -> dict[str, object] | None:
+    if _optional_string(event.get("type")) != "result":
+        return None
+    return event
 
 
 def _extract_coco_acp_session_id(payload: dict[str, object]) -> str | None:
@@ -1564,7 +1644,7 @@ def _extract_coco_acp_output_chunk(
         content = update.get("content")
         if not isinstance(content, dict):
             return None, current_live_text, current_chunk_id
-        text = _optional_string(content.get("text"))
+        text = _coco_content_text(content.get("text"))
         if not text:
             return None, current_live_text, current_chunk_id
         return text, current_live_text + text, current_chunk_id
@@ -1574,7 +1654,7 @@ def _extract_coco_acp_output_chunk(
     content = update.get("content")
     if not isinstance(content, dict):
         return None, current_live_text, current_chunk_id
-    text = _optional_string(content.get("text"))
+    text = _coco_content_text(content.get("text"))
     if not text:
         return None, current_live_text, current_chunk_id
     if text.startswith(current_live_text):
@@ -1596,6 +1676,13 @@ def _extract_coco_acp_stop_reason(update: dict[str, object]) -> str | None:
     if _optional_string(update.get("sessionUpdate")) != "usage_update":
         return None
     return _optional_string(update.get("stopReason"))
+
+
+def _coco_content_text(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value)
+    return text if text else None
 
 
 class _CodexAppServerSession:
