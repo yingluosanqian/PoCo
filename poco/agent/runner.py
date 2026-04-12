@@ -490,6 +490,9 @@ class ClaudeCodeRunner:
         if task.backend_session_id:
             command.extend(["--resume", task.backend_session_id])
         command.append(prompt)
+        env = os.environ.copy()
+        if resolved_permission_mode == "bypassPermissions":
+            env["IS_SANDBOX"] = "1"
 
         process: subprocess.Popen[str] | None = None
         backend_session_id = task.backend_session_id
@@ -499,7 +502,7 @@ class ClaudeCodeRunner:
             process = subprocess.Popen(
                 command,
                 cwd=workdir,
-                env=os.environ.copy(),
+                env=env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,

@@ -451,6 +451,56 @@ class ClaudeCodeRunnerTest(unittest.TestCase):
             self.assertIn("--resume", captured["command"])
             self.assertIn("session_existing", captured["command"])
 
+    def test_claude_runner_sets_is_sandbox_for_bypass_permissions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = ClaudeCodeRunner(command="claude", workdir=tmpdir, model="sonnet")
+            task = Task(
+                id="claude_task_bypass",
+                requester_id="ou_demo",
+                prompt="do it",
+                source="feishu",
+                status=TaskStatus.RUNNING,
+                agent_backend="claude_code",
+                effective_backend_config={"permission_mode": "bypassPermissions"},
+            )
+            captured: dict[str, object] = {}
+
+            class FakeStdout:
+                def readline(self) -> str:
+                    return '{"type":"result","subtype":"success","result":"done","session_id":"session_bypass"}\n'
+
+            class FakeStderr:
+                def readline(self) -> str:
+                    return ""
+
+            class FakePopen:
+                def __init__(self, command, **kwargs):  # type: ignore[no-untyped-def]
+                    captured["command"] = command
+                    captured["env"] = kwargs.get("env")
+                    self.stdout = FakeStdout()
+                    self.stderr = FakeStderr()
+                    self.returncode = 0
+
+                def poll(self):  # type: ignore[no-untyped-def]
+                    return 0
+
+                def kill(self) -> None:
+                    return None
+
+            with (
+                patch("poco.agent.runner.shutil.which", return_value="/Users/yihanc/.local/bin/claude"),
+                patch("poco.agent.runner.subprocess.Popen", FakePopen),
+                patch("poco.agent.runner.select.select", side_effect=lambda readers, *_args: (readers, [], [])),
+            ):
+                updates = list(runner.start(task))
+
+            self.assertEqual(updates[-1].kind, "completed")
+            self.assertIn("--permission-mode", captured["command"])
+            self.assertIn("bypassPermissions", captured["command"])
+            env = captured["env"]
+            self.assertIsInstance(env, dict)
+            self.assertEqual(env["IS_SANDBOX"], "1")
+
 
 if __name__ == "__main__":
     unittest.main()
