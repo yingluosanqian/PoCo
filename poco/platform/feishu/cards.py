@@ -593,7 +593,7 @@ def _render_workspace_enter_path(
     if parent_path:
         nav_buttons.append(
             _button(
-                label="Up",
+                label="..",
                 intent_value={
                     "intent_key": "workspace.enter_path",
                     "surface": surface,
@@ -705,42 +705,55 @@ def _render_workspace_enter_path(
                     value=current_workdir or browse_path,
                 ),
                 _markdown(data["note"]),
-                {
-                    "tag": "button",
-                    "text": {
-                        "tag": "plain_text",
-                        "content": "Apply Path",
+                _two_up(
+                    {
+                        "tag": "button",
+                        "text": {
+                            "tag": "plain_text",
+                            "content": "Apply Path",
+                        },
+                        "type": "primary",
+                        "width": "default",
+                        "size": "medium",
+                        "name": f"apply_entered_path_{project['id']}",
+                        "form_action_type": "submit",
+                        "behaviors": [
+                            {
+                                "type": "callback",
+                                "value": {
+                                    "intent_key": "workspace.apply_entered_path",
+                                    "surface": surface,
+                                    "project_id": project["id"],
+                                },
+                            }
+                        ],
+                        "margin": "0px 0px 12px 0px",
                     },
-                    "type": "primary",
-                    "width": "default",
-                    "size": "medium",
-                    "name": f"apply_entered_path_{project['id']}",
-                    "form_action_type": "submit",
-                    "behaviors": [
-                        {
-                            "type": "callback",
-                            "value": {
-                                "intent_key": "workspace.apply_entered_path",
-                                "surface": surface,
-                                "project_id": project["id"],
-                            },
-                        }
-                    ],
-                    "margin": "0px 0px 12px 0px",
-                },
+                    {
+                        "tag": "button",
+                        "text": {
+                            "tag": "plain_text",
+                            "content": "Cancel",
+                        },
+                        "type": "default",
+                        "width": "default",
+                        "size": "medium",
+                        "name": f"cancel_workspace_enter_path_{project['id']}",
+                        "behaviors": [
+                            {
+                                "type": "callback",
+                                "value": {
+                                    "intent_key": "workspace.open",
+                                    "surface": surface,
+                                    "project_id": project["id"],
+                                },
+                            }
+                        ],
+                        "margin": "0px 0px 12px 0px",
+                    },
+                ),
             ],
         }
-    )
-    elements.append(
-        _button(
-            label="Cancel",
-            intent_value={
-                "intent_key": "workspace.open",
-                "surface": surface,
-                "project_id": project["id"],
-            },
-            name=f"cancel_workspace_enter_path_{project['id']}",
-        )
     )
     return _card_shell(
         title=f"Working Dir: {project['name']}",

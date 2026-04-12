@@ -837,12 +837,6 @@ def _workspace_recent_dirs_view_model(project) -> ViewModel:
 
 def _workspace_enter_path_view_model(project, *, context, browse_path: str | None, page: int) -> ViewModel:
     browser = _build_card_dir_browser_state(browse_path)
-    child_dirs = browser["child_dirs"]
-    page_size = 8
-    total_pages = max(1, (len(child_dirs) + page_size - 1) // page_size)
-    current_page = min(max(page, 1), total_pages)
-    start = (current_page - 1) * page_size
-    end = start + page_size
     return ViewModel(
         "workspace_enter_path",
         {
@@ -850,9 +844,9 @@ def _workspace_enter_path_view_model(project, *, context, browse_path: str | Non
             "current_workdir": context.active_workdir,
             "browse_path": browser["browse_path"],
             "parent_path": browser["parent_path"],
-            "child_dirs": child_dirs[start:end],
-            "browse_page": current_page,
-            "browse_total_pages": total_pages,
+            "child_dirs": browser["child_dirs"],
+            "browse_page": 1,
+            "browse_total_pages": 1,
             "error": browser["error"],
             "note": "Apply updates the current workspace and returns to the main workspace card.",
         },

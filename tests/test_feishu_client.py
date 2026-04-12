@@ -272,7 +272,9 @@ class FeishuClientTest(unittest.TestCase):
         browse_form = card["body"]["elements"][4]
         form = card["body"]["elements"][5]
         input_box = form["elements"][1]
-        apply_button = form["elements"][3]
+        action_row = form["elements"][3]
+        apply_button = action_row["columns"][0]["elements"][0]
+        cancel_button = action_row["columns"][1]["elements"][0]
         select_box = browse_form["elements"][0]
         open_button = browse_form["elements"][1]
         self.assertEqual(browse_summary["tag"], "markdown")
@@ -286,9 +288,11 @@ class FeishuClientTest(unittest.TestCase):
         self.assertEqual(form["tag"], "form")
         self.assertEqual(input_box["tag"], "input")
         self.assertEqual(input_box["name"], "workdir")
+        self.assertEqual(action_row["tag"], "column_set")
         self.assertEqual(apply_button["form_action_type"], "submit")
         self.assertEqual(apply_button["behaviors"][0]["value"]["intent_key"], "workspace.apply_entered_path")
         self.assertEqual(apply_button["behaviors"][0]["value"]["surface"], "group")
+        self.assertEqual(cancel_button["behaviors"][0]["value"]["intent_key"], "workspace.open")
 
     def test_project_dir_presets_card_contains_input_and_add(self) -> None:
         project = Project(

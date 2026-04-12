@@ -953,15 +953,13 @@ class FeishuCardGatewayTest(unittest.TestCase):
         )
         input_box = form["elements"][1]
         self.assertEqual(input_box["tag"], "input")
-        apply_button = form["elements"][3]
+        action_row = form["elements"][3]
+        apply_button = action_row["columns"][0]["elements"][0]
         self.assertEqual(
             apply_button["behaviors"][0]["value"]["intent_key"],
             "workspace.apply_entered_path",
         )
-        back_button = next(
-            element for element in elements
-            if element.get("name", "").startswith("cancel_workspace_enter_path_")
-        )
+        back_button = action_row["columns"][1]["elements"][0]
         self.assertEqual(
             back_button["behaviors"][0]["value"]["intent_key"],
             "workspace.open",
