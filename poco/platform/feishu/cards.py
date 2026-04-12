@@ -6,9 +6,6 @@ from poco.interaction.card_models import PlatformRenderInstruction
 
 
 class FeishuCardRenderer:
-    def __init__(self, *, app_base_url: str | None = None) -> None:
-        self._app_base_url = app_base_url.rstrip("/") if app_base_url else None
-
     def render(self, instruction: PlatformRenderInstruction) -> dict[str, Any]:
         if instruction.template_key == "project_home":
             return _render_project_home(
@@ -51,7 +48,6 @@ class FeishuCardRenderer:
             return _render_workspace_overview(
                 instruction.template_data,
                 surface=instruction.surface.value,
-                app_base_url=self._app_base_url,
             )
         if instruction.template_key == "workspace_use_default_dir":
             return _render_workspace_use_default_dir(
@@ -87,7 +83,6 @@ class FeishuCardRenderer:
             return _render_task_status(
                 instruction.template_data,
                 surface=instruction.surface.value,
-                app_base_url=self._app_base_url,
             )
         return _render_fallback(instruction.template_key, instruction.template_data)
 
@@ -426,7 +421,6 @@ def _render_workspace_overview(
     data: dict[str, Any],
     *,
     surface: str,
-    app_base_url: str | None,
 ) -> dict[str, Any]:
     project = data["project"]
     latest_status = data.get("latest_task_status") or "none"
@@ -970,7 +964,6 @@ def _render_task_status(
     data: dict[str, Any],
     *,
     surface: str,
-    app_base_url: str | None,
 ) -> dict[str, Any]:
     task = data["task"]
     queue_position = data.get("queue_position")

@@ -12,7 +12,6 @@ DEFAULT_REPO_ROOT = str(Path(__file__).resolve().parents[1])
 @dataclass(frozen=True, slots=True)
 class Settings:
     app_name: str = field(default_factory=lambda: getenv("POCO_APP_NAME", "PoCo"))
-    app_base_url: str | None = field(default_factory=lambda: getenv("POCO_APP_BASE_URL"))
     agent_backend: str = field(default_factory=lambda: getenv("POCO_AGENT_BACKEND", "codex"))
     codex_command: str = field(default_factory=lambda: getenv("POCO_CODEX_COMMAND", "codex"))
     codex_workdir: str = field(default_factory=lambda: getenv("POCO_CODEX_WORKDIR", DEFAULT_REPO_ROOT))
@@ -75,15 +74,3 @@ class Settings:
                 "POCO_FEISHU_API_BASE_URL must be a full URL such as https://open.feishu.cn"
             )
         return f"{parsed.scheme}://{parsed.netloc}"
-
-    @property
-    def app_origin(self) -> str | None:
-        if not self.app_base_url:
-            return None
-        parsed = urlparse(self.app_base_url)
-        if not parsed.scheme or not parsed.netloc:
-            raise ValueError(
-                "POCO_APP_BASE_URL must be a full URL such as https://poco.example.com"
-            )
-        path = parsed.path.rstrip("/")
-        return f"{parsed.scheme}://{parsed.netloc}{path}"
