@@ -5,10 +5,25 @@
 最常用启动方式：
 
 ```bash
-uvicorn poco.main:app --reload
+poco start
+```
+
+常用管理命令：
+
+```bash
+poco config
+poco shutdown
+poco restart
 ```
 
 当前默认 Feishu 入站模式就是 `longconn`，不需要再主动设置 `POCO_FEISHU_DELIVERY_MODE=longconn`。
+
+如果 CLI 还没装好，再退回：
+
+```bash
+python3 -m pip install -e .
+uvicorn poco.main:app --reload
+```
 
 ## 2. 最先看的接口
 

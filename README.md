@@ -19,12 +19,20 @@ PoCo is a Python-first MVP scaffold for controlling server-side AI agent workflo
 
 ## Local Run
 
+### Install CLI
+
+Install PoCo once in editable mode so the `poco` command is available:
+
+```bash
+python3 -m pip install -e .
+```
+
 ### Lowest-Friction Start
 
 If you only want to verify that PoCo itself can run on this machine, you can start with no Feishu credentials at all:
 
 ```bash
-uvicorn poco.main:app --reload
+poco start
 curl http://127.0.0.1:8000/health
 ```
 
@@ -125,17 +133,32 @@ Use `POCO_AGENT_BACKEND=stub` only for local flow validation without a real agen
 
 PoCo now supports `codex`, `claude_code`, and `cursor_agent`. `coco` is still recognized as planned but not implemented yet.
 
-Set the Feishu app credentials before using the real callback flow:
+### Normal User Flow
+
+The intended startup path is now:
 
 ```bash
-export POCO_FEISHU_APP_ID="cli_xxx"
-export POCO_FEISHU_APP_SECRET="xxx"
+poco config
+poco start
 ```
 
-PoCo now defaults to Feishu `longconn`, so the normal local/mobile-first path does not require setting an inbound delivery mode explicitly.
-Only set `POCO_FEISHU_DELIVERY_MODE` if you intentionally want to force `webhook`.
+`poco config` prompts for:
 
-Optional:
+- Feishu App ID
+- Feishu App Secret
+
+PoCo stores them in a local config file under [`.work/poco.config.json`](/Users/yihanc/project/PoCo/.work/poco.config.json), so normal users do not need to export shell variables.
+
+PoCo now defaults to Feishu `longconn`, so the normal local/mobile-first path does not require setting an inbound delivery mode explicitly. Only set `POCO_FEISHU_DELIVERY_MODE` if you intentionally want to force `webhook`.
+
+Useful lifecycle commands:
+
+```bash
+poco shutdown
+poco restart
+```
+
+Advanced server-side overrides only:
 
 ```bash
 export POCO_FEISHU_API_BASE_URL="https://open.feishu.cn"
@@ -156,7 +179,7 @@ Notes:
 - `POCO_STATE_BACKEND=sqlite` is now the default runtime path. PoCo persists projects, workspace state and tasks so restart does not lose existing group/workspace tracking.
 - `POCO_STATE_DB_PATH` defaults to `.work/poco.db`.
 
-Install dependencies, then start the service:
+Manual fallback start:
 
 ```bash
 uvicorn poco.main:app --reload

@@ -10,6 +10,9 @@ dependencies = [
     "uvicorn>=0.32,<1.0",
 ]
 
+[project.scripts]
+poco = "poco.cli:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0,<9.0",
