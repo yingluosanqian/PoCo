@@ -37,7 +37,7 @@ class FeishuTaskNotifier:
         task_controller: TaskController | None = None,
         workspace_controller: WorkspaceContextController | None = None,
         debug_recorder: FeishuDebugRecorder | None = None,
-        running_update_interval_seconds: float = 0.35,
+        running_update_interval_seconds: float = 0.1,
     ) -> None:
         self._message_client = message_client
         self._renderer = renderer or FeishuCardRenderer()
