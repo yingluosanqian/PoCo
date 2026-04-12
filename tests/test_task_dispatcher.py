@@ -68,8 +68,10 @@ class TaskDispatcherTest(unittest.TestCase):
         self.dispatcher.dispatch_start(task.id)
         updated = self.controller.get_task(task.id)
         self.assertEqual(updated.status.value, "completed")
-        self.assertEqual(len(self.notifier.tasks), 1)
-        self.assertEqual(self.notifier.tasks[0].id, task.id)
+        self.assertGreaterEqual(len(self.notifier.tasks), 2)
+        self.assertEqual(self.notifier.tasks[0].status.value, "running")
+        self.assertEqual(self.notifier.tasks[-1].status.value, "completed")
+        self.assertEqual(self.notifier.tasks[-1].id, task.id)
 
     def test_dispatch_start_waiting_for_confirmation_notifies(self) -> None:
         task = self.controller.create_task(
@@ -82,7 +84,9 @@ class TaskDispatcherTest(unittest.TestCase):
         self.dispatcher.dispatch_start(task.id)
         updated = self.controller.get_task(task.id)
         self.assertEqual(updated.status.value, "waiting_for_confirmation")
-        self.assertEqual(len(self.notifier.tasks), 1)
+        self.assertGreaterEqual(len(self.notifier.tasks), 2)
+        self.assertEqual(self.notifier.tasks[0].status.value, "running")
+        self.assertEqual(self.notifier.tasks[-1].status.value, "waiting_for_confirmation")
 
     def test_dispatch_resume_completes_after_approval(self) -> None:
         task = self.controller.create_task(
@@ -97,7 +101,7 @@ class TaskDispatcherTest(unittest.TestCase):
         self.dispatcher.dispatch_resume(task.id)
         updated = self.controller.get_task(task.id)
         self.assertEqual(updated.status.value, "completed")
-        self.assertEqual(len(self.notifier.tasks), 2)
+        self.assertGreaterEqual(len(self.notifier.tasks), 2)
 
     def test_dispatch_start_notifies_running_stream_updates(self) -> None:
         controller = TaskController(
@@ -118,9 +122,12 @@ class TaskDispatcherTest(unittest.TestCase):
 
         updated = controller.get_task(task.id)
         self.assertEqual(updated.status.value, "completed")
-        self.assertEqual(len(notifier.tasks), 2)
+        self.assertGreaterEqual(len(notifier.tasks), 2)
         self.assertEqual(notifier.tasks[0].status.value, "running")
-        self.assertIn("line 1", notifier.tasks[0].live_output or "")
+        self.assertEqual(notifier.tasks[-1].status.value, "completed")
+        running_with_output = [task for task in notifier.tasks if task.status.value == "running" and task.live_output]
+        self.assertTrue(running_with_output)
+        self.assertIn("line 1", running_with_output[-1].live_output or "")
 
     def test_dispatch_start_starts_next_queued_task_after_completion(self) -> None:
         first = self.controller.create_task(

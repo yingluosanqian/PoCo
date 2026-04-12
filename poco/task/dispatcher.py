@@ -64,7 +64,7 @@ class AsyncTaskDispatcher:
         self._notify_if_needed(task)
 
     def _notify_if_needed(self, task: Task) -> None:
-        if task.status == TaskStatus.RUNNING and task.live_output:
+        if task.status == TaskStatus.RUNNING:
             self._notifier.notify_task(task)
             return
         if task.status in {

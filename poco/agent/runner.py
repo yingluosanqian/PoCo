@@ -60,42 +60,33 @@ class StubAgentRunner:
         return True, "Stub runner is always available."
 
     def start(self, task: Task) -> Iterator[AgentRunUpdate]:
-        updates = [
-            AgentRunUpdate(
-                kind="progress",
-                message="Task accepted by the stub runner.",
-            )
-        ]
-        if _requires_confirmation(task.prompt):
-            updates.append(
-                AgentRunUpdate(
-                    kind="confirmation_required",
-                    message="Awaiting explicit approval before continuing.",
-                )
-            )
-            return updates
-
-        updates.append(
-            AgentRunUpdate(
-                kind="completed",
-                message="Task completed by the stub runner.",
-                raw_result=f"Stub result for: {_normalized_prompt(task.prompt)}",
-            )
+        yield AgentRunUpdate(
+            kind="progress",
+            message="Task accepted by the stub runner.",
         )
-        return updates
+        if _requires_confirmation(task.prompt):
+            yield AgentRunUpdate(
+                kind="confirmation_required",
+                message="Awaiting explicit approval before continuing.",
+            )
+            return
+
+        yield AgentRunUpdate(
+            kind="completed",
+            message="Task completed by the stub runner.",
+            raw_result=f"Stub result for: {_normalized_prompt(task.prompt)}",
+        )
 
     def resume_after_confirmation(self, task: Task) -> Iterator[AgentRunUpdate]:
-        return [
-            AgentRunUpdate(
-                kind="progress",
-                message="Approval received. Resuming stub execution.",
-            ),
-            AgentRunUpdate(
-                kind="completed",
-                message="Task completed after approval.",
-                raw_result=f"Approved stub result for: {_normalized_prompt(task.prompt)}",
-            ),
-        ]
+        yield AgentRunUpdate(
+            kind="progress",
+            message="Approval received. Resuming stub execution.",
+        )
+        yield AgentRunUpdate(
+            kind="completed",
+            message="Task completed after approval.",
+            raw_result=f"Approved stub result for: {_normalized_prompt(task.prompt)}",
+        )
 
     def cancel(self, task_id: str) -> bool:
         return False
@@ -113,10 +104,10 @@ class UnavailableAgentRunner:
         return False, self._reason
 
     def start(self, task: Task) -> Iterator[AgentRunUpdate]:
-        return [AgentRunUpdate(kind="failed", message=self._reason)]
+        yield AgentRunUpdate(kind="failed", message=self._reason)
 
     def resume_after_confirmation(self, task: Task) -> Iterator[AgentRunUpdate]:
-        return [AgentRunUpdate(kind="failed", message=self._reason)]
+        yield AgentRunUpdate(kind="failed", message=self._reason)
 
     def cancel(self, task_id: str) -> bool:
         return False
@@ -157,33 +148,25 @@ class CodexAppServerRunner:
         return True, f"Codex app-server ready via {executable}"
 
     def start(self, task: Task) -> Iterator[AgentRunUpdate]:
-        updates = [
-            AgentRunUpdate(
-                kind="progress",
-                message=f"Task accepted by the {self.name} app-server runner.",
-            )
-        ]
+        yield AgentRunUpdate(
+            kind="progress",
+            message=f"Task accepted by the {self.name} app-server runner.",
+        )
         if _requires_confirmation(task.prompt):
-            updates.append(
-                AgentRunUpdate(
-                    kind="confirmation_required",
-                    message="Awaiting explicit approval before invoking codex.",
-                )
+            yield AgentRunUpdate(
+                kind="confirmation_required",
+                message="Awaiting explicit approval before invoking codex.",
             )
-            return updates
+            return
 
-        updates.extend(self._execute_prompt(task, _normalized_prompt(task.prompt)))
-        return updates
+        yield from self._execute_prompt(task, _normalized_prompt(task.prompt))
 
     def resume_after_confirmation(self, task: Task) -> Iterator[AgentRunUpdate]:
-        updates = [
-            AgentRunUpdate(
-                kind="progress",
-                message="Approval received. Invoking codex.",
-            )
-        ]
-        updates.extend(self._execute_prompt(task, _normalized_prompt(task.prompt)))
-        return updates
+        yield AgentRunUpdate(
+            kind="progress",
+            message="Approval received. Invoking codex.",
+        )
+        yield from self._execute_prompt(task, _normalized_prompt(task.prompt))
 
     def cancel(self, task_id: str) -> bool:
         with self._lock:
@@ -414,33 +397,25 @@ class CodexCliRunner:
         return True, f"Codex CLI ready at {executable}"
 
     def start(self, task: Task) -> Iterator[AgentRunUpdate]:
-        updates = [
-            AgentRunUpdate(
-                kind="progress",
-                message=f"Task accepted by the {self.name} runner.",
-            )
-        ]
+        yield AgentRunUpdate(
+            kind="progress",
+            message=f"Task accepted by the {self.name} runner.",
+        )
         if _requires_confirmation(task.prompt):
-            updates.append(
-                AgentRunUpdate(
-                    kind="confirmation_required",
-                    message="Awaiting explicit approval before invoking codex.",
-                )
+            yield AgentRunUpdate(
+                kind="confirmation_required",
+                message="Awaiting explicit approval before invoking codex.",
             )
-            return updates
+            return
 
-        updates.extend(self._execute_prompt(task, _normalized_prompt(task.prompt)))
-        return updates
+        yield from self._execute_prompt(task, _normalized_prompt(task.prompt))
 
     def resume_after_confirmation(self, task: Task) -> Iterator[AgentRunUpdate]:
-        updates = [
-            AgentRunUpdate(
-                kind="progress",
-                message="Approval received. Invoking codex.",
-            )
-        ]
-        updates.extend(self._execute_prompt(task, _normalized_prompt(task.prompt)))
-        return updates
+        yield AgentRunUpdate(
+            kind="progress",
+            message="Approval received. Invoking codex.",
+        )
+        yield from self._execute_prompt(task, _normalized_prompt(task.prompt))
 
     def cancel(self, task_id: str) -> bool:
         with self._lock:

@@ -287,6 +287,12 @@ class TaskController:
                 task.set_status(TaskStatus.RUNNING)
                 task.add_event("task_started", "Task dispatched to the server-side runner.")
                 self._store.save(task)
+                started_task = task
+            else:
+                started_task = None
+
+        if started_task is not None and on_update is not None:
+            on_update(started_task)
 
         updates = self._runner.start(task) if mode == "start" else self._runner.resume_after_confirmation(task)
         return self._apply_runner_updates(task_id, updates, on_update=on_update)
