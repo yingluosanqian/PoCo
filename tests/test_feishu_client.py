@@ -285,6 +285,7 @@ class FeishuClientTest(unittest.TestCase):
         self.assertEqual(open_button["behaviors"][0]["value"]["mode"], "browse")
         self.assertEqual(apply_button["behaviors"][0]["value"]["intent_key"], "workspace.apply_entered_path")
         self.assertEqual(apply_button["behaviors"][0]["value"]["mode"], "browse")
+        self.assertEqual(apply_button["behaviors"][0]["value"]["browse_path"], "/srv/poco")
         self.assertEqual(manual_shortcut["behaviors"][0]["value"]["intent_key"], "workspace.enter_path_manual")
         self.assertEqual(manual_shortcut["behaviors"][0]["value"]["mode"], "manual")
         self.assertEqual(cancel_button["behaviors"][0]["value"]["intent_key"], "workspace.open")

@@ -641,7 +641,6 @@ def _render_workspace_enter_path(
                                 "width": "default",
                                 "size": "medium",
                                 "name": f"apply_selected_folder_{project['id']}",
-                                "form_action_type": "submit",
                                 "behaviors": [
                                     {
                                         "type": "callback",
@@ -650,6 +649,7 @@ def _render_workspace_enter_path(
                                             "surface": surface,
                                             "project_id": project["id"],
                                             "mode": "browse",
+                                            "browse_path": browse_path,
                                         },
                                     }
                                 ],
