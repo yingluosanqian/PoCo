@@ -4,7 +4,7 @@
 
 - `Task` 现在保存 `raw_result`，同时保留 `result_summary` 作为兼容性 preview
 - `task_status` card 现在会优先渲染 `raw_result`
-- 超长原始结果会在 card 中显示页码和 `Next Page` / `Previous Page`
+- 超长原始结果现在直接显示在同一张 task card 中，不再使用 `Next Page` / `Previous Page`
 - `workspace_overview` 已移除 latest result preview，仅保留 latest task 状态与入口
 - 单测已覆盖：
   - task 完成态显示原始结果

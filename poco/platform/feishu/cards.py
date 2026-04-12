@@ -973,9 +973,6 @@ def _render_task_status(
     workdir = task.get("effective_workdir") or "no working dir"
     live_output = task.get("live_output") or ""
     raw_result = task.get("raw_result") or task.get("result_summary") or "No result yet."
-    requested_page = _normalize_page(data.get("result_page"))
-    page = 1
-    total_pages = 1
     elements: list[dict[str, Any]] = []
 
     awaiting = task.get("awaiting_confirmation_reason")
@@ -1008,37 +1005,7 @@ def _render_task_status(
         )
     elif status == "running":
         if live_output:
-            live_chunk, page, total_pages = _paginate_text(live_output, page=requested_page)
-            elements.append(_markdown(_format_task_output_for_backend(live_chunk, backend=agent_backend)))
-            if total_pages > 1:
-                if page > 1:
-                    elements.append(
-                        _button(
-                            label="Previous Page",
-                            intent_value={
-                                "intent_key": "task.open",
-                                "surface": surface,
-                                "project_id": task.get("project_id") or "",
-                                "task_id": task["id"],
-                                "page": str(page - 1),
-                            },
-                            name=f"task_prev_page_{task['id']}_{page}",
-                        )
-                    )
-                if page < total_pages:
-                    elements.append(
-                        _button(
-                            label="Next Page",
-                            intent_value={
-                                "intent_key": "task.open",
-                                "surface": surface,
-                                "project_id": task.get("project_id") or "",
-                                "task_id": task["id"],
-                                "page": str(page + 1),
-                            },
-                            name=f"task_next_page_{task['id']}_{page}",
-                        )
-                    )
+            elements.append(_markdown(_format_task_output_for_backend(live_output, backend=agent_backend)))
         else:
             elements.append(_markdown("Waiting for agent output..."))
     elif status == "queued":
@@ -1051,37 +1018,7 @@ def _render_task_status(
             details.append("Queued. Waiting for the current task to finish.")
         elements.append(_markdown("\n".join(details)))
     else:
-        result_chunk, page, total_pages = _paginate_text(raw_result, page=requested_page)
-        elements.append(_markdown(_format_task_output_for_backend(result_chunk, backend=agent_backend)))
-        if total_pages > 1:
-            if page > 1:
-                elements.append(
-                    _button(
-                        label="Previous Page",
-                        intent_value={
-                            "intent_key": "task.open",
-                            "surface": surface,
-                            "project_id": task.get("project_id") or "",
-                            "task_id": task["id"],
-                            "page": str(page - 1),
-                        },
-                        name=f"task_prev_page_{task['id']}_{page}",
-                    )
-                )
-            if page < total_pages:
-                elements.append(
-                    _button(
-                        label="Next Page",
-                        intent_value={
-                            "intent_key": "task.open",
-                            "surface": surface,
-                            "project_id": task.get("project_id") or "",
-                            "task_id": task["id"],
-                            "page": str(page + 1),
-                        },
-                        name=f"task_next_page_{task['id']}_{page}",
-                    )
-                )
+        elements.append(_markdown(_format_task_output_for_backend(raw_result, backend=agent_backend)))
 
     if task.get("project_id"):
         config_locked = status in {"created", "queued", "running", "waiting_for_confirmation"}
@@ -1128,8 +1065,6 @@ def _render_task_status(
             status=status,
             agent=task.get("effective_model") or task.get("agent_backend") or "unknown",
             workdir=workdir,
-            page=page,
-            total_pages=total_pages,
         ),
         template=_task_template_for_status(status),
         elements=elements,
@@ -1569,13 +1504,8 @@ def _task_title(
     status: str,
     agent: str,
     workdir: str,
-    page: int,
-    total_pages: int,
 ) -> str:
-    title = f"[{_task_status_label(status)}] Task: {task_id} ({agent}, {workdir})"
-    if total_pages > 1:
-        return f"{title} [{page}/{total_pages}]"
-    return title
+    return f"[{_task_status_label(status)}] Task: {task_id} ({agent}, {workdir})"
 
 
 def _workspace_title(
@@ -1630,25 +1560,3 @@ def _task_status_label(status: str) -> str:
         return "Created"
     return "Unknown"
 
-
-def _normalize_page(value: Any) -> int:
-    try:
-        page = int(value)
-    except (TypeError, ValueError):
-        return 1
-    return page if page > 0 else 1
-
-
-def _paginate_text(
-    content: str,
-    *,
-    page: int,
-    page_chars: int = 2400,
-) -> tuple[str, int, int]:
-    if len(content) <= page_chars:
-        return content, 1, 1
-    total_pages = (len(content) + page_chars - 1) // page_chars
-    normalized_page = min(max(page, 1), total_pages)
-    start = (normalized_page - 1) * page_chars
-    end = start + page_chars
-    return content[start:end], normalized_page, total_pages

@@ -613,7 +613,6 @@ class TaskIntentHandler:
             task,
             task_controller=self.task_controller,
             message=f"Opened task: {task.id}",
-            result_page=_positive_int(intent.payload.get("page"), default=1),
         )
 
     def _approve_task(self, intent: ActionIntent) -> IntentDispatchResult:
@@ -753,7 +752,6 @@ def build_task_status_result(
     *,
     task_controller: TaskController | None = None,
     message: str | None = None,
-    result_page: int = 1,
 ) -> IntentDispatchResult:
     queue_position = None
     blocking_task_id = None
@@ -776,7 +774,6 @@ def build_task_status_result(
             "task_status",
             {
                 "task": task.to_dict(),
-                "result_page": result_page,
                 "queue_position": queue_position,
                 "blocking_task_id": blocking_task_id,
             },

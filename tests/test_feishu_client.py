@@ -841,7 +841,7 @@ class FeishuClientTest(unittest.TestCase):
         result_block = card["body"]["elements"][0]
         self.assertEqual(result_block["content"], "第一步  \n第二步  \n第三步")
 
-    def test_task_status_card_adds_pagination_for_long_raw_result(self) -> None:
+    def test_task_status_card_shows_full_long_raw_result_without_pagination(self) -> None:
         task = {
             "id": "task_3",
             "project_id": "proj_1",
@@ -860,10 +860,7 @@ class FeishuClientTest(unittest.TestCase):
                     resource_refs=ResourceRefs(project_id="proj_1", task_id="task_3"),
                     view_model=ViewModel(
                         "task_status",
-                        {
-                            "task": task,
-                            "result_page": 1,
-                        },
+                        {"task": task},
                     ),
                     refresh_mode=RefreshMode.REPLACE_CURRENT,
                 ),
@@ -873,18 +870,15 @@ class FeishuClientTest(unittest.TestCase):
 
         self.assertEqual(
             card["header"]["title"]["content"],
-            "[Complete] Task: task_3 (codex, /srv/poco/api) [1/3]",
+            "[Complete] Task: task_3 (codex, /srv/poco/api)",
         )
-        next_button = card["body"]["elements"][1]
-        action_row = card["body"]["elements"][2]
+        action_row = card["body"]["elements"][1]
         change_workdir_button = action_row["columns"][0]["elements"][0]
         change_model_button = action_row["columns"][1]["elements"][0]
-        self.assertEqual(next_button["behaviors"][0]["value"]["intent_key"], "task.open")
-        self.assertEqual(next_button["behaviors"][0]["value"]["page"], "2")
         self.assertEqual(change_workdir_button["behaviors"][0]["value"]["intent_key"], "workspace.enter_path")
         self.assertEqual(change_model_button["behaviors"][0]["value"]["intent_key"], "workspace.choose_agent")
 
-    def test_task_status_card_adds_pagination_for_long_live_output(self) -> None:
+    def test_task_status_card_shows_full_long_live_output_without_pagination(self) -> None:
         task = {
             "id": "task_run_long",
             "project_id": "proj_1",
@@ -903,10 +897,7 @@ class FeishuClientTest(unittest.TestCase):
                     resource_refs=ResourceRefs(project_id="proj_1", task_id="task_run_long"),
                     view_model=ViewModel(
                         "task_status",
-                        {
-                            "task": task,
-                            "result_page": 1,
-                        },
+                        {"task": task},
                     ),
                     refresh_mode=RefreshMode.REPLACE_CURRENT,
                 ),
@@ -916,12 +907,9 @@ class FeishuClientTest(unittest.TestCase):
 
         self.assertEqual(
             card["header"]["title"]["content"],
-            "[Running] Task: task_run_long (codex, /srv/poco/api) [1/3]",
+            "[Running] Task: task_run_long (codex, /srv/poco/api)",
         )
-        next_button = card["body"]["elements"][1]
-        stop_button = card["body"]["elements"][2]
-        self.assertEqual(next_button["behaviors"][0]["value"]["intent_key"], "task.open")
-        self.assertEqual(next_button["behaviors"][0]["value"]["page"], "2")
+        stop_button = card["body"]["elements"][1]
         self.assertEqual(stop_button["behaviors"][0]["value"]["intent_key"], "task.stop")
 
     def test_task_status_card_uses_stopped_title_and_grey_template_when_cancelled(self) -> None:
