@@ -844,8 +844,16 @@ class FeishuCardGatewayTest(unittest.TestCase):
         response = self.gateway.handle_action(payload)
 
         self.assertEqual(response["instruction"]["template_key"], "workspace_enter_path")
-        self.assertEqual(response["card"]["data"]["header"]["title"]["content"], "Enter Path: PoCo")
-        form = response["card"]["data"]["body"]["elements"][0]
+        self.assertEqual(response["card"]["data"]["header"]["title"]["content"], "Working Dir: PoCo")
+        elements = response["card"]["data"]["body"]["elements"]
+        summary = elements[0]
+        use_button = next(
+            element for element in elements
+            if element.get("name", "").startswith("use_browsed_path_")
+        )
+        form = next(element for element in elements if element.get("tag") == "form")
+        self.assertIn("/srv/poco/demo", summary["content"])
+        self.assertEqual(use_button["behaviors"][0]["value"]["intent_key"], "workspace.apply_entered_path")
         input_box = form["elements"][1]
         self.assertEqual(input_box["tag"], "input")
 
@@ -935,7 +943,8 @@ class FeishuCardGatewayTest(unittest.TestCase):
         response = self.gateway.handle_action(payload)
 
         self.assertEqual(response["instruction"]["template_key"], "workspace_enter_path")
-        form = response["card"]["data"]["body"]["elements"][0]
+        elements = response["card"]["data"]["body"]["elements"]
+        form = next(element for element in elements if element.get("tag") == "form")
         input_box = form["elements"][1]
         self.assertEqual(input_box["tag"], "input")
         apply_button = form["elements"][3]
@@ -943,7 +952,10 @@ class FeishuCardGatewayTest(unittest.TestCase):
             apply_button["behaviors"][0]["value"]["intent_key"],
             "workspace.apply_entered_path",
         )
-        back_button = response["card"]["data"]["body"]["elements"][1]
+        back_button = next(
+            element for element in elements
+            if element.get("name", "").startswith("cancel_workspace_enter_path_")
+        )
         self.assertEqual(
             back_button["behaviors"][0]["value"]["intent_key"],
             "workspace.open",

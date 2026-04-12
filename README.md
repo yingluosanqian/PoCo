@@ -260,10 +260,10 @@ Current interaction model:
 - DM `New` now uses a pure-card form to collect `project name`, then creates the project and group before returning to the DM home card
 - DM `Manage` now focuses on destructive admin actions; projects can be deleted there without opening a project detail card first, and deletion now cascades through local project state in sqlite/in-memory stores
 - newly created project groups now receive an initial workspace overview card
-- group workspace and task cards now route `Change Workdir` to a browser-based folder picker; the page supports both manual path entry and folder browsing
+- group workspace and task cards now keep `Working Dir` selection inside Feishu cards, with both folder browsing and manual path entry
 - group workspace cards are now intentionally compact: workspace metadata is collapsed into the title, and the body keeps only `Stop`, `Change Workdir`, and `Choose Model`
 - `Choose Model` now opens a dedicated model-selection card; applying a model returns to the main workspace card
-- browser-based workdir selection requires `POCO_APP_BASE_URL` so card buttons can open a reachable web page
+- working dir selection now stays inside Feishu cards; no browser page is required
 - `Use Default` now updates the in-memory workspace context and becomes the first real write path for group-side workdir state
 - `Enter Path` now updates the same in-memory workspace context and becomes the second real write path, using manual source
 - DM `Manage Dir Presets` can now add project-level presets, and group `Choose Preset` can apply them into the current in-memory workspace context

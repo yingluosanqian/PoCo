@@ -3,13 +3,9 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from html import escape
-from pathlib import Path
 from typing import Any
-from urllib.parse import urlencode
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from poco.agent.runner import create_agent_runner
@@ -47,12 +43,6 @@ class DemoDecisionRequest(BaseModel):
     approved: bool
 
 
-class ProjectCreateRequest(BaseModel):
-    actor_id: str
-    name: str
-    backend: str = "codex"
-
-
 def create_app(*, settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings()
     if settings.state_backend == "sqlite":
@@ -65,7 +55,7 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
         project_store = InMemoryProjectStore()
         workspace_store = InMemoryWorkspaceContextStore()
         session_store = InMemorySessionStore()
-    card_renderer = FeishuCardRenderer(app_base_url=settings.app_origin)
+    card_renderer = FeishuCardRenderer()
     runner = create_agent_runner(
         backend=settings.agent_backend,
         codex_command=settings.codex_command,
@@ -132,6 +122,7 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
         workspace_controller,
         controller,
         session_controller=session_controller,
+        default_workdir=settings.codex_workdir,
     )
     task_intent_handler = TaskIntentHandler(
         project_controller,
@@ -257,11 +248,6 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
             warnings.append(
                 "Feishu signature validation is disabled."
             )
-        if not settings.app_origin:
-            warnings.append(
-                "POCO_APP_BASE_URL is not configured. Browser-based workdir selection will fall back to card callbacks."
-            )
-
         if not agent_ready:
             missing.append("agent backend readiness")
         if settings.feishu_longconn_enabled and not listener_ready:
@@ -415,117 +401,6 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
         snapshot["listener"] = app.state.feishu_longconn.snapshot()
         return snapshot
 
-    @app.get("/ui/workdir", response_class=HTMLResponse)
-    def workdir_browser(project_id: str, path: str | None = None, saved: int = 0) -> HTMLResponse:
-        try:
-            project = project_controller.get_project(project_id)
-        except ValueError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-        context = workspace_controller.get_context(project)
-        initial_path = (
-            path
-            or context.active_workdir
-            or project.workdir
-            or settings.codex_workdir
-        )
-        browser = _build_workdir_browser_state(initial_path)
-        status_note = "Working dir updated." if saved else ""
-        body = _render_workdir_browser_html(
-            project_name=project.name,
-            project_id=project.id,
-            current_workdir=context.active_workdir,
-            selected_path=browser["selected_path"],
-            browse_path=browser["browse_path"],
-            parent_path=browser["parent_path"],
-            child_dirs=browser["child_dirs"],
-            error=browser["error"],
-            status_note=status_note,
-        )
-        return HTMLResponse(body)
-
-    @app.get("/ui/projects/new", response_class=HTMLResponse)
-    def project_create_page(actor_id: str | None = None, saved: int = 0, project_name: str | None = None) -> HTMLResponse:
-        body = _render_project_create_html(
-            actor_id=actor_id or "",
-            project_name=project_name or "",
-            saved=bool(saved),
-        )
-        return HTMLResponse(body)
-
-    @app.post("/api/projects")
-    def create_project_from_browser(request: ProjectCreateRequest) -> dict[str, Any]:
-        actor_id = request.actor_id.strip()
-        if not actor_id:
-            raise HTTPException(status_code=400, detail="actor_id is required.")
-        name = request.name.strip()
-        if not name:
-            raise HTTPException(status_code=400, detail="Project name cannot be empty.")
-        backend = request.backend.strip() or "codex"
-
-        project = project_controller.create_project(
-            name=name,
-            created_by=actor_id,
-            backend=backend,
-        )
-        try:
-            bootstrap = app.state.project_bootstrapper.bootstrap_project(
-                project=project,
-                actor_id=actor_id,
-            )
-        except ProjectBootstrapError as exc:
-            project_controller.delete_project(project.id)
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        if bootstrap.group_chat_id is not None:
-            project = project_controller.bind_group(project.id, bootstrap.group_chat_id)
-            try:
-                app.state.project_bootstrapper.notify_project_workspace(
-                    project=project,
-                    actor_id=actor_id,
-                )
-            except Exception:
-                pass
-        return {
-            "ok": True,
-            "project_id": project.id,
-            "project_name": project.name,
-            "group_chat_id": project.group_chat_id,
-            "redirect_url": f"/ui/projects/new?{urlencode({'actor_id': actor_id, 'saved': 1, 'project_name': project.name})}",
-        }
-
-    @app.post("/api/projects/{project_id}/workdir")
-    async def apply_project_workdir(project_id: str, request: Request) -> dict[str, Any]:
-        try:
-            project = project_controller.get_project(project_id)
-        except ValueError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-        payload = await request.json()
-        if not isinstance(payload, dict):
-            raise HTTPException(status_code=400, detail="Payload must be a JSON object.")
-        workdir = str(payload.get("workdir") or "").strip()
-        if not workdir:
-            raise HTTPException(status_code=400, detail="Workdir path cannot be empty.")
-        try:
-            normalized = str(Path(workdir).expanduser().resolve())
-        except OSError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        if not Path(normalized).is_dir():
-            raise HTTPException(status_code=400, detail="Workdir path must be an existing directory.")
-
-        context = workspace_controller.use_manual_workdir(project, normalized)
-        _refresh_workspace_card(
-            project=project,
-            context=context,
-        )
-        return {
-            "ok": True,
-            "project_id": project.id,
-            "workdir": normalized,
-            "source": context.workdir_source,
-            "redirect_url": f"/ui/workdir?{urlencode({'project_id': project.id, 'path': normalized, 'saved': 1})}",
-        }
-
     @app.get("/demo/cards/dm/projects")
     def demo_dm_project_list_card() -> dict[str, Any]:
         response = card_gateway.render_dm_project_list()
@@ -542,279 +417,3 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
 
 
 app = create_app()
-
-
-def _build_workdir_browser_state(path: str) -> dict[str, Any]:
-    selected = str(Path(path).expanduser())
-    resolved = Path(selected)
-    error = ""
-    browse_target = resolved
-    if resolved.exists() and resolved.is_file():
-        error = "Selected path is a file. Choose a directory."
-        browse_target = resolved.parent
-    elif not resolved.exists():
-        error = "Selected path does not exist yet. You can still edit it manually."
-        parent = resolved.parent
-        browse_target = parent if parent.exists() and parent.is_dir() else Path.home()
-    else:
-        try:
-            browse_target = resolved.resolve()
-        except OSError:
-            browse_target = resolved
-
-    child_dirs: list[str] = []
-    try:
-        child_dirs = sorted(
-            str(item.resolve())
-            for item in browse_target.iterdir()
-            if item.is_dir()
-        )
-    except OSError as exc:
-        error = str(exc)
-
-    parent_path = None
-    if browse_target.parent != browse_target:
-        parent_path = str(browse_target.parent)
-    return {
-        "selected_path": selected,
-        "browse_path": str(browse_target),
-        "parent_path": parent_path,
-        "child_dirs": child_dirs,
-        "error": error,
-    }
-
-
-def _render_workdir_browser_html(
-    *,
-    project_name: str,
-    project_id: str,
-    current_workdir: str | None,
-    selected_path: str,
-    browse_path: str,
-    parent_path: str | None,
-    child_dirs: list[str],
-    error: str,
-    status_note: str,
-) -> str:
-    current_label = escape(current_workdir or "no working dir")
-    selected_label = escape(selected_path)
-    browse_label = escape(browse_path)
-    error_block = f'<p class="note error">{escape(error)}</p>' if error else ""
-    status_block = f'<p class="note success">{escape(status_note)}</p>' if status_note else ""
-    selected_child = child_dirs[0] if child_dirs else ""
-    parent_link = ""
-    if parent_path:
-        parent_query = urlencode({"project_id": project_id, "path": parent_path})
-        parent_link = (
-            f'<a class="dir-link secondary-link" href="/ui/workdir?{parent_query}">'
-            f"<strong>Up One Level</strong><span>{escape(parent_path)}</span></a>"
-        )
-    child_options = "".join(
-        f'<option value="{escape(item)}">{escape(Path(item).name or item)}</option>'
-        for item in child_dirs
-    )
-    child_picker = (
-        f"""
-      <div class="picker-row">
-        <select id="child-dir-select">
-          {child_options}
-        </select>
-        <button id="open-child-button" type="button">Open Selected Folder</button>
-      </div>
-      <p class="note">Choose one subfolder, then keep drilling down level by level.</p>
-"""
-        if child_dirs
-        else '<p class="note">No child directories here.</p>'
-    )
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Workdir Browser</title>
-  <style>
-    body {{ font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; background: #f6f4ef; color: #171717; }}
-    .wrap {{ max-width: 760px; margin: 0 auto; padding: 24px 16px 40px; }}
-    h1 {{ font-size: 24px; margin: 0 0 8px; }}
-    .meta {{ color: #555; margin: 0 0 20px; }}
-    .card {{ background: #fffdfa; border: 1px solid #dfd7c8; border-radius: 16px; padding: 16px; margin-bottom: 16px; }}
-    .label {{ font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: #7a6d58; margin-bottom: 8px; }}
-    .path {{ font-family: ui-monospace, SFMono-Regular, monospace; word-break: break-all; }}
-    input, select {{ width: 100%; box-sizing: border-box; padding: 12px 14px; border-radius: 12px; border: 1px solid #cfc3ad; font-size: 15px; background: white; }}
-    .actions {{ display: flex; gap: 12px; margin-top: 12px; flex-wrap: wrap; }}
-    button {{ border: 0; border-radius: 12px; padding: 12px 16px; background: #1f6feb; color: white; font-size: 15px; }}
-    .secondary {{ background: #ece5d8; color: #222; }}
-    .picker-row {{ display: grid; gap: 12px; }}
-    @media (min-width: 700px) {{ .picker-row {{ grid-template-columns: 1fr auto; align-items: center; }} }}
-    .dir-link {{ display: block; padding: 12px 14px; border-radius: 12px; background: #f3eee3; color: #1f1f1f; text-decoration: none; border: 1px solid #e0d8ca; }}
-    .dir-link strong {{ display: block; font-size: 15px; }}
-    .dir-link span {{ display: block; margin-top: 4px; color: #5c554b; font-size: 13px; word-break: break-all; }}
-    .secondary-link {{ margin-bottom: 12px; }}
-    .section-note {{ margin: 0 0 12px; color: #5d5446; }}
-    .note {{ margin: 10px 0 0; color: #5d5446; }}
-    .error {{ color: #a12727; }}
-    .success {{ color: #176d3a; }}
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <h1>Change Working Dir</h1>
-    <p class="meta">{escape(project_name)}</p>
-    <div class="card">
-      <div class="label">Current</div>
-      <div class="path">{current_label}</div>
-    </div>
-    <div class="card">
-      <div class="label">Browse Folders</div>
-      <p class="section-note">Option 1. Browse like open-folder. Pick one subfolder at a time, then open it and keep going.</p>
-      <div class="path">{browse_label}</div>
-      <div class="actions">
-        <button id="apply-browsed-button" type="button">Use This Folder</button>
-        <a class="dir-link secondary" href="/ui/workdir?{urlencode({'project_id': project_id})}">Reset Browser</a>
-      </div>
-      {parent_link}
-      {child_picker}
-    </div>
-    <div class="card">
-      <div class="label">Enter Path Manually</div>
-      <p class="section-note">Option 2. Type the full path yourself and apply it directly.</p>
-      <input id="workdir-input" value="{selected_label}" spellcheck="false" />
-      <div class="actions">
-        <button id="apply-button" type="button">Apply Typed Path</button>
-      </div>
-      {status_block}
-      {error_block}
-    </div>
-  </div>
-  <script>
-    async function applyWorkdir(workdir) {{
-      const response = await fetch("/api/projects/{escape(project_id)}/workdir", {{
-        method: "POST",
-        headers: {{ "Content-Type": "application/json" }},
-        body: JSON.stringify({{ workdir }})
-      }});
-      const payload = await response.json();
-      if (!response.ok) {{
-        alert(payload.detail || "Failed to update workdir.");
-        return;
-      }}
-      window.location.href = payload.redirect_url;
-    }}
-    document.getElementById("apply-button").addEventListener("click", async () => {{
-      await applyWorkdir(document.getElementById("workdir-input").value);
-    }});
-    document.getElementById("apply-browsed-button").addEventListener("click", async () => {{
-      await applyWorkdir("{selected_label}");
-    }});
-    const openChildButton = document.getElementById("open-child-button");
-    if (openChildButton) {{
-      openChildButton.addEventListener("click", () => {{
-        const select = document.getElementById("child-dir-select");
-        if (!select || !select.value) {{
-          return;
-        }}
-        const query = new URLSearchParams({{
-          project_id: "{escape(project_id)}",
-          path: select.value
-        }});
-        window.location.href = `/ui/workdir?${{query.toString()}}`;
-      }});
-    }}
-  </script>
-</body>
-</html>"""
-
-
-def _render_project_create_html(
-    *,
-    actor_id: str,
-    project_name: str,
-    saved: bool,
-) -> str:
-    saved_block = ""
-    if saved and project_name:
-        saved_block = f'<p class="note success">Project created: {escape(project_name)}</p>'
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>New Project</title>
-  <style>
-    body {{ font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; background: #f6f4ef; color: #171717; }}
-    .wrap {{ max-width: 680px; margin: 0 auto; padding: 24px 16px 40px; }}
-    h1 {{ font-size: 24px; margin: 0 0 8px; }}
-    .meta {{ color: #555; margin: 0 0 20px; }}
-    .card {{ background: #fffdfa; border: 1px solid #dfd7c8; border-radius: 16px; padding: 16px; margin-bottom: 16px; }}
-    .label {{ font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: #7a6d58; margin-bottom: 8px; }}
-    input, select {{ width: 100%; box-sizing: border-box; padding: 12px 14px; border-radius: 12px; border: 1px solid #cfc3ad; font-size: 15px; background: white; }}
-    .actions {{ display: flex; gap: 12px; margin-top: 12px; flex-wrap: wrap; }}
-    button {{ border: 0; border-radius: 12px; padding: 12px 16px; background: #1f6feb; color: white; font-size: 15px; }}
-    .note {{ margin: 10px 0 0; color: #5d5446; }}
-    .success {{ color: #176d3a; }}
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <h1>New Project</h1>
-    <p class="meta">Create project and group in one step.</p>
-    <div class="card">
-      <div class="label">Project Name</div>
-      <input id="project-name" value="{escape(project_name)}" placeholder="Project name" spellcheck="false" />
-    </div>
-    <div class="card">
-      <div class="label">Agent</div>
-      <select id="agent-backend">
-        <option value="codex" selected>Codex</option>
-      </select>
-      {saved_block}
-    </div>
-    <div class="actions">
-      <button id="create-project-button" type="button">Create Project + Group</button>
-    </div>
-  </div>
-  <script>
-    async function createProject() {{
-      const response = await fetch("/api/projects", {{
-        method: "POST",
-        headers: {{ "Content-Type": "application/json" }},
-        body: JSON.stringify({{
-          actor_id: "{escape(actor_id)}",
-          name: document.getElementById("project-name").value,
-          backend: document.getElementById("agent-backend").value
-        }})
-      }});
-      const payload = await response.json();
-      if (!response.ok) {{
-        alert(payload.detail || "Failed to create project.");
-        return;
-      }}
-      window.location.href = payload.redirect_url;
-    }}
-    document.getElementById("create-project-button").addEventListener("click", createProject);
-  </script>
-</body>
-</html>"""
-
-
-def _refresh_workspace_card(*, project, context) -> None:
-    message_client = app.state.message_client
-    if message_client is None or not project.workspace_message_id:
-        return
-    tasks = app.state.task_controller.list_tasks_for_project(project.id)
-    latest_task = max(tasks, key=lambda task: task.updated_at) if tasks else None
-    instruction = build_render_instruction(
-        build_workspace_overview_result(
-            project,
-            context=context,
-            active_session=app.state.session_controller.get_active_session(project.id),
-            latest_task=latest_task,
-            message=f"Workspace refreshed for {project.name}",
-        ),
-        surface=Surface.GROUP,
-    )
-    card = app.state.card_renderer.render(instruction)
-    message_client.update_interactive(
-        message_id=project.workspace_message_id,
-        card=card,
-    )

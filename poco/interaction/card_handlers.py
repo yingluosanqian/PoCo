@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from poco.interaction.card_models import (
     ActionIntent,
@@ -287,6 +288,7 @@ class WorkspaceIntentHandler:
     workspace_controller: WorkspaceContextController
     task_controller: TaskController | None = None
     session_controller: SessionController | None = None
+    default_workdir: str | None = None
 
     def handle(self, intent: ActionIntent) -> IntentDispatchResult:
         if intent.intent_key == "workspace.use_default_dir":
@@ -366,7 +368,12 @@ class WorkspaceIntentHandler:
             status=DispatchStatus.OK,
             intent_key=intent.intent_key,
             resource_refs=ResourceRefs(project_id=project.id),
-            view_model=_workspace_enter_path_view_model(project, context=context),
+            view_model=_workspace_enter_path_view_model(
+                project,
+                context=context,
+                browse_path=context.active_workdir,
+                page=1,
+            ),
             refresh_mode=RefreshMode.REPLACE_CURRENT,
             message=f"Using preset dir for {project.name}",
         )
@@ -389,11 +396,17 @@ class WorkspaceIntentHandler:
         if isinstance(project, IntentDispatchResult):
             return project
         context = self.workspace_controller.get_context(project)
+        browse_path = _extract_browse_path(intent.payload) or context.active_workdir or project.workdir or self.default_workdir
         return IntentDispatchResult(
             status=DispatchStatus.OK,
             intent_key=intent.intent_key,
             resource_refs=ResourceRefs(project_id=project.id),
-            view_model=_workspace_enter_path_view_model(project, context=context),
+            view_model=_workspace_enter_path_view_model(
+                project,
+                context=context,
+                browse_path=browse_path,
+                page=_extract_page(intent.payload),
+            ),
             refresh_mode=RefreshMode.REPLACE_CURRENT,
             message=f"Manual dir entry for {project.name}",
         )
@@ -822,12 +835,25 @@ def _workspace_recent_dirs_view_model(project) -> ViewModel:
     )
 
 
-def _workspace_enter_path_view_model(project, *, context) -> ViewModel:
+def _workspace_enter_path_view_model(project, *, context, browse_path: str | None, page: int) -> ViewModel:
+    browser = _build_card_dir_browser_state(browse_path)
+    child_dirs = browser["child_dirs"]
+    page_size = 8
+    total_pages = max(1, (len(child_dirs) + page_size - 1) // page_size)
+    current_page = min(max(page, 1), total_pages)
+    start = (current_page - 1) * page_size
+    end = start + page_size
     return ViewModel(
         "workspace_enter_path",
         {
             "project": project.to_dict(),
             "current_workdir": context.active_workdir,
+            "browse_path": browser["browse_path"],
+            "parent_path": browser["parent_path"],
+            "child_dirs": child_dirs[start:end],
+            "browse_page": current_page,
+            "browse_total_pages": total_pages,
+            "error": browser["error"],
             "note": "Apply updates the current workspace and returns to the main workspace card.",
         },
     )
@@ -893,6 +919,58 @@ def _extract_workdir_path(payload: dict[str, object]) -> str:
         if nested is not None:
             return nested
     return ""
+
+
+def _extract_browse_path(payload: dict[str, object]) -> str | None:
+    return _optional_string(payload.get("browse_path"))
+
+
+def _extract_page(payload: dict[str, object]) -> int:
+    try:
+        page = int(payload.get("page", 1))
+    except (TypeError, ValueError):
+        return 1
+    return page if page > 0 else 1
+
+
+def _build_card_dir_browser_state(path: str | None) -> dict[str, object]:
+    fallback = Path.home()
+    selected = str(Path(path).expanduser()) if path else str(fallback)
+    resolved = Path(selected)
+    error = ""
+    browse_target = resolved
+    if resolved.exists() and resolved.is_file():
+        error = "Selected path is a file. Choose a directory."
+        browse_target = resolved.parent
+    elif not resolved.exists():
+        error = "Selected path does not exist yet. You can still enter it manually."
+        parent = resolved.parent
+        browse_target = parent if parent.exists() and parent.is_dir() else fallback
+    else:
+        try:
+            browse_target = resolved.resolve()
+        except OSError:
+            browse_target = resolved
+
+    child_dirs: list[str] = []
+    try:
+        child_dirs = sorted(
+            str(item.resolve())
+            for item in browse_target.iterdir()
+            if item.is_dir()
+        )
+    except OSError as exc:
+        error = str(exc)
+
+    parent_path = None
+    if browse_target.parent != browse_target:
+        parent_path = str(browse_target.parent)
+    return {
+        "browse_path": str(browse_target),
+        "parent_path": parent_path,
+        "child_dirs": child_dirs,
+        "error": error,
+    }
 
 
 def _extract_project_name(payload: dict[str, object]) -> str:

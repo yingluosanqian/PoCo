@@ -1,8 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
-from urllib.parse import urlencode
-
 from poco.interaction.card_models import PlatformRenderInstruction
 
 
@@ -429,7 +428,6 @@ def _render_workspace_overview(
     current_workdir = data.get("current_workdir") or "no working dir"
     current_agent = data.get("current_agent") or project["backend"]
     current_model = data.get("current_model")
-    workdir_url = workdir_browser_url(app_base_url, project_id=project["id"])
     stop_enabled = bool(data.get("stop_enabled"))
     config_locked = latest_status in {"created", "queued", "running", "waiting_for_confirmation"}
     elements: list[dict[str, Any]] = []
@@ -453,12 +451,11 @@ def _render_workspace_overview(
             _two_up(
                 _action_button(
                     label="Working Dir",
-                    url=workdir_url,
                     intent_value={
                         "intent_key": "workspace.enter_path",
                         "surface": surface,
                         "project_id": project["id"],
-                    } if workdir_url is None else None,
+                    },
                     name=f"enter_workdir_path_{project['id']}",
                 ),
                 _action_button(
@@ -574,56 +571,152 @@ def _render_workspace_enter_path(
 ) -> dict[str, Any]:
     project = data["project"]
     current_workdir = data.get("current_workdir") or ""
-    return _card_shell(
-        title=f"Enter Path: {project['name']}",
-        template="blue",
-        elements=[
-            {
-                "tag": "form",
-                "name": f"workspace_enter_path_form_{project['id']}",
-                "elements": [
-                    _markdown("**Manual Path Entry**\nEnter a workdir path for the current workspace context."),
-                    _input(
-                        name="workdir",
-                        placeholder="Enter workdir path",
-                        value=current_workdir,
-                    ),
-                    _markdown(data["note"]),
-                    {
-                        "tag": "button",
-                        "text": {
-                            "tag": "plain_text",
-                            "content": "Apply Path",
-                        },
-                        "type": "primary",
-                        "width": "default",
-                        "size": "medium",
-                        "name": f"apply_entered_path_{project['id']}",
-                        "form_action_type": "submit",
-                        "behaviors": [
-                            {
-                                "type": "callback",
-                                "value": {
-                                    "intent_key": "workspace.apply_entered_path",
-                                    "surface": surface,
-                                    "project_id": project["id"],
-                                },
-                            }
-                        ],
-                        "margin": "0px 0px 12px 0px",
-                    },
-                ],
-            },
+    browse_path = data.get("browse_path") or current_workdir or "no working dir"
+    parent_path = data.get("parent_path")
+    child_dirs = data.get("child_dirs") or []
+    browse_page = data.get("browse_page") or 1
+    browse_total_pages = data.get("browse_total_pages") or 1
+    error = data.get("error") or ""
+    elements: list[dict[str, Any]] = [
+        _markdown(
+            "\n".join(
+                [
+                    f"**Current Working Dir**\n`{current_workdir or 'no working dir'}`",
+                    f"**Browsing**\n`{browse_path}`",
+                ]
+            )
+        )
+    ]
+    if error:
+        elements.append(_markdown(error))
+    nav_buttons: list[dict[str, Any]] = []
+    if parent_path:
+        nav_buttons.append(
             _button(
-                label="Cancel",
+                label="Up",
                 intent_value={
-                    "intent_key": "workspace.open",
+                    "intent_key": "workspace.enter_path",
                     "surface": surface,
                     "project_id": project["id"],
+                    "browse_path": parent_path,
                 },
-                name=f"cancel_workspace_enter_path_{project['id']}",
-            ),
-        ],
+                name=f"browse_parent_{project['id']}",
+            )
+        )
+    nav_buttons.append(
+        _button(
+            label="Use This Folder",
+            intent_value={
+                "intent_key": "workspace.apply_entered_path",
+                "surface": surface,
+                "project_id": project["id"],
+                "workdir": browse_path,
+            },
+            style="primary",
+            name=f"use_browsed_path_{project['id']}",
+        )
+    )
+    elements.extend(nav_buttons)
+    if child_dirs:
+        elements.append(_markdown("**Subfolders**"))
+        for child in child_dirs:
+            child_name = Path(child).name or child
+            elements.append(
+                _button(
+                    label=child_name,
+                    intent_value={
+                        "intent_key": "workspace.enter_path",
+                        "surface": surface,
+                        "project_id": project["id"],
+                        "browse_path": child,
+                    },
+                    name=f"browse_child_{project['id']}_{child_name}",
+                )
+            )
+    else:
+        elements.append(_markdown("No subfolders here."))
+    if browse_total_pages > 1:
+        if browse_page > 1:
+            elements.append(
+                _button(
+                    label="Previous Page",
+                    intent_value={
+                        "intent_key": "workspace.enter_path",
+                        "surface": surface,
+                        "project_id": project["id"],
+                        "browse_path": browse_path,
+                        "page": str(int(browse_page) - 1),
+                    },
+                    name=f"browse_prev_page_{project['id']}_{browse_page}",
+                )
+            )
+        if browse_page < browse_total_pages:
+            elements.append(
+                _button(
+                    label="Next Page",
+                    intent_value={
+                        "intent_key": "workspace.enter_path",
+                        "surface": surface,
+                        "project_id": project["id"],
+                        "browse_path": browse_path,
+                        "page": str(int(browse_page) + 1),
+                    },
+                    name=f"browse_next_page_{project['id']}_{browse_page}",
+                )
+            )
+    elements.append(
+        {
+            "tag": "form",
+            "name": f"workspace_enter_path_form_{project['id']}",
+            "elements": [
+                _markdown("**Manual Path Entry**\nEnter a workdir path directly if browsing is too slow."),
+                _input(
+                    name="workdir",
+                    placeholder="Enter workdir path",
+                    value=current_workdir or browse_path,
+                ),
+                _markdown(data["note"]),
+                {
+                    "tag": "button",
+                    "text": {
+                        "tag": "plain_text",
+                        "content": "Apply Path",
+                    },
+                    "type": "primary",
+                    "width": "default",
+                    "size": "medium",
+                    "name": f"apply_entered_path_{project['id']}",
+                    "form_action_type": "submit",
+                    "behaviors": [
+                        {
+                            "type": "callback",
+                            "value": {
+                                "intent_key": "workspace.apply_entered_path",
+                                "surface": surface,
+                                "project_id": project["id"],
+                            },
+                        }
+                    ],
+                    "margin": "0px 0px 12px 0px",
+                },
+            ],
+        }
+    )
+    elements.append(
+        _button(
+            label="Cancel",
+            intent_value={
+                "intent_key": "workspace.open",
+                "surface": surface,
+                "project_id": project["id"],
+            },
+            name=f"cancel_workspace_enter_path_{project['id']}",
+        )
+    )
+    return _card_shell(
+        title=f"Working Dir: {project['name']}",
+        template="blue",
+        elements=elements,
     )
 
 
@@ -828,7 +921,6 @@ def _render_task_status(
                 )
 
     if task.get("project_id"):
-        workdir_url = workdir_browser_url(app_base_url, project_id=task["project_id"])
         config_locked = status in {"created", "queued", "running", "waiting_for_confirmation"}
         if status in {"created", "running"}:
             elements.append(
@@ -848,12 +940,11 @@ def _render_task_status(
                 _two_up(
                     _action_button(
                         label="Working Dir",
-                        url=workdir_url,
                         intent_value={
                             "intent_key": "workspace.enter_path",
                             "surface": surface,
                             "project_id": task["project_id"],
-                        } if workdir_url is None else None,
+                        },
                         name=f"task_change_workdir_{task['id']}",
                     ),
                     _action_button(
@@ -1170,22 +1261,6 @@ def _workspace_status_label(status: str) -> str:
     if status == "waiting_for_confirmation":
         return "Waiting"
     return "Idle"
-
-
-def workdir_browser_url(app_base_url: str | None, *, project_id: str) -> str | None:
-    if not app_base_url:
-        return None
-    return f"{app_base_url}/ui/workdir?{urlencode({'project_id': project_id})}"
-
-
-def project_new_url(app_base_url: str | None, *, actor_id: str | None) -> str | None:
-    if not app_base_url:
-        return None
-    query: dict[str, str] = {}
-    if actor_id:
-        query["actor_id"] = actor_id
-    suffix = f"?{urlencode(query)}" if query else ""
-    return f"{app_base_url}/ui/projects/new{suffix}"
 
 
 def _task_status_label(status: str) -> str:

@@ -144,7 +144,7 @@ class FeishuClientTest(unittest.TestCase):
             surface=Surface.GROUP,
         )
 
-        card = FeishuCardRenderer(app_base_url="https://poco.test").render(instruction)
+        card = FeishuCardRenderer().render(instruction)
 
         self.assertEqual(
             card["header"]["title"]["content"],
@@ -157,8 +157,8 @@ class FeishuClientTest(unittest.TestCase):
         self.assertIn("Stop is available only while a task is running.", idle_hint["text"]["content"])
         self.assertEqual(action_row["tag"], "column_set")
         self.assertEqual(
-            change_workdir_button["url"],
-            "https://poco.test/ui/workdir?project_id=proj_1",
+            change_workdir_button["behaviors"][0]["value"]["intent_key"],
+            "workspace.enter_path",
         )
         self.assertEqual(change_workdir_button["text"]["content"], "Working Dir")
         self.assertEqual(change_model_button["text"]["content"], "Model")
@@ -204,7 +204,7 @@ class FeishuClientTest(unittest.TestCase):
         recorder = FeishuDebugRecorder()
         bootstrapper = FeishuProjectBootstrapper(
             message_client,  # type: ignore[arg-type]
-            renderer=FeishuCardRenderer(app_base_url="https://poco.test"),
+            renderer=FeishuCardRenderer(),
             project_controller=project_controller,
             debug_recorder=recorder,
         )
@@ -224,15 +224,15 @@ class FeishuClientTest(unittest.TestCase):
         change_workdir_button = action_row["columns"][0]["elements"][0]
         change_model_button = action_row["columns"][1]["elements"][0]
         self.assertEqual(
-            change_workdir_button["url"],
-            f"https://poco.test/ui/workdir?project_id={project.id}",
+            change_workdir_button["behaviors"][0]["value"]["intent_key"],
+            "workspace.enter_path",
         )
         self.assertEqual(change_model_button["behaviors"][0]["value"]["surface"], "group")
         self.assertEqual(project.workspace_message_id, "om_workspace_bootstrap_1")
         snapshot = recorder.snapshot()
         self.assertEqual(snapshot["outbound_attempts"][0]["source"], "project_workspace_bootstrap")
 
-    def test_workspace_enter_path_card_contains_input_and_apply(self) -> None:
+    def test_workspace_enter_path_card_contains_browser_and_input(self) -> None:
         project = Project(
             id="proj_1",
             name="PoCo",
@@ -250,6 +250,12 @@ class FeishuClientTest(unittest.TestCase):
                         {
                             "project": project.to_dict(),
                             "current_workdir": "/srv/poco/manual",
+                            "browse_path": "/srv/poco",
+                            "parent_path": "/srv",
+                            "child_dirs": ["/srv/poco/api", "/srv/poco/web"],
+                            "browse_page": 1,
+                            "browse_total_pages": 1,
+                            "error": "",
                             "note": "Manual path entry is a fallback path.",
                         },
                     ),
@@ -259,9 +265,18 @@ class FeishuClientTest(unittest.TestCase):
             )
         )
 
-        form = card["body"]["elements"][0]
+        self.assertEqual(card["header"]["title"]["content"], "Working Dir: PoCo")
+        browse_summary = card["body"]["elements"][0]
+        up_button = card["body"]["elements"][1]
+        use_button = card["body"]["elements"][2]
+        child_button = card["body"]["elements"][4]
+        form = card["body"]["elements"][6]
         input_box = form["elements"][1]
         apply_button = form["elements"][3]
+        self.assertEqual(browse_summary["tag"], "markdown")
+        self.assertEqual(up_button["behaviors"][0]["value"]["browse_path"], "/srv")
+        self.assertEqual(use_button["behaviors"][0]["value"]["workdir"], "/srv/poco")
+        self.assertEqual(child_button["behaviors"][0]["value"]["browse_path"], "/srv/poco/api")
         self.assertEqual(form["tag"], "form")
         self.assertEqual(input_box["tag"], "input")
         self.assertEqual(input_box["name"], "workdir")
