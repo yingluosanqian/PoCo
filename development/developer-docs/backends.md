@@ -94,12 +94,35 @@
 - model 通过 `cursor-agent --list-models` 动态获取
 - 当前还没有把 `--force / --yolo` 暴露到 UI
 
-## 5. CoCo
+## 5. Trae CLI / CoCo
 
-状态：
+实现：
 
-- 仅被识别
-- 还没有真实 runner
+- runner: [`CocoRunner`](/Users/yihanc/project/PoCo/poco/agent/runner.py)
+
+当前能力：
+
+- ACP 协议输出
+- resume 上下文
+- stop
+- 从本地 `~/.trae/traecli.yaml` 读取当前 model 作为卡片候选
+
+配置项：
+
+- `model`
+- `approval_mode`
+  - `default`
+  - `yolo`
+
+说明：
+
+- 当前通过 `traecli acp serve` 执行，不再走 `-p --json`
+- `approval_mode=yolo` 当前映射到 ACP mode `bypass_permissions`
+- backend key 仍保持 `coco`，UI label 展示为 `Trae CLI`
+- 当前执行链仍在重设计中，已暴露：
+  - task 完成语义不够稳定
+  - `session/load` 后 update 归属边界不够清晰
+  - 需要严格收紧子进程生命周期管理
 
 ## 6. 当前能力矩阵
 
@@ -108,4 +131,4 @@
 | `codex` | yes | yes | yes | yes |
 | `claude_code` | yes | yes | yes | no |
 | `cursor_agent` | yes | yes | yes | yes |
-| `coco` | no | no | no | no |
+| `coco` | partial | yes | yes | limited |
