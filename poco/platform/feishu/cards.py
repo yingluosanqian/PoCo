@@ -577,23 +577,42 @@ def _render_workspace_enter_path(
         title=f"Enter Path: {project['name']}",
         template="blue",
         elements=[
-            _markdown("**Manual Path Entry**\nEnter a workdir path for the current workspace context."),
-            _input(
-                name="workdir",
-                placeholder="Enter workdir path",
-                value=current_workdir,
-            ),
-            _markdown(data["note"]),
-            _button(
-                label="Apply Path",
-                intent_value={
-                    "intent_key": "workspace.apply_entered_path",
-                    "surface": surface,
-                    "project_id": project["id"],
-                },
-                style="primary",
-                name=f"apply_entered_path_{project['id']}",
-            ),
+            {
+                "tag": "form",
+                "name": f"workspace_enter_path_form_{project['id']}",
+                "elements": [
+                    _markdown("**Manual Path Entry**\nEnter a workdir path for the current workspace context."),
+                    _input(
+                        name="workdir",
+                        placeholder="Enter workdir path",
+                        value=current_workdir,
+                    ),
+                    _markdown(data["note"]),
+                    {
+                        "tag": "button",
+                        "text": {
+                            "tag": "plain_text",
+                            "content": "Apply Path",
+                        },
+                        "type": "primary",
+                        "width": "default",
+                        "size": "medium",
+                        "name": f"apply_entered_path_{project['id']}",
+                        "form_action_type": "submit",
+                        "behaviors": [
+                            {
+                                "type": "callback",
+                                "value": {
+                                    "intent_key": "workspace.apply_entered_path",
+                                    "surface": surface,
+                                    "project_id": project["id"],
+                                },
+                            }
+                        ],
+                        "margin": "0px 0px 12px 0px",
+                    },
+                ],
+            },
             _button(
                 label="Cancel",
                 intent_value={

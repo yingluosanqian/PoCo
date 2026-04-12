@@ -215,10 +215,13 @@ class FeishuClientTest(unittest.TestCase):
             )
         )
 
-        input_box = card["body"]["elements"][1]
-        apply_button = card["body"]["elements"][3]
+        form = card["body"]["elements"][0]
+        input_box = form["elements"][1]
+        apply_button = form["elements"][3]
+        self.assertEqual(form["tag"], "form")
         self.assertEqual(input_box["tag"], "input")
         self.assertEqual(input_box["name"], "workdir")
+        self.assertEqual(apply_button["form_action_type"], "submit")
         self.assertEqual(apply_button["behaviors"][0]["value"]["intent_key"], "workspace.apply_entered_path")
         self.assertEqual(apply_button["behaviors"][0]["value"]["surface"], "group")
 

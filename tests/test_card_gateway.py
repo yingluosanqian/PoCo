@@ -774,7 +774,8 @@ class FeishuCardGatewayTest(unittest.TestCase):
 
         self.assertEqual(response["instruction"]["template_key"], "workspace_enter_path")
         self.assertEqual(response["card"]["data"]["header"]["title"]["content"], "Enter Path: PoCo")
-        input_box = response["card"]["data"]["body"]["elements"][1]
+        form = response["card"]["data"]["body"]["elements"][0]
+        input_box = form["elements"][1]
         self.assertEqual(input_box["tag"], "input")
 
     def test_workspace_use_default_dir_updates_context(self) -> None:
@@ -863,14 +864,15 @@ class FeishuCardGatewayTest(unittest.TestCase):
         response = self.gateway.handle_action(payload)
 
         self.assertEqual(response["instruction"]["template_key"], "workspace_enter_path")
-        input_box = response["card"]["data"]["body"]["elements"][1]
+        form = response["card"]["data"]["body"]["elements"][0]
+        input_box = form["elements"][1]
         self.assertEqual(input_box["tag"], "input")
-        apply_button = response["card"]["data"]["body"]["elements"][3]
+        apply_button = form["elements"][3]
         self.assertEqual(
             apply_button["behaviors"][0]["value"]["intent_key"],
             "workspace.apply_entered_path",
         )
-        back_button = response["card"]["data"]["body"]["elements"][4]
+        back_button = response["card"]["data"]["body"]["elements"][1]
         self.assertEqual(
             back_button["behaviors"][0]["value"]["intent_key"],
             "workspace.open",
