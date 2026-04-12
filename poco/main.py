@@ -601,18 +601,31 @@ def _render_workdir_browser_html(
     browse_label = escape(browse_path)
     error_block = f'<p class="note error">{escape(error)}</p>' if error else ""
     status_block = f'<p class="note success">{escape(status_note)}</p>' if status_note else ""
+    selected_child = child_dirs[0] if child_dirs else ""
     parent_link = ""
     if parent_path:
         parent_query = urlencode({"project_id": project_id, "path": parent_path})
         parent_link = (
-            f'<a class="dir-link" href="/ui/workdir?{parent_query}">'
-            f"<strong>..</strong><span>{escape(parent_path)}</span></a>"
+            f'<a class="dir-link secondary-link" href="/ui/workdir?{parent_query}">'
+            f"<strong>Up One Level</strong><span>{escape(parent_path)}</span></a>"
         )
-    child_links = "".join(
-        f'<a class="dir-link" href="/ui/workdir?{urlencode({"project_id": project_id, "path": item})}">'
-        f"<strong>{escape(Path(item).name or item)}</strong><span>{escape(item)}</span></a>"
+    child_options = "".join(
+        f'<option value="{escape(item)}">{escape(Path(item).name or item)}</option>'
         for item in child_dirs
-    ) or '<p class="note">No child directories here.</p>'
+    )
+    child_picker = (
+        f"""
+      <div class="picker-row">
+        <select id="child-dir-select">
+          {child_options}
+        </select>
+        <button id="open-child-button" type="button">Open Selected Folder</button>
+      </div>
+      <p class="note">Choose one subfolder, then keep drilling down level by level.</p>
+"""
+        if child_dirs
+        else '<p class="note">No child directories here.</p>'
+    )
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -627,14 +640,16 @@ def _render_workdir_browser_html(
     .card {{ background: #fffdfa; border: 1px solid #dfd7c8; border-radius: 16px; padding: 16px; margin-bottom: 16px; }}
     .label {{ font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: #7a6d58; margin-bottom: 8px; }}
     .path {{ font-family: ui-monospace, SFMono-Regular, monospace; word-break: break-all; }}
-    input {{ width: 100%; box-sizing: border-box; padding: 12px 14px; border-radius: 12px; border: 1px solid #cfc3ad; font-size: 15px; }}
+    input, select {{ width: 100%; box-sizing: border-box; padding: 12px 14px; border-radius: 12px; border: 1px solid #cfc3ad; font-size: 15px; background: white; }}
     .actions {{ display: flex; gap: 12px; margin-top: 12px; flex-wrap: wrap; }}
     button {{ border: 0; border-radius: 12px; padding: 12px 16px; background: #1f6feb; color: white; font-size: 15px; }}
     .secondary {{ background: #ece5d8; color: #222; }}
-    .dirs {{ display: grid; gap: 8px; }}
+    .picker-row {{ display: grid; gap: 12px; }}
+    @media (min-width: 700px) {{ .picker-row {{ grid-template-columns: 1fr auto; align-items: center; }} }}
     .dir-link {{ display: block; padding: 12px 14px; border-radius: 12px; background: #f3eee3; color: #1f1f1f; text-decoration: none; border: 1px solid #e0d8ca; }}
     .dir-link strong {{ display: block; font-size: 15px; }}
     .dir-link span {{ display: block; margin-top: 4px; color: #5c554b; font-size: 13px; word-break: break-all; }}
+    .secondary-link {{ margin-bottom: 12px; }}
     .section-note {{ margin: 0 0 12px; color: #5d5446; }}
     .note {{ margin: 10px 0 0; color: #5d5446; }}
     .error {{ color: #a12727; }}
@@ -651,16 +666,14 @@ def _render_workdir_browser_html(
     </div>
     <div class="card">
       <div class="label">Browse Folders</div>
-      <p class="section-note">Option 1. Browse like open-folder, then apply the folder you want.</p>
+      <p class="section-note">Option 1. Browse like open-folder. Pick one subfolder at a time, then open it and keep going.</p>
       <div class="path">{browse_label}</div>
       <div class="actions">
         <button id="apply-browsed-button" type="button">Use This Folder</button>
         <a class="dir-link secondary" href="/ui/workdir?{urlencode({'project_id': project_id})}">Reset Browser</a>
       </div>
-      <div class="dirs">
-        {parent_link}
-        {child_links}
-      </div>
+      {parent_link}
+      {child_picker}
     </div>
     <div class="card">
       <div class="label">Enter Path Manually</div>
@@ -693,6 +706,20 @@ def _render_workdir_browser_html(
     document.getElementById("apply-browsed-button").addEventListener("click", async () => {{
       await applyWorkdir("{selected_label}");
     }});
+    const openChildButton = document.getElementById("open-child-button");
+    if (openChildButton) {{
+      openChildButton.addEventListener("click", () => {{
+        const select = document.getElementById("child-dir-select");
+        if (!select || !select.value) {{
+          return;
+        }}
+        const query = new URLSearchParams({{
+          project_id: "{escape(project_id)}",
+          path: select.value
+        }});
+        window.location.href = `/ui/workdir?${{query.toString()}}`;
+      }});
+    }}
   </script>
 </body>
 </html>"""

@@ -48,6 +48,8 @@ class WorkdirBrowserTest(unittest.TestCase):
         self.assertIn("Browse Folders", html)
         self.assertIn("Enter Path Manually", html)
         self.assertIn("Option 1. Browse like open-folder", html)
+        self.assertIn("child-dir-select", html)
+        self.assertIn("Open Selected Folder", html)
         self.assertIn("api", html)
         self.assertIn("web", html)
         self.assertIn(str(self.project_root), html)
