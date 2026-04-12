@@ -107,9 +107,11 @@ class FeishuClientTest(unittest.TestCase):
             "[Idle] Workspace: PoCo (codex, no working dir)",
         )
         idle_hint = card["body"]["elements"][0]
-        change_workdir_button = card["body"]["elements"][1]
-        change_model_button = card["body"]["elements"][2]
+        action_row = card["body"]["elements"][1]
+        change_workdir_button = action_row["columns"][0]["elements"][0]
+        change_model_button = action_row["columns"][1]["elements"][0]
         self.assertIn("Stop is available only while a task is running.", idle_hint["text"]["content"])
+        self.assertEqual(action_row["tag"], "column_set")
         self.assertEqual(
             change_workdir_button["url"],
             "https://poco.test/ui/workdir?project_id=proj_1",
@@ -174,11 +176,13 @@ class FeishuClientTest(unittest.TestCase):
         self.assertEqual(sent["receive_id_type"], "chat_id")
         card = sent["card"]
         self.assertEqual(card["header"]["title"]["content"], "[Idle] Workspace: PoCo (codex, no working dir)")
+        action_row = card["body"]["elements"][1]
+        change_workdir_button = action_row["columns"][0]["elements"][0]
+        change_model_button = action_row["columns"][1]["elements"][0]
         self.assertEqual(
-            card["body"]["elements"][1]["url"],
+            change_workdir_button["url"],
             f"https://poco.test/ui/workdir?project_id={project.id}",
         )
-        change_model_button = card["body"]["elements"][2]
         self.assertEqual(change_model_button["behaviors"][0]["value"]["surface"], "group")
         self.assertEqual(project.workspace_message_id, "om_workspace_bootstrap_1")
         snapshot = recorder.snapshot()
@@ -355,11 +359,14 @@ class FeishuClientTest(unittest.TestCase):
         self.assertIn("Need approval before deploy.", card["body"]["elements"][0]["content"])
         approve_button = card["body"]["elements"][1]
         stop_button = card["body"]["elements"][2]
+        action_row = card["body"]["elements"][3]
+        workdir_lock = action_row["columns"][0]["elements"][0]
+        model_lock = action_row["columns"][1]["elements"][0]
         self.assertEqual(approve_button["behaviors"][0]["value"]["intent_key"], "task.approve")
         self.assertEqual(approve_button["behaviors"][0]["value"]["task_id"], "task_1")
         self.assertEqual(stop_button["behaviors"][0]["value"]["intent_key"], "task.stop")
-        self.assertIn("Working Dir · locked", card["body"]["elements"][3]["text"]["content"])
-        self.assertIn("Model · locked", card["body"]["elements"][4]["text"]["content"])
+        self.assertIn("Working Dir · locked", workdir_lock["text"]["content"])
+        self.assertIn("Model · locked", model_lock["text"]["content"])
 
     def test_task_status_card_contains_result_when_completed(self) -> None:
         task = {
@@ -395,10 +402,13 @@ class FeishuClientTest(unittest.TestCase):
             "[Complete] Task: task_2 (codex, /srv/poco/api)",
         )
         result_block = card["body"]["elements"][0]
+        action_row = card["body"]["elements"][1]
+        change_workdir_button = action_row["columns"][0]["elements"][0]
+        change_model_button = action_row["columns"][1]["elements"][0]
         self.assertEqual(result_block["tag"], "markdown")
         self.assertIn("Done.", result_block["content"])
-        self.assertEqual(card["body"]["elements"][1]["behaviors"][0]["value"]["intent_key"], "workspace.enter_path")
-        self.assertEqual(card["body"]["elements"][2]["behaviors"][0]["value"]["intent_key"], "workspace.choose_model")
+        self.assertEqual(change_workdir_button["behaviors"][0]["value"]["intent_key"], "workspace.enter_path")
+        self.assertEqual(change_model_button["behaviors"][0]["value"]["intent_key"], "workspace.choose_model")
 
     def test_task_status_card_shows_live_output_when_running(self) -> None:
         task = {
@@ -434,11 +444,14 @@ class FeishuClientTest(unittest.TestCase):
             "[Running] Task: task_run_1 (codex, /srv/poco/api)",
         )
         live_block = card["body"]["elements"][0]
+        action_row = card["body"]["elements"][2]
+        workdir_lock = action_row["columns"][0]["elements"][0]
+        model_lock = action_row["columns"][1]["elements"][0]
         self.assertEqual(live_block["tag"], "markdown")
         self.assertIn("Step 1", live_block["content"])
         self.assertEqual(card["body"]["elements"][1]["behaviors"][0]["value"]["intent_key"], "task.stop")
-        self.assertIn("Working Dir · locked", card["body"]["elements"][2]["text"]["content"])
-        self.assertIn("Model · locked", card["body"]["elements"][3]["text"]["content"])
+        self.assertIn("Working Dir · locked", workdir_lock["text"]["content"])
+        self.assertIn("Model · locked", model_lock["text"]["content"])
 
     def test_task_status_card_adds_pagination_for_long_raw_result(self) -> None:
         task = {
@@ -475,10 +488,13 @@ class FeishuClientTest(unittest.TestCase):
             "[Complete] Task: task_3 (codex, /srv/poco/api) [1/3]",
         )
         next_button = card["body"]["elements"][1]
+        action_row = card["body"]["elements"][2]
+        change_workdir_button = action_row["columns"][0]["elements"][0]
+        change_model_button = action_row["columns"][1]["elements"][0]
         self.assertEqual(next_button["behaviors"][0]["value"]["intent_key"], "task.open")
         self.assertEqual(next_button["behaviors"][0]["value"]["page"], "2")
-        self.assertEqual(card["body"]["elements"][2]["behaviors"][0]["value"]["intent_key"], "workspace.enter_path")
-        self.assertEqual(card["body"]["elements"][3]["behaviors"][0]["value"]["intent_key"], "workspace.choose_model")
+        self.assertEqual(change_workdir_button["behaviors"][0]["value"]["intent_key"], "workspace.enter_path")
+        self.assertEqual(change_model_button["behaviors"][0]["value"]["intent_key"], "workspace.choose_model")
 
 
 if __name__ == "__main__":
