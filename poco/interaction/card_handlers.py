@@ -25,6 +25,12 @@ class ProjectIntentHandler:
     bootstrapper: ProjectBootstrapper | None = None
 
     def handle(self, intent: ActionIntent) -> IntentDispatchResult:
+        if intent.intent_key == "project.home":
+            return self._home(intent)
+        if intent.intent_key == "project.new":
+            return self._open_new_project(intent)
+        if intent.intent_key == "project.manage":
+            return self._manage_projects(intent)
         if intent.intent_key == "project.list":
             return self._list_projects(intent)
         if intent.intent_key == "project.create":
@@ -54,19 +60,45 @@ class ProjectIntentHandler:
             message=f"Unsupported project intent: {intent.intent_key}",
         )
 
-    def _list_projects(self, intent: ActionIntent) -> IntentDispatchResult:
+    def _home(self, intent: ActionIntent) -> IntentDispatchResult:
         projects = self.project_controller.list_projects_for_user(intent.actor_id)
         return IntentDispatchResult(
             status=DispatchStatus.OK,
             intent_key=intent.intent_key,
             resource_refs=ResourceRefs(),
-            view_model=_project_list_view_model(projects),
+            view_model=_project_home_view_model(projects),
+            refresh_mode=RefreshMode.REPLACE_CURRENT,
+            message="DM home loaded.",
+        )
+
+    def _open_new_project(self, intent: ActionIntent) -> IntentDispatchResult:
+        return IntentDispatchResult(
+            status=DispatchStatus.OK,
+            intent_key=intent.intent_key,
+            resource_refs=ResourceRefs(),
+            view_model=_project_create_view_model(),
+            refresh_mode=RefreshMode.REPLACE_CURRENT,
+            message="New project form loaded.",
+        )
+
+    def _manage_projects(self, intent: ActionIntent) -> IntentDispatchResult:
+        projects = self.project_controller.list_projects_for_user(intent.actor_id)
+        return IntentDispatchResult(
+            status=DispatchStatus.OK,
+            intent_key=intent.intent_key,
+            resource_refs=ResourceRefs(),
+            view_model=_project_manage_view_model(projects),
             refresh_mode=RefreshMode.REPLACE_CURRENT,
             message="Projects loaded.",
         )
 
+    def _list_projects(self, intent: ActionIntent) -> IntentDispatchResult:
+        return self._manage_projects(intent)
+
     def _create_project(self, intent: ActionIntent) -> IntentDispatchResult:
-        name = str(intent.payload.get("name", "")).strip() or "Untitled Project"
+        name = str(intent.payload.get("name", "")).strip()
+        if not name:
+            return _rejected(intent, "Project name cannot be empty.")
         backend = str(intent.payload.get("backend", "codex")).strip() or "codex"
         project = self.project_controller.create_project(
             name=name,
@@ -541,11 +573,11 @@ def build_dm_project_list_result(
         projects = project_controller.list_projects()
     return IntentDispatchResult(
         status=DispatchStatus.OK,
-        intent_key="project.list",
+        intent_key="project.home",
         resource_refs=ResourceRefs(),
-        view_model=_project_list_view_model(projects),
+        view_model=_project_home_view_model(projects),
         refresh_mode=RefreshMode.REPLACE_CURRENT,
-        message="Projects loaded.",
+        message="DM home loaded.",
     )
 
 
@@ -642,13 +674,39 @@ def build_task_status_result(
     )
 
 
-def _project_list_view_model(projects) -> ViewModel:
+def _project_home_view_model(projects) -> ViewModel:
+    project_list = list(projects)
     return ViewModel(
-        "project_list",
+        "project_home",
+        {
+            "project_count": len(project_list),
+        },
+    )
+
+
+def _project_create_view_model() -> ViewModel:
+    return ViewModel(
+        "project_create",
+        {
+            "default_backend": "codex",
+            "backend_options": [
+                {"label": "Codex", "value": "codex"},
+            ],
+        },
+    )
+
+
+def _project_manage_view_model(projects) -> ViewModel:
+    return ViewModel(
+        "project_manage",
         {
             "projects": [project.to_dict() for project in projects],
         },
     )
+
+
+def _project_list_view_model(projects) -> ViewModel:
+    return _project_manage_view_model(projects)
 
 
 def _project_config_view_model(project) -> ViewModel:

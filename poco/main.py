@@ -131,6 +131,9 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
     )
     card_dispatcher = CardActionDispatcher(
         {
+            "project.home": project_intent_handler,
+            "project.new": project_intent_handler,
+            "project.manage": project_intent_handler,
             "project.list": project_intent_handler,
             "project.create": project_intent_handler,
             "project.open": project_intent_handler,

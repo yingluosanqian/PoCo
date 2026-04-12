@@ -104,6 +104,7 @@ class FeishuGatewayTest(unittest.TestCase):
         self.debug_recorder = FeishuDebugRecorder()
         self.project_controller = ProjectController(InMemoryProjectStore())
         self.workspace_controller = WorkspaceContextController(InMemoryWorkspaceContextStore())
+        project_handler = ProjectIntentHandler(self.project_controller)
         workspace_handler = WorkspaceIntentHandler(
             self.project_controller,
             self.workspace_controller,
@@ -112,9 +113,12 @@ class FeishuGatewayTest(unittest.TestCase):
         self.card_gateway = FeishuCardActionGateway(
             dispatcher=CardActionDispatcher(
                 {
-                    "project.create": ProjectIntentHandler(self.project_controller),
-                    "project.open": ProjectIntentHandler(self.project_controller),
-                    "project.bind_group": ProjectIntentHandler(self.project_controller),
+                    "project.home": project_handler,
+                    "project.new": project_handler,
+                    "project.manage": project_handler,
+                    "project.create": project_handler,
+                    "project.open": project_handler,
+                    "project.bind_group": project_handler,
                     "workspace.open": workspace_handler,
                 }
             ),
@@ -221,10 +225,12 @@ class FeishuGatewayTest(unittest.TestCase):
         card = sent["card"]
         self.assertEqual(card["schema"], "2.0")
         self.assertEqual(card["header"]["title"]["content"], "PoCo Projects")
-        create_button = card["body"]["elements"][1]
-        self.assertEqual(create_button["tag"], "button")
-        self.assertEqual(create_button["behaviors"][0]["type"], "callback")
-        self.assertEqual(create_button["behaviors"][0]["value"]["intent_key"], "project.create")
+        new_button = card["body"]["elements"][1]
+        manage_button = card["body"]["elements"][2]
+        self.assertEqual(new_button["tag"], "button")
+        self.assertEqual(new_button["behaviors"][0]["type"], "callback")
+        self.assertEqual(new_button["behaviors"][0]["value"]["intent_key"], "project.new")
+        self.assertEqual(manage_button["behaviors"][0]["value"]["intent_key"], "project.manage")
         snapshot = self.debug_recorder.snapshot()
         self.assertEqual(snapshot["outbound_attempts"][0]["source"], "gateway_dm_card")
 

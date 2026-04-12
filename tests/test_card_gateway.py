@@ -100,6 +100,9 @@ class FeishuCardGatewayTest(unittest.TestCase):
         self.gateway = FeishuCardActionGateway(
             dispatcher=CardActionDispatcher(
                 {
+                    "project.home": self.project_handler,
+                    "project.new": self.project_handler,
+                    "project.manage": self.project_handler,
                     "project.list": self.project_handler,
                     "project.create": self.project_handler,
                     "project.open": self.project_handler,
@@ -133,17 +136,39 @@ class FeishuCardGatewayTest(unittest.TestCase):
     def test_render_dm_project_list_returns_card(self) -> None:
         response = self.gateway.render_dm_project_list()
 
-        self.assertEqual(response["instruction"]["template_key"], "project_list")
+        self.assertEqual(response["instruction"]["template_key"], "project_home")
         self.assertEqual(response["card"]["schema"], "2.0")
         self.assertEqual(response["card"]["header"]["title"]["content"], "PoCo Projects")
         create_button = response["card"]["body"]["elements"][1]
+        manage_button = response["card"]["body"]["elements"][2]
         self.assertEqual(create_button["tag"], "button")
-        self.assertEqual(create_button["text"]["content"], "Create Project + Group")
+        self.assertEqual(create_button["text"]["content"], "New")
         self.assertEqual(create_button["behaviors"][0]["type"], "callback")
         self.assertEqual(
             create_button["behaviors"][0]["value"]["intent_key"],
-            "project.create",
+            "project.new",
         )
+        self.assertEqual(manage_button["behaviors"][0]["value"]["intent_key"], "project.manage")
+
+    def test_project_new_action_returns_project_create_card(self) -> None:
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_card_new_1"},
+                "action": {
+                    "value": {
+                        "intent_key": "project.new",
+                        "surface": "dm",
+                        "request_id": "req_project_new_1",
+                    },
+                },
+            }
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        self.assertEqual(response["instruction"]["template_key"], "project_create")
+        self.assertEqual(response["card"]["data"]["header"]["title"]["content"], "New Project")
 
     def test_project_create_action_returns_project_config_card(self) -> None:
         payload = {
@@ -288,13 +313,14 @@ class FeishuCardGatewayTest(unittest.TestCase):
         )
         stop_hint = response["card"]["data"]["body"]["elements"][0]
         self.assertIn("Stop is available only while a task is running.", stop_hint["text"]["content"])
-        workdir_button = response["card"]["data"]["body"]["elements"][1]
+        action_row = response["card"]["data"]["body"]["elements"][1]
+        workdir_button = action_row["columns"][0]["elements"][0]
         self.assertEqual(
             workdir_button["behaviors"][0]["value"]["intent_key"],
             "workspace.enter_path",
         )
         self.assertEqual(workdir_button["text"]["content"], "Working Dir")
-        change_model_button = response["card"]["data"]["body"]["elements"][2]
+        change_model_button = action_row["columns"][1]["elements"][0]
         self.assertEqual(change_model_button["text"]["content"], "Model")
         self.assertEqual(
             change_model_button["behaviors"][0]["value"]["surface"],
@@ -381,9 +407,11 @@ class FeishuCardGatewayTest(unittest.TestCase):
         response = self.gateway.handle_action(payload)
 
         self.assertIn(task.id, response["card"]["data"]["header"]["title"]["content"])
+        action_row = response["card"]["data"]["body"]["elements"][1]
+        workdir_lock = action_row["columns"][0]["elements"][0]
         self.assertIn(
             "Working Dir · locked",
-            response["card"]["data"]["body"]["elements"][1]["text"]["content"],
+            workdir_lock["text"]["content"],
         )
 
     def test_workspace_open_enables_stop_when_latest_task_is_running(self) -> None:
@@ -424,10 +452,13 @@ class FeishuCardGatewayTest(unittest.TestCase):
             f"[Running] Workspace: {project.name} (stub, /srv/poco/api, {task.id})",
         )
         stop_button = response["card"]["data"]["body"]["elements"][0]
+        action_row = response["card"]["data"]["body"]["elements"][1]
+        workdir_lock = action_row["columns"][0]["elements"][0]
+        model_lock = action_row["columns"][1]["elements"][0]
         self.assertEqual(stop_button["behaviors"][0]["value"]["intent_key"], "task.stop")
         self.assertEqual(stop_button["behaviors"][0]["value"]["task_id"], task.id)
-        self.assertIn("Working Dir · locked", response["card"]["data"]["body"]["elements"][1]["text"]["content"])
-        self.assertIn("Model · locked", response["card"]["data"]["body"]["elements"][2]["text"]["content"])
+        self.assertIn("Working Dir · locked", workdir_lock["text"]["content"])
+        self.assertIn("Model · locked", model_lock["text"]["content"])
 
     def test_task_composer_opens_from_workspace_card(self) -> None:
         project = self.project_controller.create_project(
@@ -1101,8 +1132,8 @@ class FeishuCardGatewayTest(unittest.TestCase):
 
         response = self.gateway.handle_action(payload)
 
-        self.assertEqual(response["instruction"]["template_key"], "project_list")
-        self.assertEqual(response["card"]["data"]["header"]["title"]["content"], "PoCo Projects")
+        self.assertEqual(response["instruction"]["template_key"], "project_manage")
+        self.assertEqual(response["card"]["data"]["header"]["title"]["content"], "Manage Projects")
 
     def test_write_action_uses_top_level_event_id_for_idempotency(self) -> None:
         payload = {
@@ -1114,6 +1145,10 @@ class FeishuCardGatewayTest(unittest.TestCase):
                     "value": {
                         "intent_key": "project.create",
                         "surface": "dm",
+                    },
+                    "form_value": {
+                        "name": "PoCo",
+                        "backend": "codex",
                     },
                 },
             },

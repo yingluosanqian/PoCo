@@ -11,8 +11,14 @@ class FeishuCardRenderer:
         self._app_base_url = app_base_url.rstrip("/") if app_base_url else None
 
     def render(self, instruction: PlatformRenderInstruction) -> dict[str, Any]:
+        if instruction.template_key == "project_home":
+            return _render_project_home(instruction.template_data)
+        if instruction.template_key == "project_create":
+            return _render_project_create(instruction.template_data)
+        if instruction.template_key == "project_manage":
+            return _render_project_manage(instruction.template_data)
         if instruction.template_key == "project_list":
-            return _render_project_list(instruction.template_data)
+            return _render_project_manage(instruction.template_data)
         if instruction.template_key == "project_config":
             return _render_project_config(
                 instruction.template_data,
@@ -83,22 +89,79 @@ class FeishuCardRenderer:
         return _render_fallback(instruction.template_key, instruction.template_data)
 
 
-def _render_project_list(data: dict[str, Any]) -> dict[str, Any]:
-    projects = data.get("projects", [])
+def _render_project_home(data: dict[str, Any]) -> dict[str, Any]:
+    project_count = data.get("project_count", 0)
+    return _card_shell(
+        title="PoCo Projects",
+        template="blue",
+        elements=[
+            _markdown(f"DM 控制台。当前共有 **{project_count}** 个 project。"),
+            _button(
+                label="New",
+                intent_value={
+                    "intent_key": "project.new",
+                    "surface": "dm",
+                },
+                style="primary",
+                name="new_project_button",
+            ),
+            _button(
+                label="Manage",
+                intent_value={
+                    "intent_key": "project.manage",
+                    "surface": "dm",
+                },
+                name="manage_projects_button",
+            ),
+        ],
+    )
+
+
+def _render_project_create(data: dict[str, Any]) -> dict[str, Any]:
+    backend_options = data.get("backend_options") or [{"label": "Codex", "value": "codex"}]
+    selected_backend = data.get("default_backend") or "codex"
     elements: list[dict[str, Any]] = [
-        _markdown(
-            "这是你的 DM 控制台。现在可以直接在卡片里创建 project，并顺手自动拉起对应工作群。"
+        _input(
+            name="name",
+            placeholder="Project name",
         ),
-        _button(
-            label="Create Project + Group",
-            intent_value={
-                "intent_key": "project.create",
-                "surface": "dm",
-            },
-            style="primary",
-            name="create_project_button",
-        ),
+        _markdown("**Agent**"),
     ]
+    for option in backend_options:
+        prefix = "✓ " if option["value"] == selected_backend else ""
+        elements.append(_plain_text(f"{prefix}{option['label']}"))
+    elements.extend(
+        [
+            _button(
+                label="Create Project + Group",
+                intent_value={
+                    "intent_key": "project.create",
+                    "surface": "dm",
+                    "backend": selected_backend,
+                },
+                style="primary",
+                name="create_project_with_group_button",
+            ),
+            _button(
+                label="Cancel",
+                intent_value={
+                    "intent_key": "project.home",
+                    "surface": "dm",
+                },
+                name="cancel_create_project_button",
+            ),
+        ]
+    )
+    return _card_shell(
+        title="New Project",
+        template="blue",
+        elements=elements,
+    )
+
+
+def _render_project_manage(data: dict[str, Any]) -> dict[str, Any]:
+    projects = data.get("projects", [])
+    elements: list[dict[str, Any]] = []
 
     if not projects:
         elements.append(_markdown("**还没有 project**"))
@@ -128,9 +191,19 @@ def _render_project_list(data: dict[str, Any]) -> dict[str, Any]:
                     ),
                 ]
             )
+    elements.append(
+        _button(
+            label="Back",
+            intent_value={
+                "intent_key": "project.home",
+                "surface": "dm",
+            },
+            name="back_to_project_home_button",
+        )
+    )
 
     return _card_shell(
-        title="PoCo Projects",
+        title="Manage Projects",
         template="blue",
         elements=elements,
     )
