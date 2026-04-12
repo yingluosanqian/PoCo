@@ -293,6 +293,10 @@ class SqliteTaskStore(_SqliteStoreBase):
             ).fetchall()
         return [self._row_to_task(row) for row in rows]
 
+    def delete_by_project_id(self, project_id: str) -> None:
+        with self._connect() as connection:
+            connection.execute("DELETE FROM tasks WHERE project_id = ?", (project_id,))
+
     def _row_to_task(self, row: sqlite3.Row) -> Task:
         raw_events = json.loads(row["events"])
         events = [
@@ -365,6 +369,13 @@ class SqliteWorkspaceContextStore(_SqliteStoreBase):
             updated_at=_parse_datetime(row["updated_at"]),
         )
 
+    def delete(self, project_id: str) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                "DELETE FROM workspace_contexts WHERE project_id = ?",
+                (project_id,),
+            )
+
 
 class SqliteSessionStore(_SqliteStoreBase):
     def save(self, session: Session) -> Session:
@@ -419,6 +430,10 @@ class SqliteSessionStore(_SqliteStoreBase):
                 "SELECT * FROM sessions ORDER BY created_at ASC"
             ).fetchall()
         return [self._row_to_session(row) for row in rows]
+
+    def delete_by_project_id(self, project_id: str) -> None:
+        with self._connect() as connection:
+            connection.execute("DELETE FROM sessions WHERE project_id = ?", (project_id,))
 
     def _row_to_session(self, row: sqlite3.Row) -> Session:
         return Session(

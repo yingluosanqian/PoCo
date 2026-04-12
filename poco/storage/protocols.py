@@ -18,6 +18,9 @@ class TaskStore(Protocol):
     def list_all(self) -> list[Task]:
         ...
 
+    def delete_by_project_id(self, project_id: str) -> None:
+        ...
+
 
 class ProjectStore(Protocol):
     def save(self, project: Project) -> Project:
@@ -40,6 +43,9 @@ class WorkspaceContextStore(Protocol):
     def get(self, project_id: str) -> WorkspaceContext | None:
         ...
 
+    def delete(self, project_id: str) -> None:
+        ...
+
 
 class SessionStore(Protocol):
     def save(self, session: Session) -> Session:
@@ -49,4 +55,7 @@ class SessionStore(Protocol):
         ...
 
     def list_all(self) -> list[Session]:
+        ...
+
+    def delete_by_project_id(self, project_id: str) -> None:
         ...

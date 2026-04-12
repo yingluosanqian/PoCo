@@ -78,7 +78,12 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
     session_controller = SessionController(session_store)
     controller = TaskController(store=store, runner=runner, session_controller=session_controller)
     controller.recover_interrupted_tasks()
-    project_controller = ProjectController(project_store)
+    project_controller = ProjectController(
+        project_store,
+        task_store=store,
+        session_store=session_store,
+        workspace_store=workspace_store,
+    )
     workspace_controller = WorkspaceContextController(workspace_store)
     interaction = InteractionService(controller, session_controller=session_controller)
     feishu_debug = FeishuDebugRecorder()

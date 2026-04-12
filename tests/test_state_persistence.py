@@ -83,6 +83,49 @@ class StatePersistenceTest(unittest.TestCase):
                 self.assertEqual(recovered_session.latest_task_id, task.id)
                 self.assertEqual(recovered_session.backend_session_id, "thread_123")
 
+    def test_sqlite_backend_deletes_project_related_state(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            db_path = os.path.join(tempdir, "poco.db")
+            with patch.dict(
+                os.environ,
+                {
+                    "POCO_STATE_BACKEND": "sqlite",
+                    "POCO_STATE_DB_PATH": db_path,
+                },
+            ):
+                app = create_app()
+                project_controller = app.state.project_controller
+                session_controller = app.state.session_controller
+                workspace_controller = app.state.workspace_controller
+                task_controller = app.state.task_controller
+
+                project = project_controller.create_project(
+                    name="PoCo",
+                    created_by="ou_demo_user",
+                    backend="codex",
+                    group_chat_id="oc_group_demo",
+                )
+                workspace_controller.use_manual_workdir(project, "/srv/poco/api")
+                session = session_controller.create_session(
+                    project_id=project.id,
+                    created_by="ou_demo_user",
+                )
+                task = task_controller.create_task(
+                    requester_id="ou_demo_user",
+                    prompt="ship it",
+                    source="feishu_group_message",
+                    project_id=project.id,
+                    session_id=session.id,
+                )
+
+                project_controller.delete_project(project.id)
+
+                app2 = create_app()
+                self.assertIsNone(app2.state.project_controller.get_project_by_group_chat_id("oc_group_demo"))
+                self.assertIsNone(app2.state.workspace_controller._store.get(project.id))  # type: ignore[attr-defined]
+                self.assertIsNone(app2.state.session_controller._store.get(session.id))  # type: ignore[attr-defined]
+                self.assertIsNone(app2.state.task_controller._store.get(task.id))  # type: ignore[attr-defined]
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -84,11 +84,20 @@ class FakeTaskDispatcher:
 
 class FeishuCardGatewayTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.project_controller = ProjectController(InMemoryProjectStore())
-        self.workspace_controller = WorkspaceContextController(InMemoryWorkspaceContextStore())
-        self.session_controller = SessionController(InMemorySessionStore())
+        self.project_store = InMemoryProjectStore()
+        self.workspace_store = InMemoryWorkspaceContextStore()
+        self.session_store = InMemorySessionStore()
+        self.task_store = InMemoryTaskStore()
+        self.project_controller = ProjectController(
+            self.project_store,
+            task_store=self.task_store,
+            session_store=self.session_store,
+            workspace_store=self.workspace_store,
+        )
+        self.workspace_controller = WorkspaceContextController(self.workspace_store)
+        self.session_controller = SessionController(self.session_store)
         self.task_controller = TaskController(
-            store=InMemoryTaskStore(),
+            store=self.task_store,
             runner=StubAgentRunner(),
             session_controller=self.session_controller,
         )
@@ -252,6 +261,22 @@ class FeishuCardGatewayTest(unittest.TestCase):
             backend="codex",
             group_chat_id="oc_group_delete_1",
         )
+        self.workspace_controller.set_active_workdir(
+            project,
+            workdir="/srv/poco/api",
+            source="manual",
+        )
+        session = self.session_controller.create_session(
+            project_id=project.id,
+            created_by="ou_demo_user",
+        )
+        task = self.task_controller.create_task(
+            requester_id="ou_demo_user",
+            prompt="delete me",
+            source="feishu_group_message",
+            project_id=project.id,
+            session_id=session.id,
+        )
         payload = {
             "event": {
                 "operator": {"open_id": "ou_demo_user"},
@@ -272,6 +297,9 @@ class FeishuCardGatewayTest(unittest.TestCase):
         self.assertEqual(response["instruction"]["template_key"], "project_manage")
         self.assertEqual(self.project_controller.list_projects(), [])
         self.assertEqual(len(self.bootstrapper.destroy_calls), 0)
+        self.assertEqual(self.workspace_store.get(project.id), None)
+        self.assertEqual(self.session_store.get(session.id), None)
+        self.assertEqual(self.task_store.get(task.id), None)
 
     def test_project_create_rolls_back_when_group_bootstrap_fails(self) -> None:
         failing_gateway = FeishuCardActionGateway(

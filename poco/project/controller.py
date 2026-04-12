@@ -4,7 +4,7 @@ from threading import RLock
 from uuid import uuid4
 
 from poco.project.models import Project
-from poco.storage.protocols import ProjectStore
+from poco.storage.protocols import ProjectStore, SessionStore, TaskStore, WorkspaceContextStore
 
 
 class ProjectNotFoundError(ValueError):
@@ -16,8 +16,18 @@ class ProjectConfigError(ValueError):
 
 
 class ProjectController:
-    def __init__(self, store: ProjectStore) -> None:
+    def __init__(
+        self,
+        store: ProjectStore,
+        *,
+        task_store: TaskStore | None = None,
+        session_store: SessionStore | None = None,
+        workspace_store: WorkspaceContextStore | None = None,
+    ) -> None:
         self._store = store
+        self._task_store = task_store
+        self._session_store = session_store
+        self._workspace_store = workspace_store
         self._lock = RLock()
 
     def create_project(
@@ -122,4 +132,10 @@ class ProjectController:
             project = self._store.get(project_id)
             if project is None:
                 raise ProjectNotFoundError(f"Project not found: {project_id}")
+            if self._task_store is not None:
+                self._task_store.delete_by_project_id(project_id)
+            if self._session_store is not None:
+                self._session_store.delete_by_project_id(project_id)
+            if self._workspace_store is not None:
+                self._workspace_store.delete(project_id)
             self._store.delete(project_id)

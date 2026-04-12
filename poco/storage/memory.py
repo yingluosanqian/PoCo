@@ -26,6 +26,16 @@ class InMemoryTaskStore:
         with self._lock:
             return list(self._tasks.values())
 
+    def delete_by_project_id(self, project_id: str) -> None:
+        with self._lock:
+            task_ids = [
+                task_id
+                for task_id, task in self._tasks.items()
+                if task.project_id == project_id
+            ]
+            for task_id in task_ids:
+                self._tasks.pop(task_id, None)
+
 
 class InMemoryProjectStore:
     def __init__(self) -> None:
@@ -64,6 +74,10 @@ class InMemoryWorkspaceContextStore:
         with self._lock:
             return self._contexts.get(project_id)
 
+    def delete(self, project_id: str) -> None:
+        with self._lock:
+            self._contexts.pop(project_id, None)
+
 
 class InMemorySessionStore:
     def __init__(self) -> None:
@@ -82,3 +96,13 @@ class InMemorySessionStore:
     def list_all(self) -> list[Session]:
         with self._lock:
             return list(self._sessions.values())
+
+    def delete_by_project_id(self, project_id: str) -> None:
+        with self._lock:
+            session_ids = [
+                session_id
+                for session_id, session in self._sessions.items()
+                if session.project_id == project_id
+            ]
+            for session_id in session_ids:
+                self._sessions.pop(session_id, None)
