@@ -104,6 +104,8 @@ class ProjectIntentHandler:
         if not name:
             return _rejected(intent, "Project name cannot be empty.")
         backend = str(intent.payload.get("backend", "codex")).strip() or "codex"
+        if backend not in {"codex", "claude_code"}:
+            return _rejected(intent, f"Unsupported agent backend: {backend}")
         project = self.project_controller.create_project(
             name=name,
             created_by=intent.actor_id,
@@ -481,17 +483,23 @@ class WorkspaceIntentHandler:
         project = _get_project_or_reject(self.project_controller, intent)
         if isinstance(project, IntentDispatchResult):
             return project
+        descriptor = get_backend_descriptor(project.backend)
         model = _extract_model_value(intent.payload, current=project.model)
-        sandbox = _extract_sandbox_value(intent.payload, current=project.sandbox)
         backend_config = dict(project.backend_config)
         if model:
             backend_config["model"] = model
         else:
             backend_config.pop("model", None)
-        if sandbox:
-            backend_config["sandbox"] = sandbox
-        else:
-            backend_config.pop("sandbox", None)
+        if descriptor.secondary_option_key is not None:
+            secondary_value = _extract_secondary_value(
+                intent.payload,
+                key=descriptor.secondary_option_key,
+                current=_optional_string(backend_config.get(descriptor.secondary_option_key)),
+            )
+            if secondary_value:
+                backend_config[descriptor.secondary_option_key] = secondary_value
+            else:
+                backend_config.pop(descriptor.secondary_option_key, None)
         project = self.project_controller.set_agent_config(
             project.id,
             backend_config=backend_config,
@@ -561,6 +569,7 @@ class TaskIntentHandler:
             requester_id=intent.actor_id,
             prompt=prompt,
             source="feishu_card",
+            agent_backend=project.backend,
             project_id=project.id,
             session_id=_resolve_active_session_id(
                 self.session_controller,
@@ -773,6 +782,7 @@ def _project_create_view_model(*, actor_id: str | None) -> ViewModel:
             "default_backend": "codex",
             "backend_options": [
                 {"label": "Codex", "value": "codex"},
+                {"label": "Claude Code", "value": "claude_code"},
             ],
         },
     )
@@ -901,20 +911,28 @@ def _workspace_enter_path_view_model(project, *, context, browse_path: str | Non
 
 def _workspace_choose_model_view_model(project) -> ViewModel:
     descriptor = get_backend_descriptor(project.backend)
+    secondary_key = descriptor.secondary_option_key
+    current_secondary = None
+    if secondary_key == "sandbox":
+        current_secondary = getattr(project, "sandbox", "workspace-write")
+    elif secondary_key is not None:
+        current_secondary = _optional_string(project.backend_config.get(secondary_key))
     return ViewModel(
         "workspace_choose_model",
         {
             "project": project.to_dict(),
             "agent_label": descriptor.label,
             "current_model": project.model,
-            "current_sandbox": getattr(project, "sandbox", "workspace-write"),
+            "secondary_option_key": secondary_key,
+            "secondary_option_label": descriptor.secondary_option_label,
+            "current_secondary_option": current_secondary,
             "model_options": [
                 {"label": option, "value": option}
                 for option in descriptor.model_options
             ],
-            "sandbox_options": [
+            "secondary_options": [
                 {"label": label, "value": value}
-                for label, value in descriptor.access_options
+                for label, value in descriptor.secondary_options
             ],
         },
     )
@@ -988,6 +1006,28 @@ def _extract_sandbox_value(payload: dict[str, object], *, current: str | None) -
     input_value = payload.get("input_value")
     if isinstance(input_value, dict):
         nested = input_value.get("sandbox")
+        if isinstance(nested, dict):
+            selected = _optional_string(nested.get("value"))
+            if selected is not None:
+                return selected
+        selected = _optional_string(nested)
+        if selected is not None:
+            return selected
+    return current
+
+
+def _extract_secondary_value(
+    payload: dict[str, object],
+    *,
+    key: str,
+    current: str | None,
+) -> str | None:
+    direct = _optional_string(payload.get(key))
+    if direct is not None:
+        return direct
+    input_value = payload.get("input_value")
+    if isinstance(input_value, dict):
+        nested = input_value.get(key)
         if isinstance(nested, dict):
             selected = _optional_string(nested.get("value"))
             if selected is not None:

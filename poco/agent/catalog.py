@@ -8,7 +8,9 @@ class BackendDescriptor:
     key: str
     label: str
     model_options: tuple[str, ...] = ()
-    access_options: tuple[tuple[str, str], ...] = ()
+    secondary_option_key: str | None = None
+    secondary_option_label: str | None = None
+    secondary_options: tuple[tuple[str, str], ...] = ()
     default_config: dict[str, object] = field(default_factory=dict)
 
 
@@ -22,7 +24,9 @@ _BACKEND_DESCRIPTORS: dict[str, BackendDescriptor] = {
             "gpt-5.3-codex",
             "gpt-5.3-codex-spark",
         ),
-        access_options=(
+        secondary_option_key="sandbox",
+        secondary_option_label="Access",
+        secondary_options=(
             ("Read Only", "read-only"),
             ("Project Only", "workspace-write"),
             ("Full Access", "danger-full-access"),
@@ -32,6 +36,19 @@ _BACKEND_DESCRIPTORS: dict[str, BackendDescriptor] = {
     "claude_code": BackendDescriptor(
         key="claude_code",
         label="Claude Code",
+        model_options=(
+            "sonnet",
+            "opus",
+        ),
+        secondary_option_key="permission_mode",
+        secondary_option_label="Permission",
+        secondary_options=(
+            ("Default", "default"),
+            ("Accept Edits", "acceptEdits"),
+            ("Plan", "plan"),
+            ("Bypass Permissions", "bypassPermissions"),
+        ),
+        default_config={"permission_mode": "default", "model": "sonnet"},
     ),
     "cursor_agent": BackendDescriptor(
         key="cursor_agent",

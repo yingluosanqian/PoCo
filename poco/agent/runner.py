@@ -116,6 +116,49 @@ class UnavailableAgentRunner:
         return self.name, task.effective_workdir, task.effective_sandbox
 
 
+class MultiAgentRunner:
+    def __init__(
+        self,
+        *,
+        default_backend: str,
+        runners: dict[str, AgentRunner],
+    ) -> None:
+        self.name = default_backend
+        self._default_backend = default_backend
+        self._runners = dict(runners)
+
+    def is_ready(self) -> tuple[bool, str]:
+        runner = self._runners.get(self._default_backend)
+        if runner is None:
+            return False, f"Default backend is not configured: {self._default_backend}"
+        ready, detail = runner.is_ready()
+        return ready, f"default={self._default_backend}; {detail}"
+
+    def start(self, task: Task) -> Iterator[AgentRunUpdate]:
+        return self._delegate(task).start(task)
+
+    def resume_after_confirmation(self, task: Task) -> Iterator[AgentRunUpdate]:
+        return self._delegate(task).resume_after_confirmation(task)
+
+    def cancel(self, task_id: str) -> bool:
+        cancelled = False
+        for runner in self._runners.values():
+            cancelled = runner.cancel(task_id) or cancelled
+        return cancelled
+
+    def resolve_execution_context(self, task: Task) -> tuple[str | None, str | None, str | None]:
+        return self._delegate(task).resolve_execution_context(task)
+
+    def _delegate(self, task: Task) -> AgentRunner:
+        runner = self._runners.get(task.agent_backend)
+        if runner is not None:
+            return runner
+        return UnavailableAgentRunner(
+            name=task.agent_backend or "unknown",
+            reason=f"Unsupported agent backend: {task.agent_backend}",
+        )
+
+
 class CodexAppServerRunner:
     name = "codex"
 
@@ -345,21 +388,234 @@ class CodexAppServerRunner:
             with self._lock:
                 self._active_processes.pop(task.id, None)
                 self._cancelled_tasks.discard(task.id)
-            if process is not None:
-                if process.poll() is None:
+
+    def _consume_cancelled(self, task_id: str) -> bool:
+        with self._lock:
+            if task_id not in self._cancelled_tasks:
+                return False
+            self._cancelled_tasks.discard(task_id)
+            return True
+
+
+class ClaudeCodeRunner:
+    name = "claude_code"
+
+    def __init__(
+        self,
+        *,
+        command: str = "claude",
+        workdir: str,
+        model: str | None = None,
+        permission_mode: str = "default",
+        timeout_seconds: int = 900,
+    ) -> None:
+        self._command = command
+        self._workdir = workdir
+        self._model = model
+        self._permission_mode = permission_mode
+        self._timeout_seconds = timeout_seconds
+        self._lock = RLock()
+        self._active_processes: dict[str, subprocess.Popen[str]] = {}
+        self._cancelled_tasks: set[str] = set()
+
+    def is_ready(self) -> tuple[bool, str]:
+        executable = shutil.which(self._command)
+        if not executable:
+            return False, f"Claude Code CLI not found: {self._command}"
+        if not Path(self._workdir).exists():
+            return False, f"Claude Code workdir does not exist: {self._workdir}"
+        return True, f"Claude Code ready via {executable}"
+
+    def start(self, task: Task) -> Iterator[AgentRunUpdate]:
+        yield AgentRunUpdate(
+            kind="progress",
+            message=f"Task accepted by the {self.name} runner.",
+        )
+        if _requires_confirmation(task.prompt):
+            yield AgentRunUpdate(
+                kind="confirmation_required",
+                message="Awaiting explicit approval before invoking Claude Code.",
+            )
+            return
+        yield from self._execute_prompt(task, _normalized_prompt(task.prompt))
+
+    def resume_after_confirmation(self, task: Task) -> Iterator[AgentRunUpdate]:
+        yield AgentRunUpdate(
+            kind="progress",
+            message="Approval received. Invoking Claude Code.",
+        )
+        yield from self._execute_prompt(task, _normalized_prompt(task.prompt))
+
+    def cancel(self, task_id: str) -> bool:
+        with self._lock:
+            process = self._active_processes.get(task_id)
+            if process is None:
+                return False
+            self._cancelled_tasks.add(task_id)
+        process.kill()
+        return True
+
+    def resolve_execution_context(self, task: Task) -> tuple[str | None, str | None, str | None]:
+        permission_mode = _string_or_none(task.effective_backend_config.get("permission_mode"))
+        return (
+            task.effective_model or self._model,
+            task.effective_workdir or self._workdir,
+            permission_mode or self._permission_mode,
+        )
+
+    def _execute_prompt(self, task: Task, prompt: str) -> Iterator[AgentRunUpdate]:
+        executable = shutil.which(self._command)
+        if not executable:
+            yield AgentRunUpdate(kind="failed", message=f"Claude Code CLI not found: {self._command}")
+            return
+
+        workdir = task.effective_workdir or self._workdir
+        if not Path(workdir).exists():
+            yield AgentRunUpdate(kind="failed", message=f"Claude Code workdir does not exist: {workdir}")
+            return
+
+        resolved_model = task.effective_model or self._model
+        resolved_permission_mode = _string_or_none(task.effective_backend_config.get("permission_mode")) or self._permission_mode
+        command = [
+            self._command,
+            "-p",
+            "--verbose",
+            "--output-format=stream-json",
+            "--include-partial-messages",
+        ]
+        if resolved_model:
+            command.extend(["--model", resolved_model])
+        if resolved_permission_mode:
+            command.extend(["--permission-mode", resolved_permission_mode])
+        if task.backend_session_id:
+            command.extend(["--resume", task.backend_session_id])
+        command.append(prompt)
+
+        process: subprocess.Popen[str] | None = None
+        backend_session_id = task.backend_session_id
+        stderr_lines: list[str] = []
+        final_text: str | None = None
+        try:
+            process = subprocess.Popen(
+                command,
+                cwd=workdir,
+                env=os.environ.copy(),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+            )
+            with self._lock:
+                self._active_processes[task.id] = process
+
+            deadline = monotonic() + self._timeout_seconds
+            stdout = process.stdout
+            stderr = process.stderr
+            if stdout is None or stderr is None:
+                yield AgentRunUpdate(kind="failed", message="Claude Code pipes are not available.")
+                return
+
+            while True:
+                if self._consume_cancelled(task.id):
+                    return
+                if process.poll() is not None and not _has_ready_stream(stdout, stderr):
+                    break
+                remaining = max(0.0, deadline - monotonic())
+                if remaining == 0.0:
                     process.kill()
-                try:
-                    process.wait(timeout=1)
-                except Exception:
-                    pass
-                for stream_name in ("stdin", "stdout", "stderr"):
-                    stream = getattr(process, stream_name, None)
-                    if stream is None:
+                    yield AgentRunUpdate(
+                        kind="failed",
+                        message=f"Claude Code timed out after {self._timeout_seconds} seconds.",
+                        backend_session_id=backend_session_id,
+                    )
+                    return
+                ready, _, _ = select.select([stdout, stderr], [], [], min(0.25, remaining))
+                if not ready:
+                    continue
+                for stream in ready:
+                    line = stream.readline()
+                    if not line:
                         continue
-                    try:
-                        stream.close()
-                    except Exception:
-                        pass
+                    if stream is stderr:
+                        stderr_lines.append(line)
+                        continue
+                    event = _parse_json_event(line)
+                    if event is None:
+                        continue
+                    event_type = _optional_string(event.get("type")) or ""
+                    if event_type == "system" and event.get("subtype") == "init":
+                        backend_session_id = _optional_string(event.get("session_id")) or backend_session_id
+                        if backend_session_id:
+                            yield AgentRunUpdate(
+                                kind="progress",
+                                message="Claude Code session ready.",
+                                backend_session_id=backend_session_id,
+                            )
+                        continue
+                    if event_type == "stream_event":
+                        stream_event = event.get("event")
+                        if isinstance(stream_event, dict) and stream_event.get("type") == "content_block_delta":
+                            delta = stream_event.get("delta")
+                            if isinstance(delta, dict) and delta.get("type") == "text_delta":
+                                text = _string_or_none(delta.get("text"))
+                                if text:
+                                    yield AgentRunUpdate(
+                                        kind="progress",
+                                        message="Claude Code output updated.",
+                                        output_chunk=text,
+                                        backend_session_id=backend_session_id,
+                                    )
+                        continue
+                    if event_type == "assistant":
+                        message = event.get("message")
+                        if isinstance(message, dict):
+                            final_text = _extract_claude_message_text(message) or final_text
+                        backend_session_id = _optional_string(event.get("session_id")) or backend_session_id
+                        continue
+                    if event_type == "result":
+                        backend_session_id = _optional_string(event.get("session_id")) or backend_session_id
+                        if event.get("subtype") == "success":
+                            raw_result = _optional_string(event.get("result")) or final_text or "Claude Code completed without a final response body."
+                            yield AgentRunUpdate(
+                                kind="completed",
+                                message="Task completed by the claude_code runner.",
+                                raw_result=raw_result,
+                                backend_session_id=backend_session_id,
+                            )
+                            return
+                        detail = _optional_string(event.get("result")) or _optional_string(event.get("error")) or "".join(stderr_lines).strip() or "Claude Code failed."
+                        yield AgentRunUpdate(
+                            kind="failed",
+                            message=detail,
+                            backend_session_id=backend_session_id,
+                        )
+                        return
+
+            if self._consume_cancelled(task.id):
+                return
+            if process.returncode and process.returncode != 0:
+                yield AgentRunUpdate(
+                    kind="failed",
+                    message="".join(stderr_lines).strip() or "Claude Code exited with a non-zero status.",
+                    backend_session_id=backend_session_id,
+                )
+                return
+            yield AgentRunUpdate(
+                kind="completed",
+                message="Task completed by the claude_code runner.",
+                raw_result=final_text or "Claude Code completed without a final response body.",
+                backend_session_id=backend_session_id,
+            )
+        except OSError as exc:
+            yield AgentRunUpdate(
+                kind="failed",
+                message=f"Failed to start Claude Code CLI: {exc}",
+                backend_session_id=backend_session_id,
+            )
+        finally:
+            with self._lock:
+                self._active_processes.pop(task.id, None)
+                self._cancelled_tasks.discard(task.id)
 
     def _consume_cancelled(self, task_id: str) -> bool:
         with self._lock:
@@ -627,33 +883,50 @@ def create_agent_runner(
     codex_sandbox: str,
     codex_approval_policy: str,
     codex_timeout_seconds: int,
+    claude_command: str,
+    claude_workdir: str,
+    claude_model: str | None,
+    claude_permission_mode: str,
+    claude_timeout_seconds: int,
 ) -> AgentRunner:
-    normalized = backend.strip().lower()
-    if normalized == "codex":
-        return CodexAppServerRunner(
+    normalized = backend.strip().lower() or "codex"
+    runners: dict[str, AgentRunner] = {
+        "codex": CodexAppServerRunner(
             command=codex_command,
             workdir=codex_workdir,
             model=codex_model,
             sandbox=codex_sandbox,
             approval_policy=codex_approval_policy,
             timeout_seconds=codex_timeout_seconds,
-        )
-    if normalized == "stub":
-        return StubAgentRunner()
-    if normalized in {"claude_code", "cursor_agent"}:
+        ),
+        "claude_code": ClaudeCodeRunner(
+            command=claude_command,
+            workdir=claude_workdir,
+            model=claude_model,
+            permission_mode=claude_permission_mode,
+            timeout_seconds=claude_timeout_seconds,
+        ),
+        "stub": StubAgentRunner(),
+        "cursor_agent": UnavailableAgentRunner(
+            name="cursor_agent",
+            reason="Agent backend 'cursor_agent' is planned but not implemented yet.",
+        ),
+        "coco": UnavailableAgentRunner(
+            name="coco",
+            reason="Agent backend 'coco' is planned but not implemented yet.",
+        ),
+    }
+    if normalized not in runners:
         return UnavailableAgentRunner(
-            name=normalized,
+            name=normalized or "unknown",
             reason=(
-                f"Agent backend '{normalized}' is planned but not implemented yet. "
-                "Current working backend is 'codex'."
+                f"Unsupported agent backend: {backend}. "
+                "Current implemented backends are 'codex', 'claude_code', and 'stub'."
             ),
         )
-    return UnavailableAgentRunner(
-        name=normalized or "unknown",
-        reason=(
-            f"Unsupported agent backend: {backend}. "
-            "Current implemented backends are 'codex' and 'stub'."
-        ),
+    return MultiAgentRunner(
+        default_backend=normalized,
+        runners=runners,
     )
 
 
@@ -697,6 +970,29 @@ def _first_non_empty(*candidates: str) -> str:
         if text:
             return text
     return ""
+
+
+def _has_ready_stream(stdout, stderr) -> bool:  # type: ignore[no-untyped-def]
+    ready, _, _ = select.select([stdout, stderr], [], [], 0)
+    return bool(ready)
+
+
+def _extract_claude_message_text(message: dict[str, object]) -> str | None:
+    content = message.get("content")
+    if not isinstance(content, list):
+        return None
+    parts: list[str] = []
+    for item in content:
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") != "text":
+            continue
+        text = _optional_string(item.get("text"))
+        if text:
+            parts.append(text)
+    if not parts:
+        return None
+    return "".join(parts)
 
 
 class _CodexAppServerSession:
@@ -791,8 +1087,7 @@ class _CodexAppServerSession:
                 return parsed
 
     def _has_ready_stream(self, stdout, stderr) -> bool:  # type: ignore[no-untyped-def]
-        ready, _, _ = select.select([stdout, stderr], [], [], 0)
-        return bool(ready)
+        return _has_ready_stream(stdout, stderr)
 
 
 def _extract_thread_id(result: dict[str, object]) -> str | None:

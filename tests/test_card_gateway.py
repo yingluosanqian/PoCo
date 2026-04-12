@@ -196,6 +196,12 @@ class FeishuCardGatewayTest(unittest.TestCase):
 
         self.assertEqual(response["instruction"]["template_key"], "project_create")
         self.assertEqual(response["card"]["data"]["header"]["title"]["content"], "New Project")
+        form = response["card"]["data"]["body"]["elements"][0]
+        backend_select = form["elements"][3]
+        self.assertEqual(backend_select["tag"], "select_static")
+        self.assertEqual(backend_select["name"], "backend")
+        self.assertEqual(backend_select["options"][0]["value"], "codex")
+        self.assertEqual(backend_select["options"][1]["value"], "claude_code")
 
     def test_project_create_action_returns_project_home_card(self) -> None:
         payload = {
@@ -256,6 +262,33 @@ class FeishuCardGatewayTest(unittest.TestCase):
 
         self.assertEqual(response["instruction"]["template_key"], "project_home")
         self.assertEqual(response["card"]["data"]["header"]["title"]["content"], "PoCo Projects")
+        created = self.project_controller.list_projects()[0]
+        self.assertEqual(created.backend, "codex")
+
+    def test_project_create_supports_claude_code_backend(self) -> None:
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_card_claude_create_1"},
+                "action": {
+                    "value": {
+                        "intent_key": "project.create",
+                        "surface": "dm",
+                        "request_id": "req_project_create_claude_1",
+                    },
+                    "form_value": {
+                        "name": "Claude Project",
+                        "backend": "claude_code",
+                    },
+                },
+            }
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        self.assertEqual(response["instruction"]["template_key"], "project_home")
+        created = self.project_controller.list_projects()[0]
+        self.assertEqual(created.backend, "claude_code")
 
     def test_project_delete_action_removes_project_only(self) -> None:
         project = self.project_controller.create_project(

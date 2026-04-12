@@ -90,9 +90,19 @@ export POCO_CODEX_TIMEOUT_SECONDS="900"
 
 PoCo now runs the `codex` backend through `codex app-server` over stdio, so task cards can consume true `agentMessage/delta` events instead of waiting for a final `exec --json` message block.
 
+Optional Claude Code settings:
+
+```bash
+export POCO_CLAUDE_COMMAND="claude"
+export POCO_CLAUDE_WORKDIR="/absolute/path/to/your/repo"
+export POCO_CLAUDE_MODEL="sonnet"
+export POCO_CLAUDE_PERMISSION_MODE="default"
+export POCO_CLAUDE_TIMEOUT_SECONDS="900"
+```
+
 Use `POCO_AGENT_BACKEND=stub` if you want to exercise the flow without calling Codex.
 
-`claude_code` and `cursor_agent` are recognized as planned backends, but they are not implemented yet. If selected, PoCo will start and report the backend as not ready.
+PoCo now supports both `codex` and `claude_code`. `cursor_agent` is still recognized as planned but not implemented yet.
 
 Set the Feishu app credentials before using the real callback flow:
 

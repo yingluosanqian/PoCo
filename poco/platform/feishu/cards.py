@@ -126,6 +126,7 @@ def _render_project_create(
     data: dict[str, Any],
 ) -> dict[str, Any]:
     default_backend = data.get("default_backend") or "codex"
+    backend_options = data.get("backend_options") or [{"label": "Codex", "value": "codex"}]
     return _card_shell(
         title="New Project",
         template="blue",
@@ -145,7 +146,13 @@ def _render_project_create(
                         },
                         "margin": "0px 0px 12px 0px",
                     },
-                    _markdown(f"**Agent**\n`{default_backend}`"),
+                    _markdown("**Agent**"),
+                    _select_static(
+                        name="backend",
+                        placeholder="Select an agent",
+                        options=backend_options,
+                        value=default_backend,
+                    ),
                     {
                         "tag": "button",
                         "text": {
@@ -163,7 +170,6 @@ def _render_project_create(
                                 "value": {
                                     "intent_key": "project.create",
                                     "surface": "dm",
-                                    "backend": default_backend,
                                 },
                             }
                         ],
@@ -819,16 +825,26 @@ def _render_workspace_choose_model(
     project = data["project"]
     agent_label = data.get("agent_label") or project["backend"]
     current_model = data.get("current_model")
-    current_sandbox = data.get("current_sandbox") or "workspace-write"
+    secondary_option_key = data.get("secondary_option_key")
+    secondary_option_label = data.get("secondary_option_label") or "Access"
+    current_secondary_option = data.get("current_secondary_option")
     model_options = data.get("model_options") or []
-    sandbox_options = data.get("sandbox_options") or []
+    secondary_options = data.get("secondary_options") or []
     elements: list[dict[str, Any]] = [
         _markdown(
             "\n".join(
                 [
-                    f"**Agent:** `{agent_label}`",
-                    f"**Model:** `{current_model or 'not set'}`",
-                    f"**Access:** `{_sandbox_label(current_sandbox)}`",
+                    line
+                    for line in [
+                        f"**Agent:** `{agent_label}`",
+                        f"**Model:** `{current_model or 'not set'}`" if model_options else None,
+                        (
+                            f"**{secondary_option_label}:** `{_secondary_option_display(secondary_option_key, current_secondary_option)}`"
+                            if secondary_option_key and secondary_options
+                            else None
+                        ),
+                    ]
+                    if line is not None
                 ]
             )
         ),
@@ -836,17 +852,29 @@ def _render_workspace_choose_model(
             "tag": "form",
             "name": f"workspace_choose_model_form_{project['id']}",
             "elements": [
-                _select_static(
-                    name="model",
-                    placeholder="Select a model",
-                    options=model_options,
-                    value=current_model,
+                *(
+                    [
+                        _select_static(
+                            name="model",
+                            placeholder="Select a model",
+                            options=model_options,
+                            value=current_model,
+                        )
+                    ]
+                    if model_options
+                    else []
                 ),
-                _select_static(
-                    name="sandbox",
-                    placeholder="Select an access level",
-                    options=sandbox_options,
-                    value=current_sandbox,
+                *(
+                    [
+                        _select_static(
+                            name=str(secondary_option_key),
+                            placeholder=f"Select {str(secondary_option_label).lower()}",
+                            options=secondary_options,
+                            value=current_secondary_option,
+                        )
+                    ]
+                    if secondary_option_key and secondary_options
+                    else []
                 ),
                 _two_up(
                     {
@@ -1450,6 +1478,24 @@ def _sandbox_label(sandbox: str) -> str:
     if sandbox == "danger-full-access":
         return "Full Access"
     return "Project Only"
+
+
+def _secondary_option_display(key: object, value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return "not set"
+    if key == "sandbox":
+        return _sandbox_label(text)
+    if key == "permission_mode":
+        if text == "acceptEdits":
+            return "Accept Edits"
+        if text == "bypassPermissions":
+            return "Bypass Permissions"
+        if text == "default":
+            return "Default"
+        if text == "plan":
+            return "Plan"
+    return text
 
 
 def _task_title(

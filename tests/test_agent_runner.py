@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from poco.agent.runner import CodexAppServerRunner, CodexCliRunner
+from poco.agent.runner import ClaudeCodeRunner, CodexAppServerRunner, CodexCliRunner
 from poco.task.models import Task, TaskStatus
 
 
@@ -331,6 +331,125 @@ class CodexAppServerRunnerTest(unittest.TestCase):
             first_call = fake_session.request.call_args_list[0]
             self.assertEqual(first_call.args[0], "thread/resume")
             self.assertEqual(first_call.args[1]["threadId"], "thread_existing")
+
+
+class ClaudeCodeRunnerTest(unittest.TestCase):
+    def test_claude_runner_streams_deltas_and_completes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = ClaudeCodeRunner(command="claude", workdir=tmpdir, model="sonnet")
+            task = Task(
+                id="claude_task_stream",
+                requester_id="ou_demo",
+                prompt="stream output",
+                source="feishu",
+                status=TaskStatus.RUNNING,
+                agent_backend="claude_code",
+            )
+
+            class FakeStdout:
+                def __init__(self) -> None:
+                    self.exhausted = False
+                    self._lines = iter(
+                        [
+                            '{"type":"system","subtype":"init","session_id":"session_123"}\n',
+                            '{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Hello"}}}\n',
+                            '{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":" world"}}}\n',
+                            '{"type":"result","subtype":"success","result":"Hello world","session_id":"session_123"}\n',
+                        ]
+                    )
+
+                def readline(self) -> str:
+                    line = next(self._lines, "")
+                    if not line:
+                        self.exhausted = True
+                    return line
+
+            class FakeStderr:
+                def readline(self) -> str:
+                    return ""
+
+            class FakePopen:
+                def __init__(self) -> None:
+                    self.stdout = FakeStdout()
+                    self.stderr = FakeStderr()
+                    self.returncode = 0
+                    self.killed = False
+
+                def poll(self):  # type: ignore[no-untyped-def]
+                    return 0 if self.killed or self.stdout.exhausted else None
+
+                def kill(self) -> None:
+                    self.killed = True
+                    self.returncode = -9
+
+            fake_process = FakePopen()
+            with (
+                patch("poco.agent.runner.shutil.which", return_value="/Users/yihanc/.local/bin/claude"),
+                patch("poco.agent.runner.subprocess.Popen", return_value=fake_process),
+                patch("poco.agent.runner.select.select", side_effect=lambda readers, *_args: (readers, [], [])),
+            ):
+                updates = list(runner.start(task))
+
+            self.assertEqual(updates[1].backend_session_id, "session_123")
+            self.assertEqual(updates[2].output_chunk, "Hello")
+            self.assertEqual(updates[3].output_chunk, " world")
+            self.assertEqual(updates[-1].kind, "completed")
+            self.assertEqual(updates[-1].raw_result, "Hello world")
+
+    def test_claude_runner_resumes_existing_session(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = ClaudeCodeRunner(command="claude", workdir=tmpdir, model="sonnet")
+            task = Task(
+                id="claude_task_resume",
+                requester_id="ou_demo",
+                prompt="continue",
+                source="feishu",
+                status=TaskStatus.RUNNING,
+                agent_backend="claude_code",
+                backend_session_id="session_existing",
+                effective_backend_config={"permission_mode": "default"},
+            )
+            captured: dict[str, object] = {}
+
+            class FakeStdout:
+                def __init__(self) -> None:
+                    self._lines = iter(
+                        [
+                            '{"type":"result","subtype":"success","result":"continued","session_id":"session_existing"}\n',
+                        ]
+                    )
+
+                def readline(self) -> str:
+                    return next(self._lines, "")
+
+            class FakeStderr:
+                def readline(self) -> str:
+                    return ""
+
+            class FakePopen:
+                def __init__(self, command, **kwargs):  # type: ignore[no-untyped-def]
+                    captured["command"] = command
+                    captured["cwd"] = kwargs.get("cwd")
+                    self.stdout = FakeStdout()
+                    self.stderr = FakeStderr()
+                    self.returncode = 0
+
+                def poll(self):  # type: ignore[no-untyped-def]
+                    return 0
+
+                def kill(self) -> None:
+                    return None
+
+            with (
+                patch("poco.agent.runner.shutil.which", return_value="/Users/yihanc/.local/bin/claude"),
+                patch("poco.agent.runner.subprocess.Popen", FakePopen),
+                patch("poco.agent.runner.select.select", side_effect=lambda readers, *_args: (readers, [], [])),
+            ):
+                updates = list(runner.start(task))
+
+            self.assertEqual(updates[-1].backend_session_id, "session_existing")
+            self.assertIn("--resume", captured["command"])
+            self.assertIn("session_existing", captured["command"])
 
 
 if __name__ == "__main__":
