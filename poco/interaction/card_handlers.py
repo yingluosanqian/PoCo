@@ -76,7 +76,7 @@ class ProjectIntentHandler:
             status=DispatchStatus.OK,
             intent_key=intent.intent_key,
             resource_refs=ResourceRefs(),
-            view_model=_project_create_view_model(),
+            view_model=_project_create_view_model(actor_id=intent.actor_id),
             refresh_mode=RefreshMode.REPLACE_CURRENT,
             message="New project form loaded.",
         )
@@ -685,10 +685,11 @@ def _project_home_view_model(projects, *, actor_id: str | None) -> ViewModel:
     )
 
 
-def _project_create_view_model() -> ViewModel:
+def _project_create_view_model(*, actor_id: str | None) -> ViewModel:
     return ViewModel(
         "project_create",
         {
+            "actor_id": actor_id,
             "default_backend": "codex",
             "backend_options": [
                 {"label": "Codex", "value": "codex"},
