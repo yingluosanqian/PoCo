@@ -32,7 +32,7 @@ from poco.platform.feishu.gateway import FeishuGateway
 from poco.platform.feishu.longconn import FeishuLongconnListener
 from poco.platform.feishu.project_bootstrap import FeishuProjectBootstrapper
 from poco.platform.feishu.verification import FeishuRequestVerifier, FeishuVerificationError
-from poco.project.bootstrap import NullProjectBootstrapper
+from poco.project.bootstrap import NullProjectBootstrapper, ProjectBootstrapError
 from poco.project.controller import ProjectController
 from poco.session.controller import SessionController
 from poco.storage.memory import InMemoryProjectStore, InMemorySessionStore, InMemoryTaskStore, InMemoryWorkspaceContextStore
@@ -45,6 +45,12 @@ from poco.workspace.controller import WorkspaceContextController
 
 class DemoDecisionRequest(BaseModel):
     approved: bool
+
+
+class ProjectCreateRequest(BaseModel):
+    actor_id: str
+    name: str
+    backend: str = "codex"
 
 
 def create_app(*, settings: Settings | None = None) -> FastAPI:
@@ -208,6 +214,7 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
     app.state.feishu_longconn = longconn_listener
     app.state.message_client = message_client
     app.state.card_renderer = card_renderer
+    app.state.project_bootstrapper = project_bootstrapper
 
     @app.get("/health")
     def health() -> dict[str, Any]:
@@ -431,6 +438,55 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
         )
         return HTMLResponse(body)
 
+    @app.get("/ui/projects/new", response_class=HTMLResponse)
+    def project_create_page(actor_id: str | None = None, saved: int = 0, project_name: str | None = None) -> HTMLResponse:
+        body = _render_project_create_html(
+            actor_id=actor_id or "",
+            project_name=project_name or "",
+            saved=bool(saved),
+        )
+        return HTMLResponse(body)
+
+    @app.post("/api/projects")
+    def create_project_from_browser(request: ProjectCreateRequest) -> dict[str, Any]:
+        actor_id = request.actor_id.strip()
+        if not actor_id:
+            raise HTTPException(status_code=400, detail="actor_id is required.")
+        name = request.name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Project name cannot be empty.")
+        backend = request.backend.strip() or "codex"
+
+        project = project_controller.create_project(
+            name=name,
+            created_by=actor_id,
+            backend=backend,
+        )
+        try:
+            bootstrap = app.state.project_bootstrapper.bootstrap_project(
+                project=project,
+                actor_id=actor_id,
+            )
+        except ProjectBootstrapError as exc:
+            project_controller.delete_project(project.id)
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if bootstrap.group_chat_id is not None:
+            project = project_controller.bind_group(project.id, bootstrap.group_chat_id)
+            try:
+                app.state.project_bootstrapper.notify_project_workspace(
+                    project=project,
+                    actor_id=actor_id,
+                )
+            except Exception:
+                pass
+        return {
+            "ok": True,
+            "project_id": project.id,
+            "project_name": project.name,
+            "group_chat_id": project.group_chat_id,
+            "redirect_url": f"/ui/projects/new?{urlencode({'actor_id': actor_id, 'saved': 1, 'project_name': project.name})}",
+        }
+
     @app.post("/api/projects/{project_id}/workdir")
     async def apply_project_workdir(project_id: str, request: Request) -> dict[str, Any]:
         try:
@@ -631,6 +687,78 @@ def _render_workdir_browser_html(
     document.getElementById("apply-browsed-button").addEventListener("click", async () => {{
       await applyWorkdir("{selected_label}");
     }});
+  </script>
+</body>
+</html>"""
+
+
+def _render_project_create_html(
+    *,
+    actor_id: str,
+    project_name: str,
+    saved: bool,
+) -> str:
+    saved_block = ""
+    if saved and project_name:
+        saved_block = f'<p class="note success">Project created: {escape(project_name)}</p>'
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>New Project</title>
+  <style>
+    body {{ font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; background: #f6f4ef; color: #171717; }}
+    .wrap {{ max-width: 680px; margin: 0 auto; padding: 24px 16px 40px; }}
+    h1 {{ font-size: 24px; margin: 0 0 8px; }}
+    .meta {{ color: #555; margin: 0 0 20px; }}
+    .card {{ background: #fffdfa; border: 1px solid #dfd7c8; border-radius: 16px; padding: 16px; margin-bottom: 16px; }}
+    .label {{ font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: #7a6d58; margin-bottom: 8px; }}
+    input, select {{ width: 100%; box-sizing: border-box; padding: 12px 14px; border-radius: 12px; border: 1px solid #cfc3ad; font-size: 15px; background: white; }}
+    .actions {{ display: flex; gap: 12px; margin-top: 12px; flex-wrap: wrap; }}
+    button {{ border: 0; border-radius: 12px; padding: 12px 16px; background: #1f6feb; color: white; font-size: 15px; }}
+    .note {{ margin: 10px 0 0; color: #5d5446; }}
+    .success {{ color: #176d3a; }}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>New Project</h1>
+    <p class="meta">Create project and group in one step.</p>
+    <div class="card">
+      <div class="label">Project Name</div>
+      <input id="project-name" value="{escape(project_name)}" placeholder="Project name" spellcheck="false" />
+    </div>
+    <div class="card">
+      <div class="label">Agent</div>
+      <select id="agent-backend">
+        <option value="codex" selected>Codex</option>
+      </select>
+      {saved_block}
+    </div>
+    <div class="actions">
+      <button id="create-project-button" type="button">Create Project + Group</button>
+    </div>
+  </div>
+  <script>
+    async function createProject() {{
+      const response = await fetch("/api/projects", {{
+        method: "POST",
+        headers: {{ "Content-Type": "application/json" }},
+        body: JSON.stringify({{
+          actor_id: "{escape(actor_id)}",
+          name: document.getElementById("project-name").value,
+          backend: document.getElementById("agent-backend").value
+        }})
+      }});
+      const payload = await response.json();
+      if (!response.ok) {{
+        alert(payload.detail || "Failed to create project.");
+        return;
+      }}
+      window.location.href = payload.redirect_url;
+    }}
+    document.getElementById("create-project-button").addEventListener("click", createProject);
   </script>
 </body>
 </html>"""

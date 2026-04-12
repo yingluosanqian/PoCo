@@ -12,7 +12,10 @@ class FeishuCardRenderer:
 
     def render(self, instruction: PlatformRenderInstruction) -> dict[str, Any]:
         if instruction.template_key == "project_home":
-            return _render_project_home(instruction.template_data)
+            return _render_project_home(
+                instruction.template_data,
+                app_base_url=self._app_base_url,
+            )
         if instruction.template_key == "project_create":
             return _render_project_create(instruction.template_data)
         if instruction.template_key == "project_manage":
@@ -89,20 +92,30 @@ class FeishuCardRenderer:
         return _render_fallback(instruction.template_key, instruction.template_data)
 
 
-def _render_project_home(data: dict[str, Any]) -> dict[str, Any]:
+def _render_project_home(
+    data: dict[str, Any],
+    *,
+    app_base_url: str | None,
+) -> dict[str, Any]:
     project_count = data.get("project_count", 0)
+    actor_id = data.get("actor_id")
+    new_url = project_new_url(
+        app_base_url,
+        actor_id=actor_id if isinstance(actor_id, str) else None,
+    )
     return _card_shell(
         title="PoCo Projects",
         template="blue",
         elements=[
             _markdown(f"DM 控制台。当前共有 **{project_count}** 个 project。"),
-            _button(
+            _action_button(
                 label="New",
-                intent_value={
+                style="primary",
+                url=new_url,
+                intent_value=None if new_url is not None else {
                     "intent_key": "project.new",
                     "surface": "dm",
                 },
-                style="primary",
                 name="new_project_button",
             ),
             _button(
@@ -1081,6 +1094,16 @@ def workdir_browser_url(app_base_url: str | None, *, project_id: str) -> str | N
     if not app_base_url:
         return None
     return f"{app_base_url}/ui/workdir?{urlencode({'project_id': project_id})}"
+
+
+def project_new_url(app_base_url: str | None, *, actor_id: str | None) -> str | None:
+    if not app_base_url:
+        return None
+    query: dict[str, str] = {}
+    if actor_id:
+        query["actor_id"] = actor_id
+    suffix = f"?{urlencode(query)}" if query else ""
+    return f"{app_base_url}/ui/projects/new{suffix}"
 
 
 def _task_status_label(status: str) -> str:

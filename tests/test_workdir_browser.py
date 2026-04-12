@@ -52,6 +52,37 @@ class WorkdirBrowserTest(unittest.TestCase):
         self.assertIn("web", html)
         self.assertIn(str(self.project_root), html)
 
+    def test_project_create_page_renders_name_and_agent_inputs(self) -> None:
+        response = self.client.get(
+            "/ui/projects/new",
+            params={"actor_id": "ou_demo_user"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        html = response.text
+        self.assertIn("New Project", html)
+        self.assertIn("Project Name", html)
+        self.assertIn("Agent", html)
+        self.assertIn("Create Project + Group", html)
+
+    def test_project_create_api_creates_project(self) -> None:
+        response = self.client.post(
+            "/api/projects",
+            json={
+                "actor_id": "ou_demo_user",
+                "name": "PoCo Browser",
+                "backend": "codex",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["project_name"], "PoCo Browser")
+        created = self.app.state.project_controller.get_project(payload["project_id"])
+        self.assertEqual(created.name, "PoCo Browser")
+        self.assertEqual(created.backend, "codex")
+
     def test_apply_project_workdir_updates_context(self) -> None:
         response = self.client.post(
             f"/api/projects/{self.project.id}/workdir",

@@ -253,8 +253,9 @@ POST /platform/feishu/card-actions
 
 Current interaction model:
 
-- DM messages currently bootstrap a project-list card instead of returning text help
-- DM project-list cards now support callback actions including `Create Project + Group`
+- DM messages currently bootstrap a compact home card instead of returning text help
+- DM home cards now expose only `New` and `Manage`
+- when `POCO_APP_BASE_URL` is configured, `New` opens a browser-based project creation page with `project name` and `agent`
 - DM project open now lands on a project config card with read-only entries for agent / repo / default dir / dir presets
 - newly created project groups now receive an initial workspace overview card
 - group workspace and task cards now route `Change Workdir` to a browser-based folder picker; the page supports both manual path entry and folder browsing

@@ -66,7 +66,7 @@ class ProjectIntentHandler:
             status=DispatchStatus.OK,
             intent_key=intent.intent_key,
             resource_refs=ResourceRefs(),
-            view_model=_project_home_view_model(projects),
+            view_model=_project_home_view_model(projects, actor_id=intent.actor_id),
             refresh_mode=RefreshMode.REPLACE_CURRENT,
             message="DM home loaded.",
         )
@@ -575,7 +575,7 @@ def build_dm_project_list_result(
         status=DispatchStatus.OK,
         intent_key="project.home",
         resource_refs=ResourceRefs(),
-        view_model=_project_home_view_model(projects),
+        view_model=_project_home_view_model(projects, actor_id=actor_id),
         refresh_mode=RefreshMode.REPLACE_CURRENT,
         message="DM home loaded.",
     )
@@ -674,12 +674,13 @@ def build_task_status_result(
     )
 
 
-def _project_home_view_model(projects) -> ViewModel:
+def _project_home_view_model(projects, *, actor_id: str | None) -> ViewModel:
     project_list = list(projects)
     return ViewModel(
         "project_home",
         {
             "project_count": len(project_list),
+            "actor_id": actor_id,
         },
     )
 
