@@ -1001,6 +1001,38 @@ class FeishuCardGatewayTest(unittest.TestCase):
         self.assertEqual(context.workdir_source, "manual")
         self.assertIn("/srv/poco/manual", response["card"]["data"]["header"]["title"]["content"])
 
+    def test_workspace_apply_browse_path_updates_context(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+        )
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_card_workdir_5b"},
+                "action": {
+                    "value": {
+                        "intent_key": "workspace.apply_entered_path",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "request_id": "req_workspace_apply_path_1b",
+                    },
+                    "form_value": {
+                        "browse_path": "/srv/poco/api",
+                    },
+                },
+            }
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        self.assertEqual(response["instruction"]["template_key"], "workspace_overview")
+        context = self.workspace_controller.get_context(project)
+        self.assertEqual(context.active_workdir, "/srv/poco/api")
+        self.assertEqual(context.workdir_source, "manual")
+        self.assertIn("/srv/poco/api", response["card"]["data"]["header"]["title"]["content"])
+
     def test_workspace_apply_entered_path_rejects_empty_path(self) -> None:
         project = self.project_controller.create_project(
             name="PoCo",
