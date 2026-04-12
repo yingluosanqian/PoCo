@@ -69,8 +69,8 @@ class FeishuCardRenderer:
                 instruction.template_data,
                 surface=instruction.surface.value,
             )
-        if instruction.template_key == "workspace_choose_model":
-            return _render_workspace_choose_model(
+        if instruction.template_key in {"workspace_choose_agent", "workspace_choose_model"}:
+            return _render_workspace_choose_agent(
                 instruction.template_data,
                 surface=instruction.surface.value,
             )
@@ -813,7 +813,7 @@ def _render_workspace_enter_path(
     )
 
 
-def _render_workspace_choose_model(
+def _render_workspace_choose_agent(
     data: dict[str, Any],
     *,
     surface: str,
@@ -843,7 +843,7 @@ def _render_workspace_choose_model(
         ),
         {
             "tag": "form",
-            "name": f"workspace_choose_model_form_{project['id']}",
+            "name": f"workspace_choose_agent_form_{project['id']}",
             "elements": [
                 *(
                     [
@@ -874,7 +874,7 @@ def _render_workspace_choose_model(
                         "type": "primary",
                         "width": "default",
                         "size": "medium",
-                        "name": f"apply_model_{project['id']}",
+                        "name": f"apply_agent_{project['id']}",
                         "form_action_type": "submit",
                         "behaviors": [
                             {
@@ -894,7 +894,7 @@ def _render_workspace_choose_model(
                         "type": "default",
                         "width": "default",
                         "size": "medium",
-                        "name": f"cancel_workspace_choose_model_{project['id']}",
+                        "name": f"cancel_workspace_choose_agent_{project['id']}",
                         "behaviors": [
                             {
                                 "type": "callback",

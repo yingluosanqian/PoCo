@@ -304,14 +304,14 @@ class WorkspaceIntentHandler:
             return self._open_browse_path(intent)
         if intent.intent_key == "workspace.enter_path_manual":
             return self._open_enter_path(intent)
-        if intent.intent_key in {"workspace.choose_model", "workspace.choose_agent"}:
-            return self._open_choose_model(intent)
+        if intent.intent_key == "workspace.choose_agent":
+            return self._open_choose_agent(intent)
         if intent.intent_key == "workspace.apply_preset_dir":
             return self._apply_preset_dir(intent)
         if intent.intent_key == "workspace.apply_entered_path":
             return self._apply_entered_path(intent)
-        if intent.intent_key in {"workspace.apply_model", "workspace.apply_agent"}:
-            return self._apply_model(intent)
+        if intent.intent_key == "workspace.apply_agent":
+            return self._apply_agent(intent)
         if intent.intent_key != "workspace.open":
             return _rejected(intent, f"Unsupported workspace intent: {intent.intent_key}")
         project = _get_project_or_reject(self.project_controller, intent)
@@ -468,7 +468,7 @@ class WorkspaceIntentHandler:
             message=f"Updated workdir for {project.name}",
         )
 
-    def _open_choose_model(self, intent: ActionIntent) -> IntentDispatchResult:
+    def _open_choose_agent(self, intent: ActionIntent) -> IntentDispatchResult:
         project = _get_project_or_reject(self.project_controller, intent)
         if isinstance(project, IntentDispatchResult):
             return project
@@ -476,12 +476,12 @@ class WorkspaceIntentHandler:
             status=DispatchStatus.OK,
             intent_key=intent.intent_key,
             resource_refs=ResourceRefs(project_id=project.id),
-            view_model=_workspace_choose_model_view_model(project),
+            view_model=_workspace_choose_agent_view_model(project),
             refresh_mode=RefreshMode.REPLACE_CURRENT,
             message=f"Choose agent settings for {project.name}",
         )
 
-    def _apply_model(self, intent: ActionIntent) -> IntentDispatchResult:
+    def _apply_agent(self, intent: ActionIntent) -> IntentDispatchResult:
         project = _get_project_or_reject(self.project_controller, intent)
         if isinstance(project, IntentDispatchResult):
             return project
@@ -933,7 +933,7 @@ def _workspace_enter_path_view_model(project, *, context, browse_path: str | Non
     )
 
 
-def _workspace_choose_model_view_model(project) -> ViewModel:
+def _workspace_choose_agent_view_model(project) -> ViewModel:
     descriptor = get_backend_descriptor(project.backend)
     model_options = get_backend_model_options(project.backend)
     config_fields: list[dict[str, object]] = []
@@ -956,7 +956,7 @@ def _workspace_choose_model_view_model(project) -> ViewModel:
             }
         )
     return ViewModel(
-        "workspace_choose_model",
+        "workspace_choose_agent",
         {
             "project": project.to_dict(),
             "agent_label": descriptor.label,

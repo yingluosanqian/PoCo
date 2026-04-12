@@ -394,7 +394,7 @@ class FeishuClientTest(unittest.TestCase):
                     intent_key="workspace.choose_agent",
                     resource_refs=ResourceRefs(project_id=project.id),
                     view_model=ViewModel(
-                        "workspace_choose_model",
+                        "workspace_choose_agent",
                         {
                             "project": project.to_dict(),
                             "agent_label": "Codex",
@@ -458,7 +458,7 @@ class FeishuClientTest(unittest.TestCase):
                     intent_key="workspace.choose_agent",
                     resource_refs=ResourceRefs(project_id=project.id),
                     view_model=ViewModel(
-                        "workspace_choose_model",
+                        "workspace_choose_agent",
                         {
                             "project": project.to_dict(),
                             "agent_label": "Cursor Agent",

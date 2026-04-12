@@ -146,8 +146,6 @@ class FeishuCardGatewayTest(unittest.TestCase):
                     "workspace.apply_entered_path": self.workspace_handler,
                     "workspace.choose_agent": self.workspace_handler,
                     "workspace.apply_agent": self.workspace_handler,
-                    "workspace.choose_model": self.workspace_handler,
-                    "workspace.apply_model": self.workspace_handler,
                     "task.open_composer": self.task_handler,
                     "task.open": self.task_handler,
                     "task.submit": self.task_handler,
@@ -1233,7 +1231,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
 
         opened = self.gateway.handle_action(open_payload)
 
-        self.assertEqual(opened["instruction"]["template_key"], "workspace_choose_model")
+        self.assertEqual(opened["instruction"]["template_key"], "workspace_choose_agent")
         form = opened["card"]["data"]["body"]["elements"][1]
         self.assertEqual(form["tag"], "form")
         apply_payload = {
@@ -1245,7 +1243,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
                         "intent_key": "workspace.apply_agent",
                         "surface": "group",
                         "project_id": project.id,
-                        "request_id": "req_apply_model_1",
+                        "request_id": "req_apply_agent_1",
                     },
                     "form_value": {
                         "model": "gpt-5.4",

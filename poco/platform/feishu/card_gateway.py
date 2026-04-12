@@ -104,7 +104,7 @@ def _payload_to_action_intent(payload: dict[str, Any]) -> ActionIntent:
     context = event.get("context", {})
     actor_id = str(operator.get("open_id") or operator.get("user_id") or "anonymous")
     return ActionIntent(
-        intent_key=str(value.get("intent_key", "")).strip(),
+        intent_key=_normalize_intent_key(str(value.get("intent_key", "")).strip()),
         surface=surface,
         actor_id=actor_id,
         source_message_id=str(context.get("open_message_id") or ""),
@@ -197,3 +197,11 @@ def _request_id_for_action(
         json.dumps(value, ensure_ascii=False, sort_keys=True),
     ]
     return "::".join(parts)
+
+
+def _normalize_intent_key(intent_key: str) -> str:
+    legacy_intent_keys = {
+        "workspace.choose_model": "workspace.choose_agent",
+        "workspace.apply_model": "workspace.apply_agent",
+    }
+    return legacy_intent_keys.get(intent_key, intent_key)
