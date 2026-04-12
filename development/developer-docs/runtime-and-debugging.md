@@ -8,6 +8,8 @@
 uvicorn poco.main:app --reload
 ```
 
+当前默认 Feishu 入站模式就是 `longconn`，不需要再主动设置 `POCO_FEISHU_DELIVERY_MODE=longconn`。
+
 ## 2. 最先看的接口
 
 ### 健康检查

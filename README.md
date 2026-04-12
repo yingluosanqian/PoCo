@@ -132,17 +132,8 @@ export POCO_FEISHU_APP_ID="cli_xxx"
 export POCO_FEISHU_APP_SECRET="xxx"
 ```
 
-Choose the inbound delivery mode:
-
-```bash
-export POCO_FEISHU_DELIVERY_MODE="webhook"
-```
-
-Use `longconn` when you want local development without a public callback URL:
-
-```bash
-export POCO_FEISHU_DELIVERY_MODE="longconn"
-```
+PoCo now defaults to Feishu `longconn`, so the normal local/mobile-first path does not require setting an inbound delivery mode explicitly.
+Only set `POCO_FEISHU_DELIVERY_MODE` if you intentionally want to force `webhook`.
 
 Optional:
 
@@ -159,7 +150,7 @@ Notes:
 - `POCO_FEISHU_VERIFICATION_TOKEN` is optional in the current MVP. Leaving it unset reduces setup friction, but also lowers webhook security.
 - If `POCO_FEISHU_ENCRYPT_KEY` is configured, the service expects Feishu signature headers and validates them.
 - Encrypted callback payload bodies are not supported yet, so keep event encryption disabled for the current MVP.
-- `POCO_FEISHU_DELIVERY_MODE=longconn` removes the need for public inbound webhook access during local development.
+- `longconn` is now the default inbound mode and removes the need for public inbound webhook access during local development.
 - The current long-connection implementation now handles both `im.message.receive_v1` and card callback traffic for local/mobile-first operation.
 - Callback token/signature settings apply to webhook delivery. Feishu long-connection inbound events are authenticated by the long-connection session itself.
 - `POCO_STATE_BACKEND=sqlite` is now the default runtime path. PoCo persists projects, workspace state and tasks so restart does not lose existing group/workspace tracking.
@@ -319,7 +310,7 @@ Current interaction model:
 - workspace cards no longer try to show latest-result body; the title carries status / agent / workdir / current task, and the body stays action-only
 - running task cards now show throttled live output updates from the agent, instead of staying at a coarse `running` state
 
-If `POCO_FEISHU_DELIVERY_MODE=longconn` is enabled:
+By default, PoCo runs with `longconn` inbound delivery:
 
 - inbound message events arrive over Feishu long connection instead of the webhook route
 - DM events can now trigger proactive project-list card sends
@@ -329,12 +320,11 @@ If `POCO_FEISHU_DELIVERY_MODE=longconn` is enabled:
 
 To verify the DM card bootstrap on a real Feishu bot:
 
-1. Set `POCO_FEISHU_DELIVERY_MODE=longconn`
-2. Start `uvicorn poco.main:app --reload`
-3. Confirm `/health` shows `feishu_listener_ready=true`
-4. Send any DM message like `hi` to the bot
-5. The bot should reply with a `PoCo Projects` card
-6. Click `Create Project + Group` and the card should refresh into a project detail view
+1. Start `uvicorn poco.main:app --reload`
+2. Confirm `/health` shows `feishu_listener_ready=true`
+3. Send any DM message like `hi` to the bot
+4. The bot should reply with a `PoCo Projects` card
+5. Click `Create Project + Group` and the card should return to the DM home card
 
 Example webhook payload:
 
