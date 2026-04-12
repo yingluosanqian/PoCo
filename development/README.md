@@ -36,6 +36,7 @@ flowchart TD
 这些文件描述工作协议，不记录某一轮具体实例：
 
 - `AGENT_WORKFLOW.md`
+- `developer-docs/*.md`
 - `layers/*.md`
 - `templates/*.template.md`
 
@@ -71,11 +72,20 @@ flowchart TD
 
 最小工作流：
 
-1. 先读 `layers/purpose.md` 和 `layers/constraints.md`
-2. 判断任务当前属于哪一层
-3. 如果任务会影响行为、范围或结构，先在 `records/` 建实例记录
-4. 只有问题、决策、计划清楚后，才进入实现
-5. 实现结束后，补 `validation` 结论
+1. 先读 `developer-docs/README.md`
+2. 再读 `layers/purpose.md` 和 `layers/constraints.md`
+3. 判断任务当前属于哪一层
+4. 如果任务会影响行为、范围或结构，先在 `records/` 建实例记录
+5. 只有问题、决策、计划清楚后，才进入实现
+6. 实现结束后，补 `validation` 结论
+
+开发者接手代码时，优先看：
+
+- `developer-docs/architecture.md`
+- `developer-docs/runtime-and-debugging.md`
+- `developer-docs/backends.md`
+- `developer-docs/handoff.md`
+
 
 ### Commit 规范
 

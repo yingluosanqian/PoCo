@@ -9,6 +9,7 @@ AI 不应把这里当建议，而应把这里当默认工作协议。
 最少读取：
 
 - `development/README.md`
+- `development/developer-docs/README.md`
 - `development/layers/purpose.md`
 - `development/layers/constraints.md`
 
