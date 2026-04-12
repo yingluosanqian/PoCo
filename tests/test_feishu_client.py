@@ -358,13 +358,16 @@ class FeishuClientTest(unittest.TestCase):
                         "workspace_choose_model",
                         {
                             "project": project.to_dict(),
+                            "agent_label": "Codex",
                             "current_model": "gpt-5.4",
-                            "current_sandbox": "workspace-write",
+                            "secondary_option_key": "sandbox",
+                            "secondary_option_label": "Access",
+                            "current_secondary_option": "workspace-write",
                             "model_options": [
                                 {"label": "gpt-5.4", "value": "gpt-5.4"},
                                 {"label": "gpt-5.4-mini", "value": "gpt-5.4-mini"},
                             ],
-                            "sandbox_options": [
+                            "secondary_options": [
                                 {"label": "Read Only", "value": "read-only"},
                                 {"label": "Project Only", "value": "workspace-write"},
                                 {"label": "Full Access", "value": "danger-full-access"},

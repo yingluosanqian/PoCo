@@ -64,6 +64,11 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
         codex_sandbox=settings.codex_sandbox,
         codex_approval_policy=settings.codex_approval_policy,
         codex_timeout_seconds=settings.codex_timeout_seconds,
+        claude_command=settings.claude_command,
+        claude_workdir=settings.claude_workdir,
+        claude_model=settings.claude_model,
+        claude_permission_mode=settings.claude_permission_mode,
+        claude_timeout_seconds=settings.claude_timeout_seconds,
     )
     session_controller = SessionController(session_store)
     controller = TaskController(store=store, runner=runner, session_controller=session_controller)
