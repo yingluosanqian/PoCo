@@ -349,6 +349,48 @@ class FeishuTaskNotifierTest(unittest.TestCase):
             self.assertEqual(len(client.sent_cards), 1)
             self.assertEqual(len(client.updated_cards), 1)
 
+    def test_stale_running_snapshot_does_not_override_completed_card(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            controller = TaskController(
+                store=SqliteTaskStore(os.path.join(tempdir, "poco.db")),
+                runner=StubAgentRunner(),
+            )
+            client = FakeMessageClient()
+            notifier = FeishuTaskNotifier(
+                client,  # type: ignore[arg-type]
+                task_controller=controller,
+            )
+            task = controller.create_task(
+                requester_id="ou_demo",
+                prompt="write a report",
+                source="feishu_group_message",
+                project_id="proj_1",
+                effective_workdir="/srv/poco/api",
+                reply_receive_id="oc_group_1",
+                reply_receive_id_type="chat_id",
+                notification_message_id="om_existing_card",
+            )
+            stale_running = controller.get_task(task.id)
+            stale_running.set_status(TaskStatus.RUNNING)
+            stale_running.append_live_output("partial output")
+            controller._store.save(stale_running)  # type: ignore[attr-defined]
+
+            completed = controller.get_task(task.id)
+            completed.set_result("Done.")
+            completed.clear_live_output()
+            completed.set_status(TaskStatus.COMPLETED)
+            controller._store.save(completed)  # type: ignore[attr-defined]
+
+            notifier.notify_task(stale_running)
+
+            self.assertEqual(len(client.sent_cards), 0)
+            self.assertEqual(len(client.updated_cards), 1)
+            card = client.updated_cards[0]["card"]
+            self.assertEqual(
+                card["header"]["title"]["content"],
+                f"[Complete] Task: {task.id} (stub, /srv/poco/api)",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

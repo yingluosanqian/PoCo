@@ -87,7 +87,7 @@ class Task:
         self.result_summary = _result_preview(raw_result)
         self.updated_at = utc_now()
 
-    def append_live_output(self, chunk: str, *, limit: int = 4000) -> None:
+    def append_live_output(self, chunk: str, *, limit: int = 200000) -> None:
         if not chunk:
             return
         combined = f"{self.live_output or ''}{chunk}"

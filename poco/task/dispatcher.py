@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from copy import deepcopy
+from threading import RLock
 from threading import Thread
 
 from poco.task.controller import TaskController
@@ -16,6 +18,9 @@ class AsyncTaskDispatcher:
     ) -> None:
         self._controller = controller
         self._notifier = notifier or NullTaskNotifier()
+        self._running_notify_lock = RLock()
+        self._running_notify_latest: dict[str, Task] = {}
+        self._running_notify_active: set[str] = set()
 
     def dispatch_start(self, task_id: str) -> None:
         self._launch(lambda: self._run_start(task_id))
@@ -65,8 +70,9 @@ class AsyncTaskDispatcher:
 
     def _notify_if_needed(self, task: Task) -> None:
         if task.status == TaskStatus.RUNNING:
-            self._notifier.notify_task(task)
+            self._enqueue_running_notification(task)
             return
+        self._clear_running_notification(task.id)
         if task.status in {
             TaskStatus.QUEUED,
             TaskStatus.WAITING_FOR_CONFIRMATION,
@@ -86,3 +92,32 @@ class AsyncTaskDispatcher:
         if not task.project_id:
             return
         self.dispatch_next_queued(task.project_id)
+
+    def _enqueue_running_notification(self, task: Task) -> None:
+        snapshot = deepcopy(task)
+        with self._running_notify_lock:
+            self._running_notify_latest[task.id] = snapshot
+            if task.id in self._running_notify_active:
+                return
+            self._running_notify_active.add(task.id)
+        self._launch(lambda: self._drain_running_notifications(task.id))
+
+    def _drain_running_notifications(self, task_id: str) -> None:
+        while True:
+            with self._running_notify_lock:
+                snapshot = self._running_notify_latest.get(task_id)
+            if snapshot is None:
+                with self._running_notify_lock:
+                    self._running_notify_active.discard(task_id)
+                return
+            self._notifier.notify_task(snapshot)
+            with self._running_notify_lock:
+                latest = self._running_notify_latest.get(task_id)
+                if latest is snapshot:
+                    self._running_notify_latest.pop(task_id, None)
+                    self._running_notify_active.discard(task_id)
+                    return
+
+    def _clear_running_notification(self, task_id: str) -> None:
+        with self._running_notify_lock:
+            self._running_notify_latest.pop(task_id, None)

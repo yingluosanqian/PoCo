@@ -725,7 +725,8 @@ def _render_task_status(
     live_output = task.get("live_output") or ""
     raw_result = task.get("raw_result") or task.get("result_summary") or "No result yet."
     requested_page = _normalize_page(data.get("result_page"))
-    result_chunk, page, total_pages = _paginate_text(raw_result, page=requested_page)
+    page = 1
+    total_pages = 1
     elements: list[dict[str, Any]] = []
 
     awaiting = task.get("awaiting_confirmation_reason")
@@ -757,10 +758,44 @@ def _render_task_status(
             )
         )
     elif status == "running":
-        elements.append(_markdown(live_output or "Waiting for agent output..."))
+        if live_output:
+            live_chunk, page, total_pages = _paginate_text(live_output, page=requested_page)
+            elements.append(_markdown(live_chunk))
+            if total_pages > 1:
+                if page > 1:
+                    elements.append(
+                        _button(
+                            label="Previous Page",
+                            intent_value={
+                                "intent_key": "task.open",
+                                "surface": surface,
+                                "project_id": task.get("project_id") or "",
+                                "task_id": task["id"],
+                                "page": str(page - 1),
+                            },
+                            name=f"task_prev_page_{task['id']}_{page}",
+                        )
+                    )
+                if page < total_pages:
+                    elements.append(
+                        _button(
+                            label="Next Page",
+                            intent_value={
+                                "intent_key": "task.open",
+                                "surface": surface,
+                                "project_id": task.get("project_id") or "",
+                                "task_id": task["id"],
+                                "page": str(page + 1),
+                            },
+                            name=f"task_next_page_{task['id']}_{page}",
+                        )
+                    )
+        else:
+            elements.append(_markdown("Waiting for agent output..."))
     elif status == "queued":
         elements.append(_markdown("Queued. This task will start after the current task finishes."))
     else:
+        result_chunk, page, total_pages = _paginate_text(raw_result, page=requested_page)
         elements.append(_markdown(result_chunk))
         if total_pages > 1:
             if page > 1:

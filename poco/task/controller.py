@@ -348,7 +348,10 @@ class TaskController:
                     raise TaskStateError(f"Unsupported runner update kind: {update.kind}")
                 self._store.save(task)
                 self._sync_session(task)
-            if on_update is not None:
+            should_callback = True
+            if update.kind == "progress" and not getattr(update, "output_chunk", None):
+                should_callback = False
+            if on_update is not None and should_callback:
                 on_update(task)
 
         with self._lock:

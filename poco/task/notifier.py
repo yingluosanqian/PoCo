@@ -50,6 +50,7 @@ class FeishuTaskNotifier:
         self._last_running_update_at: dict[str, float] = {}
 
     def notify_task(self, task: Task) -> None:
+        task = self._freshest_task(task)
         if not task.reply_receive_id or not task.reply_receive_id_type:
             return
         if task.status == TaskStatus.RUNNING and not self._should_send_running_update(task):
@@ -162,6 +163,17 @@ class FeishuTaskNotifier:
                     },
                 )
             raise
+
+    def _freshest_task(self, task: Task) -> Task:
+        if self._task_controller is None:
+            return task
+        try:
+            latest = self._task_controller.get_task(task.id)
+        except Exception:
+            return task
+        if latest.updated_at >= task.updated_at:
+            return latest
+        return task
 
     def _should_send_running_update(
         self,

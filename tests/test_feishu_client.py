@@ -535,6 +535,46 @@ class FeishuClientTest(unittest.TestCase):
         self.assertEqual(change_workdir_button["behaviors"][0]["value"]["intent_key"], "workspace.enter_path")
         self.assertEqual(change_model_button["behaviors"][0]["value"]["intent_key"], "workspace.choose_model")
 
+    def test_task_status_card_adds_pagination_for_long_live_output(self) -> None:
+        task = {
+            "id": "task_run_long",
+            "project_id": "proj_1",
+            "agent_backend": "codex",
+            "effective_workdir": "/srv/poco/api",
+            "prompt": "stream output",
+            "status": "running",
+            "awaiting_confirmation_reason": None,
+            "live_output": "A" * 5000,
+        }
+        card = FeishuCardRenderer().render(
+            build_render_instruction(
+                IntentDispatchResult(
+                    status=DispatchStatus.OK,
+                    intent_key="task.status",
+                    resource_refs=ResourceRefs(project_id="proj_1", task_id="task_run_long"),
+                    view_model=ViewModel(
+                        "task_status",
+                        {
+                            "task": task,
+                            "result_page": 1,
+                        },
+                    ),
+                    refresh_mode=RefreshMode.REPLACE_CURRENT,
+                ),
+                surface=Surface.GROUP,
+            )
+        )
+
+        self.assertEqual(
+            card["header"]["title"]["content"],
+            "[Running] Task: task_run_long (codex, /srv/poco/api) [1/3]",
+        )
+        next_button = card["body"]["elements"][1]
+        stop_button = card["body"]["elements"][2]
+        self.assertEqual(next_button["behaviors"][0]["value"]["intent_key"], "task.open")
+        self.assertEqual(next_button["behaviors"][0]["value"]["page"], "2")
+        self.assertEqual(stop_button["behaviors"][0]["value"]["intent_key"], "task.stop")
+
     def test_task_status_card_uses_stopped_title_and_grey_template_when_cancelled(self) -> None:
         task = {
             "id": "task_stop_1",
