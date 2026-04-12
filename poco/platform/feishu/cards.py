@@ -966,6 +966,7 @@ def _render_task_status(
     surface: str,
 ) -> dict[str, Any]:
     task = data["task"]
+    agent_backend = task.get("agent_backend") or ""
     queue_position = data.get("queue_position")
     blocking_task_id = data.get("blocking_task_id")
     status = task.get("status") or "unknown"
@@ -1008,7 +1009,7 @@ def _render_task_status(
     elif status == "running":
         if live_output:
             live_chunk, page, total_pages = _paginate_text(live_output, page=requested_page)
-            elements.append(_markdown(live_chunk))
+            elements.append(_markdown(_format_task_output_for_backend(live_chunk, backend=agent_backend)))
             if total_pages > 1:
                 if page > 1:
                     elements.append(
@@ -1051,7 +1052,7 @@ def _render_task_status(
         elements.append(_markdown("\n".join(details)))
     else:
         result_chunk, page, total_pages = _paginate_text(raw_result, page=requested_page)
-        elements.append(_markdown(result_chunk))
+        elements.append(_markdown(_format_task_output_for_backend(result_chunk, backend=agent_backend)))
         if total_pages > 1:
             if page > 1:
                 elements.append(
@@ -1244,6 +1245,62 @@ def _plain_text(content: str) -> dict[str, Any]:
 def _as_code_block(content: str) -> str:
     safe = content.replace("```", "'''")
     return f"```text\n{safe}\n```"
+
+
+def _format_task_output_for_backend(content: str, *, backend: str) -> str:
+    if backend != "coco":
+        return content
+    return _format_coco_output(content)
+
+
+def _format_coco_output(content: str) -> str:
+    if "```" in content or "\n" not in content:
+        return content
+    if _looks_like_code(content):
+        return _as_code_block(content)
+    return content.replace("\n", "  \n")
+
+
+def _looks_like_code(content: str) -> bool:
+    stripped = content.strip()
+    if not stripped:
+        return False
+    lines = stripped.splitlines()
+    first = lines[0].strip().lower()
+    if first in {
+        "python",
+        "py",
+        "javascript",
+        "js",
+        "typescript",
+        "ts",
+        "tsx",
+        "jsx",
+        "java",
+        "kotlin",
+        "kt",
+        "go",
+        "rust",
+        "rs",
+        "c",
+        "cpp",
+        "c++",
+        "cxx",
+        "cc",
+        "shell",
+        "bash",
+        "sh",
+        "json",
+        "yaml",
+        "yml",
+        "sql",
+        "html",
+        "css",
+        "xml",
+    }:
+        return True
+    code_markers = ("#include", "using namespace", "int main(", "def ", "class ", "function ", "const ", "let ", "var ", "import ", "from ", "{", "};")
+    return sum(1 for line in lines if any(marker in line for marker in code_markers)) >= 2
 
 
 def _button(

@@ -771,8 +771,75 @@ class FeishuClientTest(unittest.TestCase):
         live_block = card["body"]["elements"][0]
         self.assertEqual(live_block["tag"], "markdown")
         self.assertIn("Step 1", live_block["content"])
+        self.assertEqual(live_block["content"], "Step 1\nStep 2")
         self.assertEqual(card["body"]["elements"][1]["behaviors"][0]["value"]["intent_key"], "task.stop")
         self.assertEqual(len(card["body"]["elements"]), 2)
+
+    def test_task_status_card_preserves_multiline_result_formatting_for_coco_code(self) -> None:
+        task = {
+            "id": "task_multiline_1",
+            "project_id": "proj_1",
+            "agent_backend": "coco",
+            "effective_workdir": "/srv/poco/api",
+            "prompt": "write code",
+            "status": "completed",
+            "awaiting_confirmation_reason": None,
+            "raw_result": "cpp\n#include <iostream>\nint main() {\n  return 0;\n}",
+        }
+        card = FeishuCardRenderer().render(
+            build_render_instruction(
+                IntentDispatchResult(
+                    status=DispatchStatus.OK,
+                    intent_key="task.status",
+                    resource_refs=ResourceRefs(project_id="proj_1", task_id="task_multiline_1"),
+                    view_model=ViewModel(
+                        "task_status",
+                        {
+                            "task": task,
+                        },
+                    ),
+                    refresh_mode=RefreshMode.REPLACE_CURRENT,
+                ),
+                surface=Surface.GROUP,
+            )
+        )
+
+        result_block = card["body"]["elements"][0]
+        self.assertTrue(result_block["content"].startswith("```text\n"))
+        self.assertIn("#include <iostream>", result_block["content"])
+        self.assertIn("int main() {\n  return 0;\n}", result_block["content"])
+
+    def test_task_status_card_preserves_multiline_result_formatting_for_coco_text(self) -> None:
+        task = {
+            "id": "task_multiline_text_1",
+            "project_id": "proj_1",
+            "agent_backend": "coco",
+            "effective_workdir": "/srv/poco/api",
+            "prompt": "write plan",
+            "status": "completed",
+            "awaiting_confirmation_reason": None,
+            "raw_result": "第一步\n第二步\n第三步",
+        }
+        card = FeishuCardRenderer().render(
+            build_render_instruction(
+                IntentDispatchResult(
+                    status=DispatchStatus.OK,
+                    intent_key="task.status",
+                    resource_refs=ResourceRefs(project_id="proj_1", task_id="task_multiline_text_1"),
+                    view_model=ViewModel(
+                        "task_status",
+                        {
+                            "task": task,
+                        },
+                    ),
+                    refresh_mode=RefreshMode.REPLACE_CURRENT,
+                ),
+                surface=Surface.GROUP,
+            )
+        )
+
+        result_block = card["body"]["elements"][0]
+        self.assertEqual(result_block["content"], "第一步  \n第二步  \n第三步")
 
     def test_task_status_card_adds_pagination_for_long_raw_result(self) -> None:
         task = {
