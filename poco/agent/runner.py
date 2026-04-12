@@ -628,6 +628,207 @@ class ClaudeCodeRunner:
             return True
 
 
+class CursorAgentRunner:
+    name = "cursor_agent"
+
+    def __init__(
+        self,
+        *,
+        command: str = "cursor-agent",
+        workdir: str,
+        model: str | None = None,
+        timeout_seconds: int = 900,
+    ) -> None:
+        self._command = command
+        self._workdir = workdir
+        self._model = model
+        self._timeout_seconds = timeout_seconds
+        self._lock = RLock()
+        self._active_processes: dict[str, subprocess.Popen[str]] = {}
+        self._cancelled_tasks: set[str] = set()
+
+    def is_ready(self) -> tuple[bool, str]:
+        executable = shutil.which(self._command)
+        if not executable:
+            return False, f"Cursor Agent CLI not found: {self._command}"
+        if not Path(self._workdir).exists():
+            return False, f"Cursor Agent workdir does not exist: {self._workdir}"
+        return True, f"Cursor Agent ready via {executable}"
+
+    def start(self, task: Task) -> Iterator[AgentRunUpdate]:
+        yield AgentRunUpdate(
+            kind="progress",
+            message=f"Task accepted by the {self.name} runner.",
+        )
+        if _requires_confirmation(task.prompt):
+            yield AgentRunUpdate(
+                kind="confirmation_required",
+                message="Awaiting explicit approval before invoking Cursor Agent.",
+            )
+            return
+        yield from self._execute_prompt(task, _normalized_prompt(task.prompt))
+
+    def resume_after_confirmation(self, task: Task) -> Iterator[AgentRunUpdate]:
+        yield AgentRunUpdate(
+            kind="progress",
+            message="Approval received. Invoking Cursor Agent.",
+        )
+        yield from self._execute_prompt(task, _normalized_prompt(task.prompt))
+
+    def cancel(self, task_id: str) -> bool:
+        with self._lock:
+            process = self._active_processes.get(task_id)
+            if process is None:
+                return False
+            self._cancelled_tasks.add(task_id)
+        process.kill()
+        return True
+
+    def resolve_execution_context(self, task: Task) -> tuple[str | None, str | None, str | None]:
+        return (
+            task.effective_model or self._model,
+            task.effective_workdir or self._workdir,
+            task.effective_sandbox,
+        )
+
+    def _execute_prompt(self, task: Task, prompt: str) -> Iterator[AgentRunUpdate]:
+        executable = shutil.which(self._command)
+        if not executable:
+            yield AgentRunUpdate(kind="failed", message=f"Cursor Agent CLI not found: {self._command}")
+            return
+
+        workdir = task.effective_workdir or self._workdir
+        if not Path(workdir).exists():
+            yield AgentRunUpdate(kind="failed", message=f"Cursor Agent workdir does not exist: {workdir}")
+            return
+
+        resolved_model = task.effective_model or self._model
+        command = [
+            self._command,
+            "-p",
+            "--output-format",
+            "stream-json",
+            "--stream-partial-output",
+            "--trust",
+            "--workspace",
+            workdir,
+        ]
+        if resolved_model:
+            command.extend(["--model", resolved_model])
+        if task.backend_session_id:
+            command.extend(["--resume", task.backend_session_id])
+        command.append(prompt)
+
+        process: subprocess.Popen[str] | None = None
+        backend_session_id = task.backend_session_id
+        stderr_lines: list[str] = []
+        final_text: str | None = None
+        live_text = ""
+        try:
+            process = subprocess.Popen(
+                command,
+                cwd=workdir,
+                env=os.environ.copy(),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+            )
+            with self._lock:
+                self._active_processes[task.id] = process
+
+            deadline = monotonic() + self._timeout_seconds
+            stdout = process.stdout
+            stderr = process.stderr
+            if stdout is None or stderr is None:
+                yield AgentRunUpdate(kind="failed", message="Cursor Agent pipes are not available.")
+                return
+
+            session_announced = False
+            while True:
+                if self._consume_cancelled(task.id):
+                    return
+                if process.poll() is not None and not _has_ready_stream(stdout, stderr):
+                    break
+                remaining = max(0.0, deadline - monotonic())
+                if remaining == 0.0:
+                    process.kill()
+                    yield AgentRunUpdate(
+                        kind="failed",
+                        message=f"Cursor Agent timed out after {self._timeout_seconds} seconds.",
+                        backend_session_id=backend_session_id,
+                    )
+                    return
+                ready, _, _ = select.select([stdout, stderr], [], [], min(0.25, remaining))
+                if not ready:
+                    continue
+                for stream in ready:
+                    line = stream.readline()
+                    if not line:
+                        continue
+                    if stream is stderr:
+                        stderr_lines.append(line)
+                        continue
+                    event = _parse_json_event(line)
+                    if event is None:
+                        continue
+                    extracted_session_id = _extract_cursor_session_id(event)
+                    if extracted_session_id:
+                        backend_session_id = extracted_session_id
+                        if not session_announced:
+                            session_announced = True
+                            yield AgentRunUpdate(
+                                kind="progress",
+                                message="Cursor Agent session ready.",
+                                backend_session_id=backend_session_id,
+                            )
+                    output_chunk, live_text = _extract_cursor_output_chunk(event, current_live_text=live_text)
+                    if output_chunk:
+                        yield AgentRunUpdate(
+                            kind="progress",
+                            message="Cursor Agent output updated.",
+                            output_chunk=output_chunk,
+                            backend_session_id=backend_session_id,
+                        )
+                    extracted_final_text = _extract_cursor_final_text(event)
+                    if extracted_final_text:
+                        final_text = extracted_final_text
+
+            if self._consume_cancelled(task.id):
+                return
+            if process.returncode and process.returncode != 0:
+                yield AgentRunUpdate(
+                    kind="failed",
+                    message="".join(stderr_lines).strip() or "Cursor Agent exited with a non-zero status.",
+                    backend_session_id=backend_session_id,
+                )
+                return
+            raw_result = final_text or live_text.strip() or "Cursor Agent completed without a final response body."
+            yield AgentRunUpdate(
+                kind="completed",
+                message="Task completed by the cursor_agent runner.",
+                raw_result=raw_result,
+                backend_session_id=backend_session_id,
+            )
+        except OSError as exc:
+            yield AgentRunUpdate(
+                kind="failed",
+                message=f"Failed to start Cursor Agent CLI: {exc}",
+                backend_session_id=backend_session_id,
+            )
+        finally:
+            with self._lock:
+                self._active_processes.pop(task.id, None)
+                self._cancelled_tasks.discard(task.id)
+
+    def _consume_cancelled(self, task_id: str) -> bool:
+        with self._lock:
+            if task_id not in self._cancelled_tasks:
+                return False
+            self._cancelled_tasks.discard(task_id)
+            return True
+
+
 class CodexCliRunner:
     name = "codex"
 
@@ -891,6 +1092,10 @@ def create_agent_runner(
     claude_model: str | None,
     claude_permission_mode: str,
     claude_timeout_seconds: int,
+    cursor_command: str,
+    cursor_workdir: str,
+    cursor_model: str | None,
+    cursor_timeout_seconds: int,
 ) -> AgentRunner:
     normalized = backend.strip().lower() or "codex"
     runners: dict[str, AgentRunner] = {
@@ -909,11 +1114,13 @@ def create_agent_runner(
             permission_mode=claude_permission_mode,
             timeout_seconds=claude_timeout_seconds,
         ),
-        "stub": StubAgentRunner(),
-        "cursor_agent": UnavailableAgentRunner(
-            name="cursor_agent",
-            reason="Agent backend 'cursor_agent' is planned but not implemented yet.",
+        "cursor_agent": CursorAgentRunner(
+            command=cursor_command,
+            workdir=cursor_workdir,
+            model=cursor_model,
+            timeout_seconds=cursor_timeout_seconds,
         ),
+        "stub": StubAgentRunner(),
         "coco": UnavailableAgentRunner(
             name="coco",
             reason="Agent backend 'coco' is planned but not implemented yet.",
@@ -924,7 +1131,7 @@ def create_agent_runner(
             name=normalized or "unknown",
             reason=(
                 f"Unsupported agent backend: {backend}. "
-                "Current implemented backends are 'codex', 'claude_code', and 'stub'."
+                "Current implemented backends are 'codex', 'claude_code', 'cursor_agent', and 'stub'."
             ),
         )
     return MultiAgentRunner(
@@ -996,6 +1203,68 @@ def _extract_claude_message_text(message: dict[str, object]) -> str | None:
     if not parts:
         return None
     return "".join(parts)
+
+
+def _extract_cursor_session_id(event: dict[str, object]) -> str | None:
+    for key in ("chatId", "sessionId", "session_id", "conversationId", "conversation_id"):
+        value = _optional_string(event.get(key))
+        if value:
+            return value
+    result = event.get("result")
+    if isinstance(result, dict):
+        for key in ("chatId", "sessionId", "session_id", "conversationId", "conversation_id"):
+            value = _optional_string(result.get(key))
+            if value:
+                return value
+    return None
+
+
+def _extract_cursor_output_chunk(
+    event: dict[str, object],
+    *,
+    current_live_text: str,
+) -> tuple[str | None, str]:
+    text_delta = _string_or_none(event.get("textDelta"))
+    if text_delta is not None:
+        return text_delta, current_live_text + text_delta
+    partial_message = _string_or_none(event.get("partialMessage"))
+    if partial_message is not None:
+        if partial_message.startswith(current_live_text):
+            return partial_message[len(current_live_text):] or None, partial_message
+        return partial_message, partial_message
+    result = event.get("result")
+    if isinstance(result, dict):
+        text_delta = _string_or_none(result.get("textDelta"))
+        if text_delta is not None:
+            return text_delta, current_live_text + text_delta
+        partial_message = _string_or_none(result.get("partialMessage"))
+        if partial_message is not None:
+            if partial_message.startswith(current_live_text):
+                return partial_message[len(current_live_text):] or None, partial_message
+            return partial_message, partial_message
+    return None, current_live_text
+
+
+def _extract_cursor_final_text(event: dict[str, object]) -> str | None:
+    result = event.get("result")
+    if isinstance(result, str):
+        return _optional_string(result)
+    if isinstance(result, dict):
+        for key in ("text", "message", "content", "finalMessage"):
+            value = _optional_string(result.get(key))
+            if value:
+                return value
+    assistant = event.get("assistant")
+    if isinstance(assistant, dict):
+        for key in ("text", "message", "content"):
+            value = _optional_string(assistant.get(key))
+            if value:
+                return value
+    for key in ("message", "content", "text"):
+        value = event.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
 
 
 class _CodexAppServerSession:

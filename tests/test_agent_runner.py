@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from poco.agent.runner import ClaudeCodeRunner, CodexAppServerRunner, CodexCliRunner
+from poco.agent.runner import ClaudeCodeRunner, CodexAppServerRunner, CodexCliRunner, CursorAgentRunner
 from poco.task.models import Task, TaskStatus
 
 
@@ -365,6 +365,8 @@ class ClaudeCodeRunnerTest(unittest.TestCase):
                     return line
 
             class FakeStderr:
+                exhausted = True
+
                 def readline(self) -> str:
                     return ""
 
@@ -386,7 +388,10 @@ class ClaudeCodeRunnerTest(unittest.TestCase):
             with (
                 patch("poco.agent.runner.shutil.which", return_value="/Users/yihanc/.local/bin/claude"),
                 patch("poco.agent.runner.subprocess.Popen", return_value=fake_process),
-                patch("poco.agent.runner.select.select", side_effect=lambda readers, *_args: (readers, [], [])),
+                patch(
+                    "poco.agent.runner.select.select",
+                    side_effect=lambda readers, *_args: ([reader for reader in readers if not getattr(reader, "exhausted", True)], [], []),
+                ),
             ):
                 updates = list(runner.start(task))
 
@@ -413,6 +418,7 @@ class ClaudeCodeRunnerTest(unittest.TestCase):
 
             class FakeStdout:
                 def __init__(self) -> None:
+                    self.exhausted = False
                     self._lines = iter(
                         [
                             '{"type":"result","subtype":"success","result":"continued","session_id":"session_existing"}\n',
@@ -420,9 +426,14 @@ class ClaudeCodeRunnerTest(unittest.TestCase):
                     )
 
                 def readline(self) -> str:
-                    return next(self._lines, "")
+                    line = next(self._lines, "")
+                    if not line:
+                        self.exhausted = True
+                    return line
 
             class FakeStderr:
+                exhausted = True
+
                 def readline(self) -> str:
                     return ""
 
@@ -443,7 +454,10 @@ class ClaudeCodeRunnerTest(unittest.TestCase):
             with (
                 patch("poco.agent.runner.shutil.which", return_value="/Users/yihanc/.local/bin/claude"),
                 patch("poco.agent.runner.subprocess.Popen", FakePopen),
-                patch("poco.agent.runner.select.select", side_effect=lambda readers, *_args: (readers, [], [])),
+                patch(
+                    "poco.agent.runner.select.select",
+                    side_effect=lambda readers, *_args: ([reader for reader in readers if not getattr(reader, "exhausted", True)], [], []),
+                ),
             ):
                 updates = list(runner.start(task))
 
@@ -466,10 +480,18 @@ class ClaudeCodeRunnerTest(unittest.TestCase):
             captured: dict[str, object] = {}
 
             class FakeStdout:
+                def __init__(self) -> None:
+                    self.exhausted = False
+
                 def readline(self) -> str:
+                    if self.exhausted:
+                        return ""
+                    self.exhausted = True
                     return '{"type":"result","subtype":"success","result":"done","session_id":"session_bypass"}\n'
 
             class FakeStderr:
+                exhausted = True
+
                 def readline(self) -> str:
                     return ""
 
@@ -490,7 +512,10 @@ class ClaudeCodeRunnerTest(unittest.TestCase):
             with (
                 patch("poco.agent.runner.shutil.which", return_value="/Users/yihanc/.local/bin/claude"),
                 patch("poco.agent.runner.subprocess.Popen", FakePopen),
-                patch("poco.agent.runner.select.select", side_effect=lambda readers, *_args: (readers, [], [])),
+                patch(
+                    "poco.agent.runner.select.select",
+                    side_effect=lambda readers, *_args: ([reader for reader in readers if not getattr(reader, "exhausted", True)], [], []),
+                ),
             ):
                 updates = list(runner.start(task))
 
@@ -500,6 +525,138 @@ class ClaudeCodeRunnerTest(unittest.TestCase):
             env = captured["env"]
             self.assertIsInstance(env, dict)
             self.assertEqual(env["IS_SANDBOX"], "1")
+
+
+class CursorAgentRunnerTest(unittest.TestCase):
+    def test_cursor_runner_streams_deltas_and_completes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = CursorAgentRunner(command="cursor-agent", workdir=tmpdir, model="gpt-5")
+            task = Task(
+                id="cursor_task_stream",
+                requester_id="ou_demo",
+                prompt="stream output",
+                source="feishu",
+                status=TaskStatus.RUNNING,
+                agent_backend="cursor_agent",
+            )
+
+            class FakeStdout:
+                def __init__(self) -> None:
+                    self.exhausted = False
+                    self._lines = iter(
+                        [
+                            '{"chatId":"chat_123","type":"session"}\n',
+                            '{"textDelta":"Hello"}\n',
+                            '{"textDelta":" world"}\n',
+                            '{"result":"Hello world","chatId":"chat_123"}\n',
+                        ]
+                    )
+
+                def readline(self) -> str:
+                    line = next(self._lines, "")
+                    if not line:
+                        self.exhausted = True
+                    return line
+
+            class FakeStderr:
+                exhausted = True
+
+                def readline(self) -> str:
+                    return ""
+
+            class FakePopen:
+                def __init__(self) -> None:
+                    self.stdout = FakeStdout()
+                    self.stderr = FakeStderr()
+                    self.returncode = 0
+                    self.killed = False
+
+                def poll(self):  # type: ignore[no-untyped-def]
+                    return 0 if self.killed or self.stdout.exhausted else None
+
+                def kill(self) -> None:
+                    self.killed = True
+                    self.returncode = -9
+
+            fake_process = FakePopen()
+            with (
+                patch("poco.agent.runner.shutil.which", return_value="/Users/yihanc/.local/bin/cursor-agent"),
+                patch("poco.agent.runner.subprocess.Popen", return_value=fake_process),
+                patch(
+                    "poco.agent.runner.select.select",
+                    side_effect=lambda readers, *_args: ([reader for reader in readers if not getattr(reader, "exhausted", True)], [], []),
+                ),
+            ):
+                updates = list(runner.start(task))
+
+            self.assertEqual(updates[1].backend_session_id, "chat_123")
+            self.assertEqual(updates[2].output_chunk, "Hello")
+            self.assertEqual(updates[3].output_chunk, " world")
+            self.assertEqual(updates[-1].kind, "completed")
+            self.assertEqual(updates[-1].raw_result, "Hello world")
+
+    def test_cursor_runner_resumes_existing_session(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = CursorAgentRunner(command="cursor-agent", workdir=tmpdir, model="gpt-5")
+            task = Task(
+                id="cursor_task_resume",
+                requester_id="ou_demo",
+                prompt="continue",
+                source="feishu",
+                status=TaskStatus.RUNNING,
+                agent_backend="cursor_agent",
+                backend_session_id="chat_existing",
+            )
+            captured: dict[str, object] = {}
+
+            class FakeStdout:
+                def __init__(self) -> None:
+                    self.exhausted = False
+                    self._lines = iter(
+                        [
+                            '{"result":"continued","chatId":"chat_existing"}\n',
+                        ]
+                    )
+
+                def readline(self) -> str:
+                    line = next(self._lines, "")
+                    if not line:
+                        self.exhausted = True
+                    return line
+
+            class FakeStderr:
+                exhausted = True
+
+                def readline(self) -> str:
+                    return ""
+
+            class FakePopen:
+                def __init__(self, command, **kwargs):  # type: ignore[no-untyped-def]
+                    captured["command"] = command
+                    captured["cwd"] = kwargs.get("cwd")
+                    self.stdout = FakeStdout()
+                    self.stderr = FakeStderr()
+                    self.returncode = 0
+
+                def poll(self):  # type: ignore[no-untyped-def]
+                    return 0
+
+                def kill(self) -> None:
+                    return None
+
+            with (
+                patch("poco.agent.runner.shutil.which", return_value="/Users/yihanc/.local/bin/cursor-agent"),
+                patch("poco.agent.runner.subprocess.Popen", FakePopen),
+                patch(
+                    "poco.agent.runner.select.select",
+                    side_effect=lambda readers, *_args: ([reader for reader in readers if not getattr(reader, "exhausted", True)], [], []),
+                ),
+            ):
+                updates = list(runner.start(task))
+
+            self.assertEqual(updates[-1].backend_session_id, "chat_existing")
+            self.assertIn("--resume", captured["command"])
+            self.assertIn("chat_existing", captured["command"])
 
 
 if __name__ == "__main__":

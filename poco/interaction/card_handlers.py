@@ -104,7 +104,7 @@ class ProjectIntentHandler:
         if not name:
             return _rejected(intent, "Project name cannot be empty.")
         backend = str(intent.payload.get("backend", "codex")).strip() or "codex"
-        if backend not in {"codex", "claude_code"}:
+        if backend not in {"codex", "claude_code", "cursor_agent"}:
             return _rejected(intent, f"Unsupported agent backend: {backend}")
         project = self.project_controller.create_project(
             name=name,
@@ -783,6 +783,7 @@ def _project_create_view_model(*, actor_id: str | None) -> ViewModel:
             "backend_options": [
                 {"label": "Codex", "value": "codex"},
                 {"label": "Claude Code", "value": "claude_code"},
+                {"label": "Cursor Agent", "value": "cursor_agent"},
             ],
         },
     )

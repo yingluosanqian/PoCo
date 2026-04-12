@@ -100,9 +100,18 @@ export POCO_CLAUDE_PERMISSION_MODE="default"
 export POCO_CLAUDE_TIMEOUT_SECONDS="900"
 ```
 
+Optional Cursor Agent settings:
+
+```bash
+export POCO_CURSOR_COMMAND="cursor-agent"
+export POCO_CURSOR_WORKDIR="/absolute/path/to/your/repo"
+export POCO_CURSOR_MODEL="gpt-5"
+export POCO_CURSOR_TIMEOUT_SECONDS="900"
+```
+
 Use `POCO_AGENT_BACKEND=stub` if you want to exercise the flow without calling Codex.
 
-PoCo now supports both `codex` and `claude_code`. `cursor_agent` is still recognized as planned but not implemented yet.
+PoCo now supports `codex`, `claude_code`, and `cursor_agent`. `coco` is still recognized as planned but not implemented yet.
 
 Set the Feishu app credentials before using the real callback flow:
 

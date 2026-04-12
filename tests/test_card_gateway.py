@@ -202,6 +202,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
         self.assertEqual(backend_select["name"], "backend")
         self.assertEqual(backend_select["options"][0]["value"], "codex")
         self.assertEqual(backend_select["options"][1]["value"], "claude_code")
+        self.assertEqual(backend_select["options"][2]["value"], "cursor_agent")
 
     def test_project_create_action_returns_project_home_card(self) -> None:
         payload = {
@@ -289,6 +290,31 @@ class FeishuCardGatewayTest(unittest.TestCase):
         self.assertEqual(response["instruction"]["template_key"], "project_home")
         created = self.project_controller.list_projects()[0]
         self.assertEqual(created.backend, "claude_code")
+
+    def test_project_create_supports_cursor_agent_backend(self) -> None:
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_card_cursor_create_1"},
+                "action": {
+                    "value": {
+                        "intent_key": "project.create",
+                        "surface": "dm",
+                        "request_id": "req_project_create_cursor_1",
+                    },
+                    "form_value": {
+                        "name": "PoCo Cursor",
+                        "backend": "cursor_agent",
+                    },
+                },
+            }
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        self.assertEqual(response["instruction"]["template_key"], "project_home")
+        created = self.project_controller.list_projects()[0]
+        self.assertEqual(created.backend, "cursor_agent")
 
     def test_project_delete_action_removes_project_only(self) -> None:
         project = self.project_controller.create_project(

@@ -53,6 +53,12 @@ _BACKEND_DESCRIPTORS: dict[str, BackendDescriptor] = {
     "cursor_agent": BackendDescriptor(
         key="cursor_agent",
         label="Cursor Agent",
+        model_options=(
+            "gpt-5",
+            "sonnet-4",
+            "sonnet-4-thinking",
+        ),
+        default_config={"model": "gpt-5"},
     ),
     "coco": BackendDescriptor(
         key="coco",
