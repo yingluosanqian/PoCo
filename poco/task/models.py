@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 
+from poco.agent.catalog import backend_option, normalize_backend_config
+
 
 def utc_now() -> datetime:
     return datetime.now(UTC)
@@ -40,6 +42,7 @@ class Task:
     requester_id: str
     prompt: str
     agent_backend: str = "unknown"
+    effective_backend_config: dict[str, object] = field(default_factory=dict)
     effective_model: str | None = None
     effective_sandbox: str | None = None
     backend_session_id: str | None = None
@@ -58,6 +61,18 @@ class Task:
     created_at: datetime = field(default_factory=utc_now)
     updated_at: datetime = field(default_factory=utc_now)
 
+    def __post_init__(self) -> None:
+        self.effective_backend_config = normalize_backend_config(
+            self.agent_backend,
+            {
+                **self.effective_backend_config,
+                **({"model": self.effective_model} if self.effective_model else {}),
+                **({"sandbox": self.effective_sandbox} if self.effective_sandbox else {}),
+            },
+        )
+        self.effective_model = backend_option(self.agent_backend, self.effective_backend_config, "model")
+        self.effective_sandbox = backend_option(self.agent_backend, self.effective_backend_config, "sandbox")
+
     def add_event(self, kind: str, message: str) -> None:
         self.events.append(TaskEvent(kind=kind, message=message))
         self.updated_at = utc_now()
@@ -73,13 +88,33 @@ class Task:
     def set_execution_context(
         self,
         *,
+        effective_backend_config: dict[str, object] | None = None,
         effective_model: str | None = None,
         effective_sandbox: str | None = None,
         effective_workdir: str | None = None,
         backend_session_id: str | None = None,
     ) -> None:
+        if effective_backend_config is not None:
+            self.effective_backend_config = normalize_backend_config(
+                self.agent_backend,
+                effective_backend_config,
+            )
         self.effective_model = effective_model
         self.effective_sandbox = effective_sandbox
+        if self.effective_model:
+            self.effective_backend_config["model"] = self.effective_model
+        else:
+            self.effective_backend_config.pop("model", None)
+        if self.effective_sandbox:
+            self.effective_backend_config["sandbox"] = self.effective_sandbox
+        else:
+            self.effective_backend_config.pop("sandbox", None)
+        self.effective_backend_config = normalize_backend_config(
+            self.agent_backend,
+            self.effective_backend_config,
+        )
+        self.effective_model = backend_option(self.agent_backend, self.effective_backend_config, "model")
+        self.effective_sandbox = backend_option(self.agent_backend, self.effective_backend_config, "sandbox")
         self.effective_workdir = effective_workdir
         if backend_session_id is not None:
             self.backend_session_id = backend_session_id
@@ -110,6 +145,7 @@ class Task:
             "requester_id": self.requester_id,
             "prompt": self.prompt,
             "agent_backend": self.agent_backend,
+            "effective_backend_config": dict(self.effective_backend_config),
             "effective_model": self.effective_model,
             "effective_sandbox": self.effective_sandbox,
             "backend_session_id": self.backend_session_id,

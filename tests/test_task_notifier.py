@@ -172,7 +172,7 @@ class FeishuTaskNotifierTest(unittest.TestCase):
         self.assertEqual(result_block["tag"], "markdown")
         self.assertIn("Done.", result_block["content"])
         self.assertEqual(change_workdir_button["behaviors"][0]["value"]["intent_key"], "workspace.enter_path")
-        self.assertEqual(change_model_button["behaviors"][0]["value"]["intent_key"], "workspace.choose_model")
+        self.assertEqual(change_model_button["behaviors"][0]["value"]["intent_key"], "workspace.choose_agent")
 
     def test_second_notification_updates_existing_task_card(self) -> None:
         client = FakeMessageClient()

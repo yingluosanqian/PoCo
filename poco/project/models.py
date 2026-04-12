@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
+from poco.agent.catalog import backend_option, normalize_backend_config
+
 
 def utc_now() -> datetime:
     return datetime.now(UTC)
@@ -14,6 +16,7 @@ class Project:
     name: str
     created_by: str
     backend: str = "codex"
+    backend_config: dict[str, object] = field(default_factory=dict)
     model: str | None = None
     sandbox: str = "workspace-write"
     repo: str | None = None
@@ -24,6 +27,18 @@ class Project:
     archived: bool = False
     created_at: datetime = field(default_factory=utc_now)
     updated_at: datetime = field(default_factory=utc_now)
+
+    def __post_init__(self) -> None:
+        self.backend_config = normalize_backend_config(
+            self.backend,
+            {
+                **self.backend_config,
+                **({"model": self.model} if self.model else {}),
+                **({"sandbox": self.sandbox} if self.sandbox else {}),
+            },
+        )
+        self.model = backend_option(self.backend, self.backend_config, "model")
+        self.sandbox = backend_option(self.backend, self.backend_config, "sandbox") or "workspace-write"
 
     def bind_group(self, group_chat_id: str) -> None:
         self.group_chat_id = group_chat_id
@@ -45,12 +60,27 @@ class Project:
 
     def set_model(self, model: str | None) -> None:
         normalized = model.strip() if model else None
-        self.model = normalized or None
+        if normalized:
+            self.backend_config["model"] = normalized
+        else:
+            self.backend_config.pop("model", None)
+        self.model = backend_option(self.backend, self.backend_config, "model")
         self.updated_at = utc_now()
 
     def set_sandbox(self, sandbox: str | None) -> None:
         normalized = sandbox.strip() if sandbox else None
-        self.sandbox = normalized or "workspace-write"
+        if normalized:
+            self.backend_config["sandbox"] = normalized
+        else:
+            self.backend_config.pop("sandbox", None)
+        self.backend_config = normalize_backend_config(self.backend, self.backend_config)
+        self.sandbox = backend_option(self.backend, self.backend_config, "sandbox") or "workspace-write"
+        self.updated_at = utc_now()
+
+    def set_backend_config(self, backend_config: dict[str, object]) -> None:
+        self.backend_config = normalize_backend_config(self.backend, backend_config)
+        self.model = backend_option(self.backend, self.backend_config, "model")
+        self.sandbox = backend_option(self.backend, self.backend_config, "sandbox") or "workspace-write"
         self.updated_at = utc_now()
 
     def to_dict(self) -> dict[str, object]:
@@ -59,6 +89,7 @@ class Project:
             "name": self.name,
             "created_by": self.created_by,
             "backend": self.backend,
+            "backend_config": dict(self.backend_config),
             "model": self.model,
             "sandbox": self.sandbox,
             "repo": self.repo,

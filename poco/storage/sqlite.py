@@ -36,6 +36,7 @@ class _SqliteStoreBase:
                     name TEXT NOT NULL,
                     created_by TEXT NOT NULL,
                     backend TEXT NOT NULL,
+                    backend_config TEXT NOT NULL DEFAULT '{}',
                     model TEXT,
                     sandbox TEXT NOT NULL DEFAULT 'workspace-write',
                     repo TEXT,
@@ -57,6 +58,7 @@ class _SqliteStoreBase:
                     requester_id TEXT NOT NULL,
                     prompt TEXT NOT NULL,
                     agent_backend TEXT NOT NULL,
+                    effective_backend_config TEXT NOT NULL DEFAULT '{}',
                     effective_model TEXT,
                     effective_sandbox TEXT,
                     backend_session_id TEXT,
@@ -114,6 +116,10 @@ class _SqliteStoreBase:
             }
             if "model" not in project_columns:
                 connection.execute("ALTER TABLE projects ADD COLUMN model TEXT")
+            if "backend_config" not in project_columns:
+                connection.execute(
+                    "ALTER TABLE projects ADD COLUMN backend_config TEXT NOT NULL DEFAULT '{}'"
+                )
             if "sandbox" not in project_columns:
                 connection.execute(
                     "ALTER TABLE projects ADD COLUMN sandbox TEXT NOT NULL DEFAULT 'workspace-write'"
@@ -122,6 +128,10 @@ class _SqliteStoreBase:
                 connection.execute("ALTER TABLE tasks ADD COLUMN session_id TEXT")
             if "effective_model" not in task_columns:
                 connection.execute("ALTER TABLE tasks ADD COLUMN effective_model TEXT")
+            if "effective_backend_config" not in task_columns:
+                connection.execute(
+                    "ALTER TABLE tasks ADD COLUMN effective_backend_config TEXT NOT NULL DEFAULT '{}'"
+                )
             if "effective_sandbox" not in task_columns:
                 connection.execute("ALTER TABLE tasks ADD COLUMN effective_sandbox TEXT")
             if "backend_session_id" not in task_columns:
@@ -140,13 +150,14 @@ class SqliteProjectStore(_SqliteStoreBase):
             connection.execute(
                 """
                 INSERT INTO projects (
-                    id, name, created_by, backend, model, sandbox, repo, workdir, workdir_presets,
+                    id, name, created_by, backend, backend_config, model, sandbox, repo, workdir, workdir_presets,
                     group_chat_id, workspace_message_id, archived, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     name = excluded.name,
                     created_by = excluded.created_by,
                     backend = excluded.backend,
+                    backend_config = excluded.backend_config,
                     model = excluded.model,
                     sandbox = excluded.sandbox,
                     repo = excluded.repo,
@@ -163,6 +174,7 @@ class SqliteProjectStore(_SqliteStoreBase):
                     project.name,
                     project.created_by,
                     project.backend,
+                    json.dumps(project.backend_config, ensure_ascii=False),
                     project.model,
                     project.sandbox,
                     project.repo,
@@ -200,11 +212,13 @@ class SqliteProjectStore(_SqliteStoreBase):
 
     def _row_to_project(self, row: sqlite3.Row) -> Project:
         presets = json.loads(row["workdir_presets"])
+        backend_config = json.loads(row["backend_config"] or "{}")
         return Project(
             id=row["id"],
             name=row["name"],
             created_by=row["created_by"],
             backend=row["backend"],
+            backend_config=dict(backend_config),
             model=row["model"],
             sandbox=row["sandbox"] or "workspace-write",
             repo=row["repo"],
@@ -224,16 +238,17 @@ class SqliteTaskStore(_SqliteStoreBase):
             connection.execute(
                 """
                 INSERT INTO tasks (
-                    id, source, requester_id, prompt, agent_backend, effective_model, effective_sandbox, backend_session_id, project_id, session_id,
+                    id, source, requester_id, prompt, agent_backend, effective_backend_config, effective_model, effective_sandbox, backend_session_id, project_id, session_id,
                     effective_workdir, notification_message_id, reply_receive_id,
                     reply_receive_id_type, status, awaiting_confirmation_reason,
                     live_output, raw_result, result_summary, created_at, updated_at, events
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     source = excluded.source,
                     requester_id = excluded.requester_id,
                     prompt = excluded.prompt,
                     agent_backend = excluded.agent_backend,
+                    effective_backend_config = excluded.effective_backend_config,
                     effective_model = excluded.effective_model,
                     effective_sandbox = excluded.effective_sandbox,
                     backend_session_id = excluded.backend_session_id,
@@ -258,6 +273,7 @@ class SqliteTaskStore(_SqliteStoreBase):
                     task.requester_id,
                     task.prompt,
                     task.agent_backend,
+                    json.dumps(task.effective_backend_config, ensure_ascii=False),
                     task.effective_model,
                     task.effective_sandbox,
                     task.backend_session_id,
@@ -326,6 +342,7 @@ class SqliteTaskStore(_SqliteStoreBase):
             requester_id=row["requester_id"],
             prompt=row["prompt"],
             agent_backend=row["agent_backend"],
+            effective_backend_config=json.loads(row["effective_backend_config"] or "{}"),
             effective_model=row["effective_model"],
             effective_sandbox=row["effective_sandbox"],
             backend_session_id=row["backend_session_id"],

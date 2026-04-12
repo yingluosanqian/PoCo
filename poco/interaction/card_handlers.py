@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from poco.agent.catalog import get_backend_descriptor
 from poco.interaction.card_models import (
     ActionIntent,
     DispatchStatus,
@@ -301,13 +302,13 @@ class WorkspaceIntentHandler:
             return self._open_browse_path(intent)
         if intent.intent_key == "workspace.enter_path_manual":
             return self._open_enter_path(intent)
-        if intent.intent_key == "workspace.choose_model":
+        if intent.intent_key in {"workspace.choose_model", "workspace.choose_agent"}:
             return self._open_choose_model(intent)
         if intent.intent_key == "workspace.apply_preset_dir":
             return self._apply_preset_dir(intent)
         if intent.intent_key == "workspace.apply_entered_path":
             return self._apply_entered_path(intent)
-        if intent.intent_key == "workspace.apply_model":
+        if intent.intent_key in {"workspace.apply_model", "workspace.apply_agent"}:
             return self._apply_model(intent)
         if intent.intent_key != "workspace.open":
             return _rejected(intent, f"Unsupported workspace intent: {intent.intent_key}")
@@ -473,7 +474,7 @@ class WorkspaceIntentHandler:
             resource_refs=ResourceRefs(project_id=project.id),
             view_model=_workspace_choose_model_view_model(project),
             refresh_mode=RefreshMode.REPLACE_CURRENT,
-            message=f"Choose model for {project.name}",
+            message=f"Choose agent settings for {project.name}",
         )
 
     def _apply_model(self, intent: ActionIntent) -> IntentDispatchResult:
@@ -482,10 +483,18 @@ class WorkspaceIntentHandler:
             return project
         model = _extract_model_value(intent.payload, current=project.model)
         sandbox = _extract_sandbox_value(intent.payload, current=project.sandbox)
-        project = self.project_controller.set_model_config(
+        backend_config = dict(project.backend_config)
+        if model:
+            backend_config["model"] = model
+        else:
+            backend_config.pop("model", None)
+        if sandbox:
+            backend_config["sandbox"] = sandbox
+        else:
+            backend_config.pop("sandbox", None)
+        project = self.project_controller.set_agent_config(
             project.id,
-            model=model,
-            sandbox=sandbox,
+            backend_config=backend_config,
         )
         context = self.workspace_controller.get_context(project)
         return build_workspace_overview_result(
@@ -493,7 +502,7 @@ class WorkspaceIntentHandler:
             context=context,
             active_session=_active_project_session(self.session_controller, project.id),
             latest_task=_latest_project_task(self.task_controller, project.id),
-            message=f"Model updated for {project.name}",
+            message=f"Agent updated for {project.name}",
         )
 
 
@@ -558,6 +567,7 @@ class TaskIntentHandler:
                 project_id=project.id,
                 actor_id=intent.actor_id,
             ),
+            effective_backend_config=dict(project.backend_config),
             effective_model=project.model,
             effective_sandbox=project.sandbox,
             effective_workdir=context.active_workdir,
@@ -890,22 +900,21 @@ def _workspace_enter_path_view_model(project, *, context, browse_path: str | Non
 
 
 def _workspace_choose_model_view_model(project) -> ViewModel:
+    descriptor = get_backend_descriptor(project.backend)
     return ViewModel(
         "workspace_choose_model",
         {
             "project": project.to_dict(),
+            "agent_label": descriptor.label,
             "current_model": project.model,
             "current_sandbox": getattr(project, "sandbox", "workspace-write"),
             "model_options": [
-                {"label": "gpt-5.4", "value": "gpt-5.4"},
-                {"label": "gpt-5.4-mini", "value": "gpt-5.4-mini"},
-                {"label": "gpt-5.3-codex", "value": "gpt-5.3-codex"},
-                {"label": "gpt-5.3-codex-spark", "value": "gpt-5.3-codex-spark"},
+                {"label": option, "value": option}
+                for option in descriptor.model_options
             ],
             "sandbox_options": [
-                {"label": "Read Only", "value": "read-only"},
-                {"label": "Project Only", "value": "workspace-write"},
-                {"label": "Full Access", "value": "danger-full-access"},
+                {"label": label, "value": value}
+                for label, value in descriptor.access_options
             ],
         },
     )

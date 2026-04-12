@@ -36,6 +36,7 @@ class ProjectController:
         name: str,
         created_by: str,
         backend: str = "codex",
+        backend_config: dict[str, object] | None = None,
         model: str | None = None,
         sandbox: str = "workspace-write",
         repo: str | None = None,
@@ -48,6 +49,7 @@ class ProjectController:
                 name=name,
                 created_by=created_by,
                 backend=backend,
+                backend_config=backend_config or {},
                 model=model,
                 sandbox=sandbox,
                 repo=repo,
@@ -136,10 +138,23 @@ class ProjectController:
         model: str | None,
         sandbox: str | None,
     ) -> Project:
+        return self.set_agent_config(
+            project_id,
+            backend_config={
+                **({"model": model} if model else {}),
+                **({"sandbox": sandbox} if sandbox else {}),
+            },
+        )
+
+    def set_agent_config(
+        self,
+        project_id: str,
+        *,
+        backend_config: dict[str, object],
+    ) -> Project:
         with self._lock:
             project = self.get_project(project_id)
-            project.set_model(model)
-            project.set_sandbox(sandbox)
+            project.set_backend_config(backend_config)
             self._store.save(project)
             return project
 

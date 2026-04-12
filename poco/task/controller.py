@@ -38,6 +38,7 @@ class TaskController:
         *,
         project_id: str | None = None,
         session_id: str | None = None,
+        effective_backend_config: dict[str, object] | None = None,
         effective_model: str | None = None,
         effective_sandbox: str | None = None,
         effective_workdir: str | None = None,
@@ -59,6 +60,7 @@ class TaskController:
                     prompt=prompt,
                     source=source,
                     agent_backend=self._runner.name,
+                    effective_backend_config=effective_backend_config or {},
                     effective_model=effective_model,
                     effective_sandbox=effective_sandbox,
                     backend_session_id=backend_session_id,
@@ -76,6 +78,7 @@ class TaskController:
                 prompt=prompt,
                 source=source,
                 agent_backend=self._runner.name,
+                effective_backend_config=effective_backend_config or {},
                 effective_model=effective_model,
                 effective_sandbox=resolved_sandbox,
                 backend_session_id=backend_session_id,
@@ -283,6 +286,7 @@ class TaskController:
                 raise TaskStateError(f"Task {task_id} is not in a resumable state.")
             effective_model, effective_workdir, effective_sandbox = self._runner.resolve_execution_context(task)
             task.set_execution_context(
+                effective_backend_config=task.effective_backend_config,
                 effective_model=effective_model,
                 effective_sandbox=effective_sandbox,
                 effective_workdir=effective_workdir,
@@ -317,6 +321,7 @@ class TaskController:
                 if update.kind == "progress":
                     if getattr(update, "backend_session_id", None):
                         task.set_execution_context(
+                            effective_backend_config=task.effective_backend_config,
                             effective_model=task.effective_model,
                             effective_sandbox=task.effective_sandbox,
                             effective_workdir=task.effective_workdir,
@@ -332,6 +337,7 @@ class TaskController:
                 elif update.kind == "completed":
                     if getattr(update, "backend_session_id", None):
                         task.set_execution_context(
+                            effective_backend_config=task.effective_backend_config,
                             effective_model=task.effective_model,
                             effective_sandbox=task.effective_sandbox,
                             effective_workdir=task.effective_workdir,
@@ -344,6 +350,7 @@ class TaskController:
                 elif update.kind == "failed":
                     if getattr(update, "backend_session_id", None):
                         task.set_execution_context(
+                            effective_backend_config=task.effective_backend_config,
                             effective_model=task.effective_model,
                             effective_sandbox=task.effective_sandbox,
                             effective_workdir=task.effective_workdir,

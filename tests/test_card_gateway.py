@@ -144,6 +144,8 @@ class FeishuCardGatewayTest(unittest.TestCase):
                     "workspace.enter_path": self.workspace_handler,
                     "workspace.enter_path_manual": self.workspace_handler,
                     "workspace.apply_entered_path": self.workspace_handler,
+                    "workspace.choose_agent": self.workspace_handler,
+                    "workspace.apply_agent": self.workspace_handler,
                     "workspace.choose_model": self.workspace_handler,
                     "workspace.apply_model": self.workspace_handler,
                     "task.open_composer": self.task_handler,
@@ -414,14 +416,14 @@ class FeishuCardGatewayTest(unittest.TestCase):
         )
         self.assertEqual(workdir_button["text"]["content"], "Working Dir")
         change_model_button = action_row["columns"][1]["elements"][0]
-        self.assertEqual(change_model_button["text"]["content"], "Model")
+        self.assertEqual(change_model_button["text"]["content"], "Agent")
         self.assertEqual(
             change_model_button["behaviors"][0]["value"]["surface"],
             "group",
         )
         self.assertEqual(
             change_model_button["behaviors"][0]["value"]["intent_key"],
-            "workspace.choose_model",
+            "workspace.choose_agent",
         )
         updated_project = self.project_controller.get_project(project.id)
         self.assertEqual(updated_project.workspace_message_id, "om_card_2")
@@ -1149,7 +1151,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
         self.assertEqual(context.active_workdir, "/srv/poco/api")
         self.assertEqual(context.workdir_source, "preset")
 
-    def test_workspace_choose_model_opens_and_apply_returns_workspace(self) -> None:
+    def test_workspace_choose_agent_opens_and_apply_returns_workspace(self) -> None:
         project = self.project_controller.create_project(
             name="PoCo",
             created_by="ou_demo_user",
@@ -1161,7 +1163,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
                 "context": {"open_message_id": "om_choose_model_1"},
                 "action": {
                     "value": {
-                        "intent_key": "workspace.choose_model",
+                        "intent_key": "workspace.choose_agent",
                         "surface": "group",
                         "project_id": project.id,
                         "request_id": "req_choose_model_1",
@@ -1181,7 +1183,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
                 "context": {"open_message_id": "om_choose_model_1"},
                 "action": {
                     "value": {
-                        "intent_key": "workspace.apply_model",
+                        "intent_key": "workspace.apply_agent",
                         "surface": "group",
                         "project_id": project.id,
                         "request_id": "req_apply_model_1",

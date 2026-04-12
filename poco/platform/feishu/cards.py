@@ -459,13 +459,13 @@ def _render_workspace_overview(
                     name=f"enter_workdir_path_{project['id']}",
                 ),
                 _action_button(
-                    label="Model",
+                    label="Agent",
                     intent_value={
-                        "intent_key": "workspace.choose_model",
+                        "intent_key": "workspace.choose_agent",
                         "surface": surface,
                         "project_id": project["id"],
                     },
-                    name=f"choose_workspace_model_{project['id']}",
+                    name=f"choose_workspace_agent_{project['id']}",
                 ),
             )
         )
@@ -817,6 +817,7 @@ def _render_workspace_choose_model(
     surface: str,
 ) -> dict[str, Any]:
     project = data["project"]
+    agent_label = data.get("agent_label") or project["backend"]
     current_model = data.get("current_model")
     current_sandbox = data.get("current_sandbox") or "workspace-write"
     model_options = data.get("model_options") or []
@@ -825,6 +826,7 @@ def _render_workspace_choose_model(
         _markdown(
             "\n".join(
                 [
+                    f"**Agent:** `{agent_label}`",
                     f"**Model:** `{current_model or 'not set'}`",
                     f"**Access:** `{_sandbox_label(current_sandbox)}`",
                 ]
@@ -859,7 +861,7 @@ def _render_workspace_choose_model(
                             {
                                 "type": "callback",
                                 "value": {
-                                    "intent_key": "workspace.apply_model",
+                                    "intent_key": "workspace.apply_agent",
                                     "surface": surface,
                                     "project_id": project["id"],
                                 },
@@ -891,7 +893,7 @@ def _render_workspace_choose_model(
         },
     ]
     return _card_shell(
-        title=f"Choose Model: {project['name']}",
+        title=f"Choose Agent: {project['name']}",
         template="blue",
         elements=elements,
     )
@@ -1081,13 +1083,13 @@ def _render_task_status(
                         name=f"task_change_workdir_{task['id']}",
                     ),
                     _action_button(
-                        label="Model",
+                        label="Agent",
                         intent_value={
-                            "intent_key": "workspace.choose_model",
+                            "intent_key": "workspace.choose_agent",
                             "surface": surface,
                             "project_id": task["project_id"],
                         },
-                        name=f"task_choose_model_{task['id']}",
+                        name=f"task_choose_agent_{task['id']}",
                     ),
                 )
             )

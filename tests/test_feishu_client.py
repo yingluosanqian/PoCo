@@ -161,11 +161,11 @@ class FeishuClientTest(unittest.TestCase):
             "workspace.enter_path",
         )
         self.assertEqual(change_workdir_button["text"]["content"], "Working Dir")
-        self.assertEqual(change_model_button["text"]["content"], "Model")
+        self.assertEqual(change_model_button["text"]["content"], "Agent")
         self.assertEqual(change_model_button["behaviors"][0]["value"]["surface"], "group")
         self.assertEqual(
             change_model_button["behaviors"][0]["value"]["intent_key"],
-            "workspace.choose_model",
+            "workspace.choose_agent",
         )
 
     def test_project_bootstrapper_sends_workspace_card_to_created_group(self) -> None:
@@ -339,7 +339,7 @@ class FeishuClientTest(unittest.TestCase):
         self.assertEqual(cancel_button["behaviors"][0]["value"]["intent_key"], "workspace.open")
         self.assertEqual(cancel_button["behaviors"][0]["value"]["mode"], "manual")
 
-    def test_workspace_choose_model_card_contains_model_and_access_dropdowns(self) -> None:
+    def test_workspace_choose_agent_card_contains_model_and_access_dropdowns(self) -> None:
         project = Project(
             id="proj_1",
             name="PoCo",
@@ -352,7 +352,7 @@ class FeishuClientTest(unittest.TestCase):
             build_render_instruction(
                 IntentDispatchResult(
                     status=DispatchStatus.OK,
-                    intent_key="workspace.choose_model",
+                    intent_key="workspace.choose_agent",
                     resource_refs=ResourceRefs(project_id=project.id),
                     view_model=ViewModel(
                         "workspace_choose_model",
@@ -377,7 +377,7 @@ class FeishuClientTest(unittest.TestCase):
             )
         )
 
-        self.assertEqual(card["header"]["title"]["content"], "Choose Model: PoCo")
+        self.assertEqual(card["header"]["title"]["content"], "Choose Agent: PoCo")
         form = card["body"]["elements"][1]
         self.assertEqual(form["tag"], "form")
         self.assertEqual(form["elements"][0]["tag"], "select_static")
@@ -390,7 +390,7 @@ class FeishuClientTest(unittest.TestCase):
         self.assertEqual(action_row["tag"], "column_set")
         self.assertEqual(
             action_row["columns"][0]["elements"][0]["behaviors"][0]["value"]["intent_key"],
-            "workspace.apply_model",
+            "workspace.apply_agent",
         )
         self.assertEqual(
             action_row["columns"][1]["elements"][0]["behaviors"][0]["value"]["intent_key"],
@@ -579,7 +579,7 @@ class FeishuClientTest(unittest.TestCase):
         self.assertEqual(result_block["tag"], "markdown")
         self.assertIn("Done.", result_block["content"])
         self.assertEqual(change_workdir_button["behaviors"][0]["value"]["intent_key"], "workspace.enter_path")
-        self.assertEqual(change_model_button["behaviors"][0]["value"]["intent_key"], "workspace.choose_model")
+        self.assertEqual(change_model_button["behaviors"][0]["value"]["intent_key"], "workspace.choose_agent")
 
     def test_task_status_card_shows_live_output_when_running(self) -> None:
         task = {
@@ -661,7 +661,7 @@ class FeishuClientTest(unittest.TestCase):
         self.assertEqual(next_button["behaviors"][0]["value"]["intent_key"], "task.open")
         self.assertEqual(next_button["behaviors"][0]["value"]["page"], "2")
         self.assertEqual(change_workdir_button["behaviors"][0]["value"]["intent_key"], "workspace.enter_path")
-        self.assertEqual(change_model_button["behaviors"][0]["value"]["intent_key"], "workspace.choose_model")
+        self.assertEqual(change_model_button["behaviors"][0]["value"]["intent_key"], "workspace.choose_agent")
 
     def test_task_status_card_adds_pagination_for_long_live_output(self) -> None:
         task = {

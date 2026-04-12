@@ -124,6 +124,7 @@ class FeishuGateway:
             source="feishu",
             message_surface=self._message_surface(event),
             project_id=self._resolve_project_id(event),
+            effective_backend_config=self._resolve_effective_backend_config(event),
             effective_model=self._resolve_effective_model(event),
             effective_sandbox=self._resolve_effective_sandbox(event),
             effective_workdir=self._resolve_effective_workdir(event),
@@ -362,6 +363,12 @@ class FeishuGateway:
         if project is None:
             return None
         return project.model
+
+    def _resolve_effective_backend_config(self, event: dict[str, Any]) -> dict[str, object] | None:
+        project = self._resolve_group_project(event)
+        if project is None:
+            return None
+        return dict(project.backend_config)
 
     def _resolve_effective_sandbox(self, event: dict[str, Any]) -> str | None:
         project = self._resolve_group_project(event)
