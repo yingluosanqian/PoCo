@@ -71,7 +71,17 @@ PoCo currently plans to support:
 
 Current implementation priority is Codex, and the default backend is `codex`.
 
-Agent backend configuration:
+Normal user-facing setup should not require agent-specific shell configuration.
+In the intended product flow:
+
+- users only need to configure the Feishu bot and start the PoCo service
+- project backend is chosen in the DM project-creation card
+- backend-specific settings are changed later through Feishu cards
+
+The environment variables below are only server-side defaults and debugging overrides.
+They are not part of the intended end-user setup flow.
+
+Minimum server-side agent configuration:
 
 ```bash
 export POCO_AGENT_BACKEND="codex"
@@ -79,7 +89,7 @@ export POCO_CODEX_COMMAND="codex"
 export POCO_CODEX_WORKDIR="/absolute/path/to/your/repo"
 ```
 
-Optional Codex settings:
+Optional server-side defaults for Codex:
 
 ```bash
 export POCO_CODEX_MODEL="gpt-5.4"
@@ -90,7 +100,7 @@ export POCO_CODEX_TIMEOUT_SECONDS="900"
 
 PoCo now runs the `codex` backend through `codex app-server` over stdio, so task cards can consume true `agentMessage/delta` events instead of waiting for a final `exec --json` message block.
 
-Optional Claude Code settings:
+Optional server-side defaults for Claude Code:
 
 ```bash
 export POCO_CLAUDE_COMMAND="claude"
@@ -100,7 +110,7 @@ export POCO_CLAUDE_PERMISSION_MODE="default"
 export POCO_CLAUDE_TIMEOUT_SECONDS="900"
 ```
 
-Optional Cursor Agent settings:
+Optional server-side defaults for Cursor Agent:
 
 ```bash
 export POCO_CURSOR_COMMAND="cursor-agent"
@@ -111,7 +121,7 @@ export POCO_CURSOR_SANDBOX="default"
 export POCO_CURSOR_TIMEOUT_SECONDS="900"
 ```
 
-Use `POCO_AGENT_BACKEND=stub` if you want to exercise the flow without calling Codex.
+Use `POCO_AGENT_BACKEND=stub` only for local flow validation without a real agent backend.
 
 PoCo now supports `codex`, `claude_code`, and `cursor_agent`. `coco` is still recognized as planned but not implemented yet.
 
