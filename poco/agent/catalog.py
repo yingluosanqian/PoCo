@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import lru_cache
+import os
+import re
+import shutil
+import subprocess
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,9 +72,10 @@ _BACKEND_DESCRIPTORS: dict[str, BackendDescriptor] = {
         key="cursor_agent",
         label="Cursor Agent",
         model_options=(
-            "gpt-5",
-            "sonnet-4",
-            "sonnet-4-thinking",
+            "auto",
+            "composer-2-fast",
+            "gpt-5.4-medium",
+            "claude-4.5-sonnet",
         ),
         config_fields=(
             BackendConfigField(
@@ -99,6 +105,20 @@ _BACKEND_DESCRIPTORS: dict[str, BackendDescriptor] = {
     ),
 }
 
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
+_CURSOR_MODEL_FALLBACK: tuple[tuple[str, str], ...] = (
+    ("Auto", "auto"),
+    ("Composer 2 Fast", "composer-2-fast"),
+    ("GPT-5.4 1M", "gpt-5.4-medium"),
+    ("Sonnet 4.5 1M", "claude-4.5-sonnet"),
+)
+_CODEX_MODEL_FALLBACK: tuple[tuple[str, str], ...] = (
+    ("gpt-5.4", "gpt-5.4"),
+    ("GPT-5.4-Mini", "gpt-5.4-mini"),
+    ("gpt-5.3-codex", "gpt-5.3-codex"),
+    ("GPT-5.3-Codex-Spark", "gpt-5.3-codex-spark"),
+)
+
 
 def get_backend_descriptor(backend: str) -> BackendDescriptor:
     normalized = (backend or "").strip().lower()
@@ -106,6 +126,16 @@ def get_backend_descriptor(backend: str) -> BackendDescriptor:
         normalized,
         BackendDescriptor(key=normalized or "unknown", label=backend or "Unknown"),
     )
+
+
+def get_backend_model_options(backend: str) -> tuple[tuple[str, str], ...]:
+    normalized = (backend or "").strip().lower()
+    if normalized == "codex":
+        return _discover_codex_model_options(_codex_command())
+    if normalized == "cursor_agent":
+        return _discover_cursor_model_options(_cursor_command())
+    descriptor = get_backend_descriptor(normalized)
+    return tuple((option, option) for option in descriptor.model_options)
 
 
 def normalize_backend_config(
@@ -127,3 +157,99 @@ def backend_option(backend: str, config: dict[str, object], key: str) -> str | N
         return None
     text = str(value).strip()
     return text or None
+
+
+def _cursor_command() -> str:
+    return os.getenv("POCO_CURSOR_COMMAND", "cursor-agent")
+
+
+def _codex_command() -> str:
+    return os.getenv("POCO_CODEX_COMMAND", "codex")
+
+
+@lru_cache(maxsize=4)
+def _discover_codex_model_options(command: str) -> tuple[tuple[str, str], ...]:
+    executable = shutil.which(command)
+    if not executable:
+        return _CODEX_MODEL_FALLBACK
+    result = _request_codex_model_list(command)
+    parsed = _parse_codex_model_response(result)
+    return parsed or _CODEX_MODEL_FALLBACK
+
+
+@lru_cache(maxsize=4)
+def _discover_cursor_model_options(command: str) -> tuple[tuple[str, str], ...]:
+    executable = shutil.which(command)
+    if not executable:
+        return _CURSOR_MODEL_FALLBACK
+    try:
+        completed = subprocess.run(
+            [command, "--list-models"],
+            capture_output=True,
+            text=True,
+            timeout=8,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return _CURSOR_MODEL_FALLBACK
+    output = completed.stdout or completed.stderr or ""
+    parsed = _parse_cursor_model_output(output)
+    return parsed or _CURSOR_MODEL_FALLBACK
+
+
+def _parse_cursor_model_output(output: str) -> tuple[tuple[str, str], ...]:
+    options: list[tuple[str, str]] = []
+    for raw_line in output.splitlines():
+        line = _ANSI_ESCAPE_RE.sub("", raw_line).strip()
+        if not line or line == "Available models" or line.startswith("Tip:"):
+            continue
+        if " - " not in line:
+            continue
+        model_id, label = line.split(" - ", 1)
+        model_id = model_id.strip()
+        label = re.sub(r"\s+\(.*\)$", "", label).strip()
+        if not model_id:
+            continue
+        options.append((label or model_id, model_id))
+    return tuple(options)
+
+
+def _request_codex_model_list(command: str) -> dict[str, object]:
+    from poco.agent.runner import _CodexAppServerSession
+
+    process = subprocess.Popen(
+        [command, "app-server", "--listen", "stdio://"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1,
+    )
+    try:
+        session = _CodexAppServerSession(process=process, timeout_seconds=8)
+        session.initialize()
+        return session.request("model/list", {"includeHidden": False})
+    except Exception:
+        return {}
+    finally:
+        process.kill()
+        try:
+            process.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            process.terminate()
+
+
+def _parse_codex_model_response(result: dict[str, object]) -> tuple[tuple[str, str], ...]:
+    data = result.get("data")
+    if not isinstance(data, list):
+        return ()
+    options: list[tuple[str, str]] = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        model_id = str(item.get("id") or item.get("model") or "").strip()
+        if not model_id:
+            continue
+        label = str(item.get("displayName") or item.get("model") or model_id).strip()
+        options.append((label or model_id, model_id))
+    return tuple(options)

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from poco.agent.catalog import get_backend_descriptor
+from poco.agent.catalog import get_backend_descriptor, get_backend_model_options
 from poco.interaction.card_models import (
     ActionIntent,
     DispatchStatus,
@@ -912,6 +912,7 @@ def _workspace_enter_path_view_model(project, *, context, browse_path: str | Non
 
 def _workspace_choose_model_view_model(project) -> ViewModel:
     descriptor = get_backend_descriptor(project.backend)
+    model_options = get_backend_model_options(project.backend)
     config_fields: list[dict[str, object]] = []
     for field in descriptor.config_fields:
         if field.key == "sandbox":
@@ -938,8 +939,8 @@ def _workspace_choose_model_view_model(project) -> ViewModel:
             "agent_label": descriptor.label,
             "current_model": project.model,
             "model_options": [
-                {"label": option, "value": option}
-                for option in descriptor.model_options
+                {"label": label, "value": value}
+                for label, value in model_options
             ],
             "config_fields": config_fields,
         },
