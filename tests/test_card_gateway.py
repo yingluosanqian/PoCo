@@ -245,7 +245,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
         self.assertEqual(response["instruction"]["template_key"], "project_home")
         self.assertEqual(response["card"]["data"]["header"]["title"]["content"], "PoCo Projects")
 
-    def test_project_delete_action_removes_project_and_group(self) -> None:
+    def test_project_delete_action_removes_project_only(self) -> None:
         project = self.project_controller.create_project(
             name="PoCo",
             created_by="ou_demo_user",
@@ -271,8 +271,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
 
         self.assertEqual(response["instruction"]["template_key"], "project_manage")
         self.assertEqual(self.project_controller.list_projects(), [])
-        self.assertEqual(len(self.bootstrapper.destroy_calls), 1)
-        self.assertEqual(self.bootstrapper.destroy_calls[0]["group_chat_id"], "oc_group_delete_1")
+        self.assertEqual(len(self.bootstrapper.destroy_calls), 0)
 
     def test_project_create_rolls_back_when_group_bootstrap_fails(self) -> None:
         failing_gateway = FeishuCardActionGateway(

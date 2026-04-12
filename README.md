@@ -256,7 +256,7 @@ Current interaction model:
 - DM messages currently bootstrap a compact home card instead of returning text help
 - DM home cards now expose only `New` and `Manage`
 - DM `New` now uses a pure-card form to collect `project name`, then creates the project and group before returning to the DM home card
-- DM `Manage` now focuses on destructive admin actions; projects can be deleted there without opening a project detail card first
+- DM `Manage` now focuses on destructive admin actions; projects can be deleted there without opening a project detail card first, and deletion only removes the PoCo project record
 - newly created project groups now receive an initial workspace overview card
 - group workspace and task cards now route `Change Workdir` to a browser-based folder picker; the page supports both manual path entry and folder browsing
 - group workspace cards are now intentionally compact: workspace metadata is collapsed into the title, and the body keeps only `Stop`, `Change Workdir`, and `Choose Model`

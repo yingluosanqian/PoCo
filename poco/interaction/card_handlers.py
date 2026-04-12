@@ -269,18 +269,6 @@ class ProjectIntentHandler:
             return _rejected(intent, str(exc))
 
         message = f"Project deleted: {project.name}"
-        if self.bootstrapper is not None:
-            try:
-                self.bootstrapper.destroy_project_workspace(
-                    project=project,
-                    actor_id=intent.actor_id,
-                )
-            except ProjectBootstrapError as exc:
-                if "not found" in str(exc).lower():
-                    message = f"Project deleted. Group not found for {project.name}"
-                else:
-                    return _rejected(intent, str(exc))
-
         self.project_controller.delete_project(project.id)
         projects = self.project_controller.list_projects_for_user(intent.actor_id)
         return IntentDispatchResult(
