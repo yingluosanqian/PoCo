@@ -170,7 +170,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
         self.assertEqual(response["instruction"]["template_key"], "project_create")
         self.assertEqual(response["card"]["data"]["header"]["title"]["content"], "New Project")
 
-    def test_project_create_action_returns_project_config_card(self) -> None:
+    def test_project_create_action_returns_project_home_card(self) -> None:
         payload = {
             "event": {
                 "operator": {"open_id": "ou_demo_user"},
@@ -191,9 +191,9 @@ class FeishuCardGatewayTest(unittest.TestCase):
 
         response = self.gateway.handle_action(payload)
 
-        self.assertEqual(response["instruction"]["template_key"], "project_config")
+        self.assertEqual(response["instruction"]["template_key"], "project_home")
         self.assertEqual(response["card"]["data"]["schema"], "2.0")
-        self.assertEqual(response["card"]["data"]["header"]["title"]["content"], "Project: PoCo")
+        self.assertEqual(response["card"]["data"]["header"]["title"]["content"], "PoCo Projects")
         projects = self.project_controller.list_projects()
         self.assertEqual(len(projects), 1)
         self.assertEqual(projects[0].group_chat_id, f"oc_group_{projects[0].id}")
@@ -203,10 +203,9 @@ class FeishuCardGatewayTest(unittest.TestCase):
             self.bootstrapper.workspace_notifications[0]["group_chat_id"],
             f"oc_group_{projects[0].id}",
         )
-        configure_agent_button = response["card"]["data"]["body"]["elements"][2]
         self.assertEqual(
-            configure_agent_button["behaviors"][0]["value"]["intent_key"],
-            "project.configure_agent",
+            response["card"]["data"]["body"]["elements"][1]["behaviors"][0]["value"]["intent_key"],
+            "project.new",
         )
 
     def test_project_create_accepts_project_name_from_input_value(self) -> None:
@@ -228,8 +227,8 @@ class FeishuCardGatewayTest(unittest.TestCase):
 
         response = self.gateway.handle_action(payload)
 
-        self.assertEqual(response["instruction"]["template_key"], "project_config")
-        self.assertEqual(response["card"]["data"]["header"]["title"]["content"], "Project: PoCo Input")
+        self.assertEqual(response["instruction"]["template_key"], "project_home")
+        self.assertEqual(response["card"]["data"]["header"]["title"]["content"], "PoCo Projects")
 
     def test_project_create_rolls_back_when_group_bootstrap_fails(self) -> None:
         failing_gateway = FeishuCardActionGateway(

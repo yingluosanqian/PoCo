@@ -132,11 +132,12 @@ class ProjectIntentHandler:
         message = f"Project created: {project.name}"
         if project.group_chat_id:
             message = f"Project created with group: {project.name}"
+        projects = self.project_controller.list_projects_for_user(intent.actor_id)
         return IntentDispatchResult(
             status=DispatchStatus.OK,
             intent_key=intent.intent_key,
             resource_refs=ResourceRefs(project_id=project.id),
-            view_model=_project_config_view_model(project),
+            view_model=_project_home_view_model(projects, actor_id=intent.actor_id),
             refresh_mode=RefreshMode.REPLACE_CURRENT,
             message=message,
         )
