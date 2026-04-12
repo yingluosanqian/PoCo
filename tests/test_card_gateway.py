@@ -142,6 +142,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
                     "workspace.apply_preset_dir": self.workspace_handler,
                     "workspace.use_recent_dir": self.workspace_handler,
                     "workspace.enter_path": self.workspace_handler,
+                    "workspace.enter_path_manual": self.workspace_handler,
                     "workspace.apply_entered_path": self.workspace_handler,
                     "workspace.choose_model": self.workspace_handler,
                     "workspace.apply_model": self.workspace_handler,
@@ -847,18 +848,13 @@ class FeishuCardGatewayTest(unittest.TestCase):
         self.assertEqual(response["card"]["data"]["header"]["title"]["content"], "Working Dir: PoCo")
         elements = response["card"]["data"]["body"]["elements"]
         summary = elements[0]
-        use_button = next(
-            element for element in elements
-            if element.get("name", "").startswith("use_browsed_path_")
-        )
         form = next(
             element for element in elements
-            if element.get("name", "").startswith("workspace_enter_path_form_")
+            if element.get("name", "").startswith("workspace_browse_form_")
         )
         self.assertIn("/srv/poco/demo", summary["content"])
-        self.assertEqual(use_button["behaviors"][0]["value"]["intent_key"], "workspace.apply_entered_path")
-        input_box = form["elements"][1]
-        self.assertEqual(input_box["tag"], "input")
+        select_box = form["elements"][0]
+        self.assertEqual(select_box["tag"], "select_static")
 
     def test_workspace_use_default_dir_updates_context(self) -> None:
         project = self.project_controller.create_project(
@@ -922,7 +918,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
         self.assertEqual(response["toast"]["type"], "warning")
         self.assertEqual(response["instruction"]["refresh_mode"], "ack_only")
 
-    def test_workspace_enter_path_subcard_returns_to_workspace(self) -> None:
+    def test_workspace_enter_path_manual_subcard_returns_to_browse(self) -> None:
         project = self.project_controller.create_project(
             name="PoCo",
             created_by="ou_demo_user",
@@ -934,7 +930,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
                 "context": {"open_message_id": "om_card_workdir_2"},
                 "action": {
                     "value": {
-                        "intent_key": "workspace.enter_path",
+                        "intent_key": "workspace.enter_path_manual",
                         "surface": "group",
                         "project_id": project.id,
                         "request_id": "req_workspace_enter_path_1",
@@ -953,7 +949,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
         )
         input_box = form["elements"][1]
         self.assertEqual(input_box["tag"], "input")
-        action_row = form["elements"][3]
+        action_row = form["elements"][2]
         apply_button = action_row["columns"][0]["elements"][0]
         self.assertEqual(
             apply_button["behaviors"][0]["value"]["intent_key"],
@@ -962,7 +958,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
         back_button = action_row["columns"][1]["elements"][0]
         self.assertEqual(
             back_button["behaviors"][0]["value"]["intent_key"],
-            "workspace.open",
+            "workspace.enter_path",
         )
 
     def test_workspace_apply_entered_path_updates_context(self) -> None:

@@ -298,6 +298,8 @@ class WorkspaceIntentHandler:
         if intent.intent_key == "workspace.use_recent_dir":
             return self._open_use_recent_dir(intent)
         if intent.intent_key == "workspace.enter_path":
+            return self._open_browse_path(intent)
+        if intent.intent_key == "workspace.enter_path_manual":
             return self._open_enter_path(intent)
         if intent.intent_key == "workspace.choose_model":
             return self._open_choose_model(intent)
@@ -373,6 +375,7 @@ class WorkspaceIntentHandler:
                 context=context,
                 browse_path=context.active_workdir,
                 page=1,
+                mode="browse",
             ),
             refresh_mode=RefreshMode.REPLACE_CURRENT,
             message=f"Using preset dir for {project.name}",
@@ -391,6 +394,27 @@ class WorkspaceIntentHandler:
             message=f"Recent dirs for {project.name}",
         )
 
+    def _open_browse_path(self, intent: ActionIntent) -> IntentDispatchResult:
+        project = _get_project_or_reject(self.project_controller, intent)
+        if isinstance(project, IntentDispatchResult):
+            return project
+        context = self.workspace_controller.get_context(project)
+        browse_path = _extract_browse_path(intent.payload) or context.active_workdir or project.workdir or self.default_workdir
+        return IntentDispatchResult(
+            status=DispatchStatus.OK,
+            intent_key=intent.intent_key,
+            resource_refs=ResourceRefs(project_id=project.id),
+            view_model=_workspace_enter_path_view_model(
+                project,
+                context=context,
+                browse_path=browse_path,
+                page=_extract_page(intent.payload),
+                mode="browse",
+            ),
+            refresh_mode=RefreshMode.REPLACE_CURRENT,
+            message=f"Browse workdir for {project.name}",
+        )
+
     def _open_enter_path(self, intent: ActionIntent) -> IntentDispatchResult:
         project = _get_project_or_reject(self.project_controller, intent)
         if isinstance(project, IntentDispatchResult):
@@ -406,6 +430,7 @@ class WorkspaceIntentHandler:
                 context=context,
                 browse_path=browse_path,
                 page=_extract_page(intent.payload),
+                mode="manual",
             ),
             refresh_mode=RefreshMode.REPLACE_CURRENT,
             message=f"Manual dir entry for {project.name}",
@@ -835,7 +860,7 @@ def _workspace_recent_dirs_view_model(project) -> ViewModel:
     )
 
 
-def _workspace_enter_path_view_model(project, *, context, browse_path: str | None, page: int) -> ViewModel:
+def _workspace_enter_path_view_model(project, *, context, browse_path: str | None, page: int, mode: str) -> ViewModel:
     browser = _build_card_dir_browser_state(browse_path)
     return ViewModel(
         "workspace_enter_path",
@@ -848,6 +873,7 @@ def _workspace_enter_path_view_model(project, *, context, browse_path: str | Non
             "browse_page": 1,
             "browse_total_pages": 1,
             "error": browser["error"],
+            "mode": mode,
             "note": "Apply updates the current workspace and returns to the main workspace card.",
         },
     )
@@ -951,7 +977,6 @@ def _build_card_dir_browser_state(path: str | None) -> dict[str, object]:
         error = "Selected path is a file. Choose a directory."
         browse_target = resolved.parent
     elif not resolved.exists():
-        error = "Selected path does not exist yet. You can still enter it manually."
         parent = resolved.parent
         browse_target = parent if parent.exists() and parent.is_dir() else fallback
     else:

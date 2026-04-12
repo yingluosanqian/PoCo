@@ -232,7 +232,7 @@ class FeishuClientTest(unittest.TestCase):
         snapshot = recorder.snapshot()
         self.assertEqual(snapshot["outbound_attempts"][0]["source"], "project_workspace_bootstrap")
 
-    def test_workspace_enter_path_card_contains_browser_and_input(self) -> None:
+    def test_workspace_enter_path_card_contains_browse_controls(self) -> None:
         project = Project(
             id="proj_1",
             name="PoCo",
@@ -253,8 +253,7 @@ class FeishuClientTest(unittest.TestCase):
                             "browse_path": "/srv/poco",
                             "parent_path": "/srv",
                             "child_dirs": ["/srv/poco/api", "/srv/poco/web"],
-                            "browse_page": 1,
-                            "browse_total_pages": 1,
+                            "mode": "browse",
                             "error": "",
                             "note": "Manual path entry is a fallback path.",
                         },
@@ -267,32 +266,62 @@ class FeishuClientTest(unittest.TestCase):
 
         self.assertEqual(card["header"]["title"]["content"], "Working Dir: PoCo")
         browse_summary = card["body"]["elements"][0]
-        up_button = card["body"]["elements"][1]
-        use_button = card["body"]["elements"][2]
-        browse_form = card["body"]["elements"][4]
-        form = card["body"]["elements"][5]
-        input_box = form["elements"][1]
-        action_row = form["elements"][3]
-        apply_button = action_row["columns"][0]["elements"][0]
-        cancel_button = action_row["columns"][1]["elements"][0]
+        browse_form = card["body"]["elements"][1]
+        manual_button = card["body"]["elements"][2]
         select_box = browse_form["elements"][0]
         open_button = browse_form["elements"][1]
         self.assertEqual(browse_summary["tag"], "markdown")
-        self.assertEqual(up_button["behaviors"][0]["value"]["browse_path"], "/srv")
-        self.assertEqual(use_button["behaviors"][0]["value"]["workdir"], "/srv/poco")
         self.assertEqual(select_box["tag"], "select_static")
         self.assertEqual(select_box["name"], "browse_path")
-        self.assertEqual(select_box["options"][0]["value"], "/srv/poco/api")
+        self.assertEqual(select_box["options"][0]["value"], "/srv")
+        self.assertEqual(select_box["options"][0]["text"]["content"], "..")
+        self.assertEqual(select_box["options"][1]["value"], "/srv/poco/api")
         self.assertEqual(open_button["form_action_type"], "submit")
         self.assertEqual(open_button["behaviors"][0]["value"]["intent_key"], "workspace.enter_path")
-        self.assertEqual(form["tag"], "form")
+        self.assertEqual(manual_button["behaviors"][0]["value"]["intent_key"], "workspace.enter_path_manual")
+
+    def test_workspace_manual_path_card_contains_input_and_back_to_browse(self) -> None:
+        project = Project(
+            id="proj_1",
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+        )
+        card = FeishuCardRenderer().render(
+            build_render_instruction(
+                IntentDispatchResult(
+                    status=DispatchStatus.OK,
+                    intent_key="workspace.enter_path_manual",
+                    resource_refs=ResourceRefs(project_id=project.id),
+                    view_model=ViewModel(
+                        "workspace_enter_path",
+                        {
+                            "project": project.to_dict(),
+                            "current_workdir": "/srv/poco/manual",
+                            "browse_path": "/srv/poco",
+                            "parent_path": "/srv",
+                            "child_dirs": ["/srv/poco/api", "/srv/poco/web"],
+                            "mode": "manual",
+                            "error": "",
+                            "note": "Manual path entry is a fallback path.",
+                        },
+                    ),
+                    refresh_mode=RefreshMode.REPLACE_CURRENT,
+                ),
+                surface=Surface.GROUP,
+            )
+        )
+
+        self.assertEqual(card["header"]["title"]["content"], "Working Dir: PoCo")
+        form = card["body"]["elements"][1]
+        self.assertIn("Or enter path manually", form["elements"][0]["content"])
+        input_box = form["elements"][1]
+        action_row = form["elements"][2]
+        apply_button = action_row["columns"][0]["elements"][0]
+        back_button = action_row["columns"][1]["elements"][0]
         self.assertEqual(input_box["tag"], "input")
-        self.assertEqual(input_box["name"], "workdir")
-        self.assertEqual(action_row["tag"], "column_set")
-        self.assertEqual(apply_button["form_action_type"], "submit")
         self.assertEqual(apply_button["behaviors"][0]["value"]["intent_key"], "workspace.apply_entered_path")
-        self.assertEqual(apply_button["behaviors"][0]["value"]["surface"], "group")
-        self.assertEqual(cancel_button["behaviors"][0]["value"]["intent_key"], "workspace.open")
+        self.assertEqual(back_button["behaviors"][0]["value"]["intent_key"], "workspace.enter_path")
 
     def test_project_dir_presets_card_contains_input_and_add(self) -> None:
         project = Project(

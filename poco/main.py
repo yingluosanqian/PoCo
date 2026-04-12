@@ -153,6 +153,7 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
             "workspace.apply_preset_dir": workspace_intent_handler,
             "workspace.use_recent_dir": workspace_intent_handler,
             "workspace.enter_path": workspace_intent_handler,
+            "workspace.enter_path_manual": workspace_intent_handler,
             "workspace.apply_entered_path": workspace_intent_handler,
             "workspace.choose_model": workspace_intent_handler,
             "workspace.apply_model": workspace_intent_handler,

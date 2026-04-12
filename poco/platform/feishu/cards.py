@@ -574,187 +574,146 @@ def _render_workspace_enter_path(
     browse_path = data.get("browse_path") or current_workdir or "no working dir"
     parent_path = data.get("parent_path")
     child_dirs = data.get("child_dirs") or []
-    browse_page = data.get("browse_page") or 1
-    browse_total_pages = data.get("browse_total_pages") or 1
+    mode = data.get("mode") or "browse"
     error = data.get("error") or ""
     elements: list[dict[str, Any]] = [
         _markdown(
             "\n".join(
                 [
-                    f"**Current Working Dir**\n`{current_workdir or 'no working dir'}`",
-                    f"**Browsing**\n`{browse_path}`",
+                    f"**Current Working Dir:** `{current_workdir or 'no working dir'}`",
+                    f"**Browsing:** `{browse_path}`",
                 ]
             )
         )
     ]
     if error:
         elements.append(_markdown(error))
-    nav_buttons: list[dict[str, Any]] = []
-    if parent_path:
-        nav_buttons.append(
+    if mode == "browse":
+        if child_dirs or parent_path:
+            options: list[dict[str, str]] = []
+            if parent_path:
+                options.append({"label": "..", "value": parent_path})
+            options.extend(
+                {
+                    "label": Path(child).name or child,
+                    "value": child,
+                }
+                for child in child_dirs
+            )
+            elements.append(
+                {
+                    "tag": "form",
+                    "name": f"workspace_browse_form_{project['id']}",
+                    "elements": [
+                        _select_static(
+                            name="browse_path",
+                            placeholder="Select a folder",
+                            options=options,
+                            value=options[0]["value"] if options else None,
+                        ),
+                        {
+                            "tag": "button",
+                            "text": {
+                                "tag": "plain_text",
+                                "content": "Open Selected",
+                            },
+                            "type": "default",
+                            "width": "default",
+                            "size": "medium",
+                            "name": f"open_selected_folder_{project['id']}",
+                            "form_action_type": "submit",
+                            "behaviors": [
+                                {
+                                    "type": "callback",
+                                    "value": {
+                                        "intent_key": "workspace.enter_path",
+                                        "surface": surface,
+                                        "project_id": project["id"],
+                                    },
+                                }
+                            ],
+                            "margin": "0px 0px 12px 0px",
+                        },
+                    ],
+                }
+            )
+        else:
+            elements.append(_markdown("No subfolders here."))
+        elements.append(
             _button(
-                label="..",
+                label="Enter Path Manually",
                 intent_value={
-                    "intent_key": "workspace.enter_path",
+                    "intent_key": "workspace.enter_path_manual",
                     "surface": surface,
                     "project_id": project["id"],
-                    "browse_path": parent_path,
+                    "browse_path": browse_path,
                 },
-                name=f"browse_parent_{project['id']}",
+                name=f"open_manual_path_{project['id']}",
             )
         )
-    nav_buttons.append(
-        _button(
-            label="Use This Folder",
-            intent_value={
-                "intent_key": "workspace.apply_entered_path",
-                "surface": surface,
-                "project_id": project["id"],
-                "workdir": browse_path,
-            },
-            style="primary",
-            name=f"use_browsed_path_{project['id']}",
-        )
-    )
-    elements.extend(nav_buttons)
-    if child_dirs:
-        elements.append(_markdown("**Subfolders**"))
+    else:
         elements.append(
             {
                 "tag": "form",
-                "name": f"workspace_browse_form_{project['id']}",
+                "name": f"workspace_enter_path_form_{project['id']}",
                 "elements": [
-                    _select_static(
-                        name="browse_path",
-                        placeholder="Select a subfolder",
-                        options=[
-                            {
-                                "label": Path(child).name or child,
-                                "value": child,
-                            }
-                            for child in child_dirs
-                        ],
-                        value=child_dirs[0],
+                    _markdown("**Or enter path manually**"),
+                    _input(
+                        name="workdir",
+                        placeholder="Enter workdir path",
+                        value=current_workdir or browse_path,
                     ),
-                    {
-                        "tag": "button",
-                        "text": {
-                            "tag": "plain_text",
-                            "content": "Open Selected",
+                    _two_up(
+                        {
+                            "tag": "button",
+                            "text": {
+                                "tag": "plain_text",
+                                "content": "Apply",
+                            },
+                            "type": "primary",
+                            "width": "default",
+                            "size": "medium",
+                            "name": f"apply_entered_path_{project['id']}",
+                            "form_action_type": "submit",
+                            "behaviors": [
+                                {
+                                    "type": "callback",
+                                    "value": {
+                                        "intent_key": "workspace.apply_entered_path",
+                                        "surface": surface,
+                                        "project_id": project["id"],
+                                    },
+                                }
+                            ],
+                            "margin": "0px 0px 12px 0px",
                         },
-                        "type": "default",
-                        "width": "default",
-                        "size": "medium",
-                        "name": f"open_selected_folder_{project['id']}",
-                        "form_action_type": "submit",
-                        "behaviors": [
-                            {
-                                "type": "callback",
-                                "value": {
-                                    "intent_key": "workspace.enter_path",
-                                    "surface": surface,
-                                    "project_id": project["id"],
-                                },
-                            }
-                        ],
-                        "margin": "0px 0px 12px 0px",
-                    },
+                        {
+                            "tag": "button",
+                            "text": {
+                                "tag": "plain_text",
+                                "content": "Back to Browse",
+                            },
+                            "type": "default",
+                            "width": "default",
+                            "size": "medium",
+                            "name": f"back_to_browse_{project['id']}",
+                            "behaviors": [
+                                {
+                                    "type": "callback",
+                                    "value": {
+                                        "intent_key": "workspace.enter_path",
+                                        "surface": surface,
+                                        "project_id": project["id"],
+                                        "browse_path": browse_path,
+                                    },
+                                }
+                            ],
+                            "margin": "0px 0px 12px 0px",
+                        },
+                    ),
                 ],
             }
         )
-    else:
-        elements.append(_markdown("No subfolders here."))
-    if browse_total_pages > 1:
-        if browse_page > 1:
-            elements.append(
-                _button(
-                    label="Previous Page",
-                    intent_value={
-                        "intent_key": "workspace.enter_path",
-                        "surface": surface,
-                        "project_id": project["id"],
-                        "browse_path": browse_path,
-                        "page": str(int(browse_page) - 1),
-                    },
-                    name=f"browse_prev_page_{project['id']}_{browse_page}",
-                )
-            )
-        if browse_page < browse_total_pages:
-            elements.append(
-                _button(
-                    label="Next Page",
-                    intent_value={
-                        "intent_key": "workspace.enter_path",
-                        "surface": surface,
-                        "project_id": project["id"],
-                        "browse_path": browse_path,
-                        "page": str(int(browse_page) + 1),
-                    },
-                    name=f"browse_next_page_{project['id']}_{browse_page}",
-                )
-            )
-    elements.append(
-        {
-            "tag": "form",
-            "name": f"workspace_enter_path_form_{project['id']}",
-            "elements": [
-                _markdown("**Manual Path Entry**\nEnter a workdir path directly if browsing is too slow."),
-                _input(
-                    name="workdir",
-                    placeholder="Enter workdir path",
-                    value=current_workdir or browse_path,
-                ),
-                _markdown(data["note"]),
-                _two_up(
-                    {
-                        "tag": "button",
-                        "text": {
-                            "tag": "plain_text",
-                            "content": "Apply Path",
-                        },
-                        "type": "primary",
-                        "width": "default",
-                        "size": "medium",
-                        "name": f"apply_entered_path_{project['id']}",
-                        "form_action_type": "submit",
-                        "behaviors": [
-                            {
-                                "type": "callback",
-                                "value": {
-                                    "intent_key": "workspace.apply_entered_path",
-                                    "surface": surface,
-                                    "project_id": project["id"],
-                                },
-                            }
-                        ],
-                        "margin": "0px 0px 12px 0px",
-                    },
-                    {
-                        "tag": "button",
-                        "text": {
-                            "tag": "plain_text",
-                            "content": "Cancel",
-                        },
-                        "type": "default",
-                        "width": "default",
-                        "size": "medium",
-                        "name": f"cancel_workspace_enter_path_{project['id']}",
-                        "behaviors": [
-                            {
-                                "type": "callback",
-                                "value": {
-                                    "intent_key": "workspace.open",
-                                    "surface": surface,
-                                    "project_id": project["id"],
-                                },
-                            }
-                        ],
-                        "margin": "0px 0px 12px 0px",
-                    },
-                ),
-            ],
-        }
-    )
     return _card_shell(
         title=f"Working Dir: {project['name']}",
         template="blue",
