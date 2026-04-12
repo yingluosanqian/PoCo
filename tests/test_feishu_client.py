@@ -351,7 +351,8 @@ class FeishuClientTest(unittest.TestCase):
             card["header"]["title"]["content"],
             "[Waiting] Task: task_1 (codex, /srv/poco/api)",
         )
-        self.assertEqual(card["body"]["elements"][0]["text"]["content"], "Need approval before deploy.")
+        self.assertEqual(card["body"]["elements"][0]["tag"], "markdown")
+        self.assertIn("Need approval before deploy.", card["body"]["elements"][0]["content"])
         approve_button = card["body"]["elements"][1]
         stop_button = card["body"]["elements"][2]
         self.assertEqual(approve_button["behaviors"][0]["value"]["intent_key"], "task.approve")
@@ -394,7 +395,8 @@ class FeishuClientTest(unittest.TestCase):
             "[Complete] Task: task_2 (codex, /srv/poco/api)",
         )
         result_block = card["body"]["elements"][0]
-        self.assertIn("Done.", result_block["text"]["content"])
+        self.assertEqual(result_block["tag"], "markdown")
+        self.assertIn("Done.", result_block["content"])
         self.assertEqual(card["body"]["elements"][1]["behaviors"][0]["value"]["intent_key"], "workspace.enter_path")
         self.assertEqual(card["body"]["elements"][2]["behaviors"][0]["value"]["intent_key"], "workspace.choose_model")
 
@@ -432,7 +434,8 @@ class FeishuClientTest(unittest.TestCase):
             "[Running] Task: task_run_1 (codex, /srv/poco/api)",
         )
         live_block = card["body"]["elements"][0]
-        self.assertIn("Step 1", live_block["text"]["content"])
+        self.assertEqual(live_block["tag"], "markdown")
+        self.assertIn("Step 1", live_block["content"])
         self.assertEqual(card["body"]["elements"][1]["behaviors"][0]["value"]["intent_key"], "task.stop")
         self.assertIn("Working Dir · locked", card["body"]["elements"][2]["text"]["content"])
         self.assertIn("Model · locked", card["body"]["elements"][3]["text"]["content"])

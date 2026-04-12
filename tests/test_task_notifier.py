@@ -136,7 +136,8 @@ class FeishuTaskNotifierTest(unittest.TestCase):
             "[Running] Task: task_running (codex, /srv/poco/api)",
         )
         live_block = card["body"]["elements"][0]
-        self.assertIn("line 1", live_block["text"]["content"])
+        self.assertEqual(live_block["tag"], "markdown")
+        self.assertIn("line 1", live_block["content"])
         self.assertEqual(card["body"]["elements"][1]["behaviors"][0]["value"]["intent_key"], "task.stop")
 
     def test_completed_task_sends_result_card(self) -> None:
@@ -165,7 +166,8 @@ class FeishuTaskNotifierTest(unittest.TestCase):
             "[Complete] Task: task_done (codex, /srv/poco/api)",
         )
         result_block = card["body"]["elements"][0]
-        self.assertIn("Done.", result_block["text"]["content"])
+        self.assertEqual(result_block["tag"], "markdown")
+        self.assertIn("Done.", result_block["content"])
         self.assertEqual(card["body"]["elements"][1]["behaviors"][0]["value"]["intent_key"], "workspace.enter_path")
         self.assertEqual(card["body"]["elements"][2]["behaviors"][0]["value"]["intent_key"], "workspace.choose_model")
 
