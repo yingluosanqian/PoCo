@@ -851,7 +851,10 @@ class FeishuCardGatewayTest(unittest.TestCase):
             element for element in elements
             if element.get("name", "").startswith("use_browsed_path_")
         )
-        form = next(element for element in elements if element.get("tag") == "form")
+        form = next(
+            element for element in elements
+            if element.get("name", "").startswith("workspace_enter_path_form_")
+        )
         self.assertIn("/srv/poco/demo", summary["content"])
         self.assertEqual(use_button["behaviors"][0]["value"]["intent_key"], "workspace.apply_entered_path")
         input_box = form["elements"][1]
@@ -944,7 +947,10 @@ class FeishuCardGatewayTest(unittest.TestCase):
 
         self.assertEqual(response["instruction"]["template_key"], "workspace_enter_path")
         elements = response["card"]["data"]["body"]["elements"]
-        form = next(element for element in elements if element.get("tag") == "form")
+        form = next(
+            element for element in elements
+            if element.get("name", "").startswith("workspace_enter_path_form_")
+        )
         input_box = form["elements"][1]
         self.assertEqual(input_box["tag"], "input")
         apply_button = form["elements"][3]

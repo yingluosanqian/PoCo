@@ -619,20 +619,49 @@ def _render_workspace_enter_path(
     elements.extend(nav_buttons)
     if child_dirs:
         elements.append(_markdown("**Subfolders**"))
-        for child in child_dirs:
-            child_name = Path(child).name or child
-            elements.append(
-                _button(
-                    label=child_name,
-                    intent_value={
-                        "intent_key": "workspace.enter_path",
-                        "surface": surface,
-                        "project_id": project["id"],
-                        "browse_path": child,
+        elements.append(
+            {
+                "tag": "form",
+                "name": f"workspace_browse_form_{project['id']}",
+                "elements": [
+                    _select_static(
+                        name="browse_path",
+                        placeholder="Select a subfolder",
+                        options=[
+                            {
+                                "label": Path(child).name or child,
+                                "value": child,
+                            }
+                            for child in child_dirs
+                        ],
+                        value=child_dirs[0],
+                    ),
+                    {
+                        "tag": "button",
+                        "text": {
+                            "tag": "plain_text",
+                            "content": "Open Selected",
+                        },
+                        "type": "default",
+                        "width": "default",
+                        "size": "medium",
+                        "name": f"open_selected_folder_{project['id']}",
+                        "form_action_type": "submit",
+                        "behaviors": [
+                            {
+                                "type": "callback",
+                                "value": {
+                                    "intent_key": "workspace.enter_path",
+                                    "surface": surface,
+                                    "project_id": project["id"],
+                                },
+                            }
+                        ],
+                        "margin": "0px 0px 12px 0px",
                     },
-                    name=f"browse_child_{project['id']}_{child_name}",
-                )
-            )
+                ],
+            }
+        )
     else:
         elements.append(_markdown("No subfolders here."))
     if browse_total_pages > 1:
@@ -1202,6 +1231,37 @@ def _input(
         "value": value,
         "margin": "0px 0px 12px 0px",
     }
+
+
+def _select_static(
+    *,
+    name: str,
+    placeholder: str,
+    options: list[dict[str, str]],
+    value: str | None = None,
+) -> dict[str, Any]:
+    data: dict[str, Any] = {
+        "tag": "select_static",
+        "name": name,
+        "placeholder": {
+            "tag": "plain_text",
+            "content": placeholder,
+        },
+        "options": [
+            {
+                "text": {
+                    "tag": "plain_text",
+                    "content": option["label"],
+                },
+                "value": option["value"],
+            }
+            for option in options
+        ],
+        "margin": "0px 0px 12px 0px",
+    }
+    if value:
+        data["value"] = value
+    return data
 
 
 def _task_template_for_status(status: str) -> str:

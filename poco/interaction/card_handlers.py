@@ -922,7 +922,21 @@ def _extract_workdir_path(payload: dict[str, object]) -> str:
 
 
 def _extract_browse_path(payload: dict[str, object]) -> str | None:
-    return _optional_string(payload.get("browse_path"))
+    direct = _optional_string(payload.get("browse_path"))
+    if direct is not None:
+        return direct
+    browse_path = payload.get("browse_path")
+    if isinstance(browse_path, dict):
+        nested = _optional_string(browse_path.get("value"))
+        if nested is not None:
+            return nested
+    input_value = payload.get("input_value")
+    if isinstance(input_value, dict):
+        nested = input_value.get("browse_path")
+        if isinstance(nested, dict):
+            return _optional_string(nested.get("value"))
+        return _optional_string(nested)
+    return None
 
 
 def _extract_page(payload: dict[str, object]) -> int:

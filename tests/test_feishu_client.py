@@ -269,14 +269,20 @@ class FeishuClientTest(unittest.TestCase):
         browse_summary = card["body"]["elements"][0]
         up_button = card["body"]["elements"][1]
         use_button = card["body"]["elements"][2]
-        child_button = card["body"]["elements"][4]
-        form = card["body"]["elements"][6]
+        browse_form = card["body"]["elements"][4]
+        form = card["body"]["elements"][5]
         input_box = form["elements"][1]
         apply_button = form["elements"][3]
+        select_box = browse_form["elements"][0]
+        open_button = browse_form["elements"][1]
         self.assertEqual(browse_summary["tag"], "markdown")
         self.assertEqual(up_button["behaviors"][0]["value"]["browse_path"], "/srv")
         self.assertEqual(use_button["behaviors"][0]["value"]["workdir"], "/srv/poco")
-        self.assertEqual(child_button["behaviors"][0]["value"]["browse_path"], "/srv/poco/api")
+        self.assertEqual(select_box["tag"], "select_static")
+        self.assertEqual(select_box["name"], "browse_path")
+        self.assertEqual(select_box["options"][0]["value"], "/srv/poco/api")
+        self.assertEqual(open_button["form_action_type"], "submit")
+        self.assertEqual(open_button["behaviors"][0]["value"]["intent_key"], "workspace.enter_path")
         self.assertEqual(form["tag"], "form")
         self.assertEqual(input_box["tag"], "input")
         self.assertEqual(input_box["name"], "workdir")
