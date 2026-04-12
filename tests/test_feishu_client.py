@@ -360,17 +360,21 @@ class FeishuClientTest(unittest.TestCase):
                             "project": project.to_dict(),
                             "agent_label": "Codex",
                             "current_model": "gpt-5.4",
-                            "secondary_option_key": "sandbox",
-                            "secondary_option_label": "Access",
-                            "current_secondary_option": "workspace-write",
                             "model_options": [
                                 {"label": "gpt-5.4", "value": "gpt-5.4"},
                                 {"label": "gpt-5.4-mini", "value": "gpt-5.4-mini"},
                             ],
-                            "secondary_options": [
-                                {"label": "Read Only", "value": "read-only"},
-                                {"label": "Project Only", "value": "workspace-write"},
-                                {"label": "Full Access", "value": "danger-full-access"},
+                            "config_fields": [
+                                {
+                                    "key": "sandbox",
+                                    "label": "Access",
+                                    "current_value": "workspace-write",
+                                    "options": [
+                                        {"label": "Read Only", "value": "read-only"},
+                                        {"label": "Project Only", "value": "workspace-write"},
+                                        {"label": "Full Access", "value": "danger-full-access"},
+                                    ],
+                                }
                             ],
                         },
                     ),
@@ -399,6 +403,67 @@ class FeishuClientTest(unittest.TestCase):
             action_row["columns"][1]["elements"][0]["behaviors"][0]["value"]["intent_key"],
             "workspace.open",
         )
+
+    def test_workspace_choose_agent_card_contains_cursor_specific_dropdowns(self) -> None:
+        project = Project(
+            id="proj_cursor",
+            name="PoCo Cursor",
+            created_by="ou_demo_user",
+            backend="cursor_agent",
+            backend_config={"model": "gpt-5", "mode": "plan", "sandbox": "enabled"},
+        )
+        card = FeishuCardRenderer().render(
+            build_render_instruction(
+                IntentDispatchResult(
+                    status=DispatchStatus.OK,
+                    intent_key="workspace.choose_agent",
+                    resource_refs=ResourceRefs(project_id=project.id),
+                    view_model=ViewModel(
+                        "workspace_choose_model",
+                        {
+                            "project": project.to_dict(),
+                            "agent_label": "Cursor Agent",
+                            "current_model": "gpt-5",
+                            "model_options": [
+                                {"label": "gpt-5", "value": "gpt-5"},
+                                {"label": "sonnet-4", "value": "sonnet-4"},
+                            ],
+                            "config_fields": [
+                                {
+                                    "key": "mode",
+                                    "label": "Mode",
+                                    "current_value": "plan",
+                                    "options": [
+                                        {"label": "Default", "value": "default"},
+                                        {"label": "Plan", "value": "plan"},
+                                        {"label": "Ask", "value": "ask"},
+                                    ],
+                                },
+                                {
+                                    "key": "sandbox",
+                                    "label": "Sandbox",
+                                    "current_value": "enabled",
+                                    "options": [
+                                        {"label": "Default", "value": "default"},
+                                        {"label": "Enabled", "value": "enabled"},
+                                        {"label": "Disabled", "value": "disabled"},
+                                    ],
+                                },
+                            ],
+                        },
+                    ),
+                    refresh_mode=RefreshMode.REPLACE_CURRENT,
+                ),
+                surface=Surface.GROUP,
+            )
+        )
+
+        form = card["body"]["elements"][1]
+        self.assertEqual(form["elements"][0]["name"], "model")
+        self.assertEqual(form["elements"][1]["name"], "mode")
+        self.assertEqual(form["elements"][1]["value"], "plan")
+        self.assertEqual(form["elements"][2]["name"], "sandbox")
+        self.assertEqual(form["elements"][2]["value"], "enabled")
 
     def test_project_dir_presets_card_contains_input_and_add(self) -> None:
         project = Project(

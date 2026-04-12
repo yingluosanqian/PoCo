@@ -658,6 +658,72 @@ class CursorAgentRunnerTest(unittest.TestCase):
             self.assertIn("--resume", captured["command"])
             self.assertIn("chat_existing", captured["command"])
 
+    def test_cursor_runner_applies_mode_and_sandbox_flags(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = CursorAgentRunner(
+                command="cursor-agent",
+                workdir=tmpdir,
+                model="gpt-5",
+                mode="default",
+                sandbox="default",
+            )
+            task = Task(
+                id="cursor_task_config",
+                requester_id="ou_demo",
+                prompt="run",
+                source="feishu",
+                status=TaskStatus.RUNNING,
+                agent_backend="cursor_agent",
+                effective_backend_config={"mode": "plan", "sandbox": "disabled"},
+            )
+            captured: dict[str, object] = {}
+
+            class FakeStdout:
+                def __init__(self) -> None:
+                    self.exhausted = False
+                    self._lines = iter(['{"result":"done","chatId":"chat_config"}\n'])
+
+                def readline(self) -> str:
+                    line = next(self._lines, "")
+                    if not line:
+                        self.exhausted = True
+                    return line
+
+            class FakeStderr:
+                exhausted = True
+
+                def readline(self) -> str:
+                    return ""
+
+            class FakePopen:
+                def __init__(self, command, **kwargs):  # type: ignore[no-untyped-def]
+                    captured["command"] = command
+                    self.stdout = FakeStdout()
+                    self.stderr = FakeStderr()
+                    self.returncode = 0
+
+                def poll(self):  # type: ignore[no-untyped-def]
+                    return 0 if self.stdout.exhausted else None
+
+                def kill(self) -> None:
+                    return None
+
+            with (
+                patch("poco.agent.runner.shutil.which", return_value="/Users/yihanc/.local/bin/cursor-agent"),
+                patch("poco.agent.runner.subprocess.Popen", FakePopen),
+                patch(
+                    "poco.agent.runner.select.select",
+                    side_effect=lambda readers, *_args: ([reader for reader in readers if not getattr(reader, "exhausted", True)], [], []),
+                ),
+            ):
+                updates = list(runner.start(task))
+
+            self.assertEqual(updates[-1].kind, "completed")
+            self.assertIn("--mode", captured["command"])
+            self.assertIn("plan", captured["command"])
+            self.assertIn("--sandbox", captured["command"])
+            self.assertIn("disabled", captured["command"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -825,11 +825,8 @@ def _render_workspace_choose_model(
     project = data["project"]
     agent_label = data.get("agent_label") or project["backend"]
     current_model = data.get("current_model")
-    secondary_option_key = data.get("secondary_option_key")
-    secondary_option_label = data.get("secondary_option_label") or "Access"
-    current_secondary_option = data.get("current_secondary_option")
     model_options = data.get("model_options") or []
-    secondary_options = data.get("secondary_options") or []
+    config_fields = data.get("config_fields") or []
     elements: list[dict[str, Any]] = [
         _markdown(
             "\n".join(
@@ -838,11 +835,11 @@ def _render_workspace_choose_model(
                     for line in [
                         f"**Agent:** `{agent_label}`",
                         f"**Model:** `{current_model or 'not set'}`" if model_options else None,
-                        (
-                            f"**{secondary_option_label}:** `{_secondary_option_display(secondary_option_key, current_secondary_option)}`"
-                            if secondary_option_key and secondary_options
-                            else None
-                        ),
+                        *[
+                            f"**{field.get('label')}:** `{_config_option_display(field.get('key'), field.get('current_value'))}`"
+                            for field in config_fields
+                            if field.get("key") and field.get("options")
+                        ],
                     ]
                     if line is not None
                 ]
@@ -864,18 +861,16 @@ def _render_workspace_choose_model(
                     if model_options
                     else []
                 ),
-                *(
-                    [
-                        _select_static(
-                            name=str(secondary_option_key),
-                            placeholder=f"Select {str(secondary_option_label).lower()}",
-                            options=secondary_options,
-                            value=current_secondary_option,
-                        )
-                    ]
-                    if secondary_option_key and secondary_options
-                    else []
-                ),
+                *[
+                    _select_static(
+                        name=str(field.get("key")),
+                        placeholder=f"Select {str(field.get('label', 'option')).lower()}",
+                        options=field.get("options") or [],
+                        value=field.get("current_value"),
+                    )
+                    for field in config_fields
+                    if field.get("key") and field.get("options")
+                ],
                 _two_up(
                     {
                         "tag": "button",
@@ -1480,11 +1475,15 @@ def _sandbox_label(sandbox: str) -> str:
     return "Project Only"
 
 
-def _secondary_option_display(key: object, value: object) -> str:
+def _config_option_display(key: object, value: object) -> str:
     text = str(value or "").strip()
     if not text:
         return "not set"
+    if text == "default":
+        return "Default"
     if key == "sandbox":
+        if text in {"enabled", "disabled"}:
+            return text.capitalize()
         return _sandbox_label(text)
     if key == "permission_mode":
         if text == "acceptEdits":
@@ -1495,6 +1494,11 @@ def _secondary_option_display(key: object, value: object) -> str:
             return "Default"
         if text == "plan":
             return "Plan"
+    if key == "mode":
+        if text == "plan":
+            return "Plan"
+        if text == "ask":
+            return "Ask"
     return text
 
 

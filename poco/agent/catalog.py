@@ -4,13 +4,18 @@ from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True, slots=True)
+class BackendConfigField:
+    key: str
+    label: str
+    options: tuple[tuple[str, str], ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class BackendDescriptor:
     key: str
     label: str
     model_options: tuple[str, ...] = ()
-    secondary_option_key: str | None = None
-    secondary_option_label: str | None = None
-    secondary_options: tuple[tuple[str, str], ...] = ()
+    config_fields: tuple[BackendConfigField, ...] = ()
     default_config: dict[str, object] = field(default_factory=dict)
 
 
@@ -24,12 +29,16 @@ _BACKEND_DESCRIPTORS: dict[str, BackendDescriptor] = {
             "gpt-5.3-codex",
             "gpt-5.3-codex-spark",
         ),
-        secondary_option_key="sandbox",
-        secondary_option_label="Access",
-        secondary_options=(
-            ("Read Only", "read-only"),
-            ("Project Only", "workspace-write"),
-            ("Full Access", "danger-full-access"),
+        config_fields=(
+            BackendConfigField(
+                key="sandbox",
+                label="Access",
+                options=(
+                    ("Read Only", "read-only"),
+                    ("Project Only", "workspace-write"),
+                    ("Full Access", "danger-full-access"),
+                ),
+            ),
         ),
         default_config={"sandbox": "workspace-write"},
     ),
@@ -40,13 +49,17 @@ _BACKEND_DESCRIPTORS: dict[str, BackendDescriptor] = {
             "sonnet",
             "opus",
         ),
-        secondary_option_key="permission_mode",
-        secondary_option_label="Permission",
-        secondary_options=(
-            ("Default", "default"),
-            ("Accept Edits", "acceptEdits"),
-            ("Plan", "plan"),
-            ("Bypass Permissions", "bypassPermissions"),
+        config_fields=(
+            BackendConfigField(
+                key="permission_mode",
+                label="Permission",
+                options=(
+                    ("Default", "default"),
+                    ("Accept Edits", "acceptEdits"),
+                    ("Plan", "plan"),
+                    ("Bypass Permissions", "bypassPermissions"),
+                ),
+            ),
         ),
         default_config={"permission_mode": "default", "model": "sonnet"},
     ),
@@ -58,7 +71,27 @@ _BACKEND_DESCRIPTORS: dict[str, BackendDescriptor] = {
             "sonnet-4",
             "sonnet-4-thinking",
         ),
-        default_config={"model": "gpt-5"},
+        config_fields=(
+            BackendConfigField(
+                key="mode",
+                label="Mode",
+                options=(
+                    ("Default", "default"),
+                    ("Plan", "plan"),
+                    ("Ask", "ask"),
+                ),
+            ),
+            BackendConfigField(
+                key="sandbox",
+                label="Sandbox",
+                options=(
+                    ("Default", "default"),
+                    ("Enabled", "enabled"),
+                    ("Disabled", "disabled"),
+                ),
+            ),
+        ),
+        default_config={"model": "gpt-5", "mode": "default", "sandbox": "default"},
     ),
     "coco": BackendDescriptor(
         key="coco",

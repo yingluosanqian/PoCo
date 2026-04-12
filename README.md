@@ -106,6 +106,8 @@ Optional Cursor Agent settings:
 export POCO_CURSOR_COMMAND="cursor-agent"
 export POCO_CURSOR_WORKDIR="/absolute/path/to/your/repo"
 export POCO_CURSOR_MODEL="gpt-5"
+export POCO_CURSOR_MODE="default"
+export POCO_CURSOR_SANDBOX="default"
 export POCO_CURSOR_TIMEOUT_SECONDS="900"
 ```
 

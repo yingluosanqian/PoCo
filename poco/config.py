@@ -28,6 +28,8 @@ class Settings:
     cursor_command: str = field(default_factory=lambda: getenv("POCO_CURSOR_COMMAND", "cursor-agent"))
     cursor_workdir: str = field(default_factory=lambda: getenv("POCO_CURSOR_WORKDIR", DEFAULT_REPO_ROOT))
     cursor_model: str | None = field(default_factory=lambda: getenv("POCO_CURSOR_MODEL", "gpt-5"))
+    cursor_mode: str = field(default_factory=lambda: getenv("POCO_CURSOR_MODE", "default"))
+    cursor_sandbox: str = field(default_factory=lambda: getenv("POCO_CURSOR_SANDBOX", "default"))
     cursor_timeout_seconds: int = field(default_factory=lambda: int(getenv("POCO_CURSOR_TIMEOUT_SECONDS", "900")))
     feishu_api_base_url: str = field(default_factory=lambda: getenv("POCO_FEISHU_API_BASE_URL", "https://open.feishu.cn").rstrip("/"))
     feishu_app_id: str | None = field(default_factory=lambda: getenv("POCO_FEISHU_APP_ID"))

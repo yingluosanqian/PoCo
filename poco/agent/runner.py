@@ -637,11 +637,15 @@ class CursorAgentRunner:
         command: str = "cursor-agent",
         workdir: str,
         model: str | None = None,
+        mode: str = "default",
+        sandbox: str = "default",
         timeout_seconds: int = 900,
     ) -> None:
         self._command = command
         self._workdir = workdir
         self._model = model
+        self._mode = mode
+        self._sandbox = sandbox
         self._timeout_seconds = timeout_seconds
         self._lock = RLock()
         self._active_processes: dict[str, subprocess.Popen[str]] = {}
@@ -688,7 +692,7 @@ class CursorAgentRunner:
         return (
             task.effective_model or self._model,
             task.effective_workdir or self._workdir,
-            task.effective_sandbox,
+            _string_or_none(task.effective_backend_config.get("sandbox")) or self._sandbox,
         )
 
     def _execute_prompt(self, task: Task, prompt: str) -> Iterator[AgentRunUpdate]:
@@ -703,6 +707,8 @@ class CursorAgentRunner:
             return
 
         resolved_model = task.effective_model or self._model
+        resolved_mode = _string_or_none(task.effective_backend_config.get("mode")) or self._mode
+        resolved_sandbox = _string_or_none(task.effective_backend_config.get("sandbox")) or self._sandbox
         command = [
             self._command,
             "-p",
@@ -715,6 +721,10 @@ class CursorAgentRunner:
         ]
         if resolved_model:
             command.extend(["--model", resolved_model])
+        if resolved_mode and resolved_mode != "default":
+            command.extend(["--mode", resolved_mode])
+        if resolved_sandbox and resolved_sandbox != "default":
+            command.extend(["--sandbox", resolved_sandbox])
         if task.backend_session_id:
             command.extend(["--resume", task.backend_session_id])
         command.append(prompt)
@@ -1095,6 +1105,8 @@ def create_agent_runner(
     cursor_command: str,
     cursor_workdir: str,
     cursor_model: str | None,
+    cursor_mode: str,
+    cursor_sandbox: str,
     cursor_timeout_seconds: int,
 ) -> AgentRunner:
     normalized = backend.strip().lower() or "codex"
@@ -1118,6 +1130,8 @@ def create_agent_runner(
             command=cursor_command,
             workdir=cursor_workdir,
             model=cursor_model,
+            mode=cursor_mode,
+            sandbox=cursor_sandbox,
             timeout_seconds=cursor_timeout_seconds,
         ),
         "stub": StubAgentRunner(),

@@ -72,6 +72,8 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
         cursor_command=settings.cursor_command,
         cursor_workdir=settings.cursor_workdir,
         cursor_model=settings.cursor_model,
+        cursor_mode=settings.cursor_mode,
+        cursor_sandbox=settings.cursor_sandbox,
         cursor_timeout_seconds=settings.cursor_timeout_seconds,
     )
     session_controller = SessionController(session_store)

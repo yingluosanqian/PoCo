@@ -490,16 +490,16 @@ class WorkspaceIntentHandler:
             backend_config["model"] = model
         else:
             backend_config.pop("model", None)
-        if descriptor.secondary_option_key is not None:
-            secondary_value = _extract_secondary_value(
+        for field in descriptor.config_fields:
+            field_value = _extract_config_field_value(
                 intent.payload,
-                key=descriptor.secondary_option_key,
-                current=_optional_string(backend_config.get(descriptor.secondary_option_key)),
+                key=field.key,
+                current=_optional_string(backend_config.get(field.key)),
             )
-            if secondary_value:
-                backend_config[descriptor.secondary_option_key] = secondary_value
+            if field_value:
+                backend_config[field.key] = field_value
             else:
-                backend_config.pop(descriptor.secondary_option_key, None)
+                backend_config.pop(field.key, None)
         project = self.project_controller.set_agent_config(
             project.id,
             backend_config=backend_config,
@@ -912,29 +912,36 @@ def _workspace_enter_path_view_model(project, *, context, browse_path: str | Non
 
 def _workspace_choose_model_view_model(project) -> ViewModel:
     descriptor = get_backend_descriptor(project.backend)
-    secondary_key = descriptor.secondary_option_key
-    current_secondary = None
-    if secondary_key == "sandbox":
-        current_secondary = getattr(project, "sandbox", "workspace-write")
-    elif secondary_key is not None:
-        current_secondary = _optional_string(project.backend_config.get(secondary_key))
+    config_fields: list[dict[str, object]] = []
+    for field in descriptor.config_fields:
+        if field.key == "sandbox":
+            current_value = _optional_string(project.backend_config.get(field.key))
+            if current_value is None:
+                current_value = getattr(project, "sandbox", None)
+        else:
+            current_value = _optional_string(project.backend_config.get(field.key))
+        config_fields.append(
+            {
+                "key": field.key,
+                "label": field.label,
+                "current_value": current_value,
+                "options": [
+                    {"label": label, "value": value}
+                    for label, value in field.options
+                ],
+            }
+        )
     return ViewModel(
         "workspace_choose_model",
         {
             "project": project.to_dict(),
             "agent_label": descriptor.label,
             "current_model": project.model,
-            "secondary_option_key": secondary_key,
-            "secondary_option_label": descriptor.secondary_option_label,
-            "current_secondary_option": current_secondary,
             "model_options": [
                 {"label": option, "value": option}
                 for option in descriptor.model_options
             ],
-            "secondary_options": [
-                {"label": label, "value": value}
-                for label, value in descriptor.secondary_options
-            ],
+            "config_fields": config_fields,
         },
     )
 
@@ -1017,7 +1024,7 @@ def _extract_sandbox_value(payload: dict[str, object], *, current: str | None) -
     return current
 
 
-def _extract_secondary_value(
+def _extract_config_field_value(
     payload: dict[str, object],
     *,
     key: str,
