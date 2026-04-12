@@ -130,6 +130,10 @@ class FeishuGateway:
             reply_receive_id_type=target["receive_id_type"],
         )
 
+        group_project = self._resolve_group_project(event)
+        if group_project is not None:
+            self._ensure_workspace_card(group_project)
+
         delivered = False
         reply_preview = response.text
         if self._message_client is not None:
@@ -367,3 +371,45 @@ class FeishuGateway:
         if not chat_id or str(chat_type).lower() not in {"group", "chat", "group_chat"}:
             return None
         return self._project_controller.get_project_by_group_chat_id(str(chat_id))
+
+    def _ensure_workspace_card(self, project: Project) -> None:
+        if self._message_client is None or self._project_controller is None:
+            return
+        if not project.group_chat_id or project.workspace_message_id:
+            return
+
+        from poco.interaction.card_handlers import build_workspace_overview_result
+
+        context = (
+            self._workspace_controller.get_context(project)
+            if self._workspace_controller is not None
+            else None
+        )
+        latest_task = None
+        if self._task_controller is not None:
+            tasks = self._task_controller.list_tasks_for_project(project.id)
+            if tasks:
+                latest_task = max(tasks, key=lambda task: task.updated_at)
+        instruction = build_render_instruction(
+            build_workspace_overview_result(
+                project,
+                context=context,
+                latest_task=latest_task,
+            ),
+            surface=Surface.GROUP,
+        )
+        card = self._card_renderer.render(instruction)
+        result = self._message_client.send_interactive(
+            receive_id=project.group_chat_id,
+            receive_id_type="chat_id",
+            card=card,
+        )
+        if result.message_id:
+            self._project_controller.bind_workspace_message(project.id, result.message_id)
+        self._record_outbound_attempt(
+            source="gateway_workspace_bootstrap",
+            receive_id=project.group_chat_id,
+            receive_id_type="chat_id",
+            text=f"[card] Workspace: {project.name}",
+            task_id=project.id,
+        )

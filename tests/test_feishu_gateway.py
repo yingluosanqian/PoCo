@@ -31,6 +31,7 @@ class FakeMessageClient:
     def __init__(self) -> None:
         self.sent_messages: list[dict[str, str]] = []
         self.sent_cards: list[dict[str, object]] = []
+        self.updated_cards: list[dict[str, object]] = []
 
     def send_text(self, *, receive_id: str, receive_id_type: str, text: str) -> None:
         self.sent_messages.append(
@@ -60,6 +61,19 @@ class FakeMessageClient:
             (),
             {"message_id": f"om_{len(self.sent_cards)}"},
         )()
+
+    def update_interactive(
+        self,
+        *,
+        message_id: str,
+        card: dict[str, object],
+    ) -> None:
+        self.updated_cards.append(
+            {
+                "message_id": message_id,
+                "card": card,
+            }
+        )
 
 
 class FakeDispatcher(AsyncTaskDispatcher):
@@ -315,7 +329,7 @@ class FeishuGatewayTest(unittest.TestCase):
 
         self.assertTrue(response["ok"])
         self.assertEqual(len(self.message_client.sent_messages), 0)
-        self.assertEqual(len(self.message_client.sent_cards), 1)
+        self.assertEqual(len(self.message_client.sent_cards), 2)
         self.assertEqual(len(self.dispatcher.actions), 1)
         action, task_id = self.dispatcher.actions[0]
         self.assertEqual(action, "start")
@@ -358,7 +372,7 @@ class FeishuGatewayTest(unittest.TestCase):
 
         self.assertTrue(response["ok"])
         self.assertEqual(len(self.message_client.sent_messages), 0)
-        self.assertEqual(len(self.message_client.sent_cards), 1)
+        self.assertEqual(len(self.message_client.sent_cards), 2)
         self.assertEqual(len(self.dispatcher.actions), 1)
         action, task_id = self.dispatcher.actions[0]
         self.assertEqual(action, "start")
@@ -369,6 +383,35 @@ class FeishuGatewayTest(unittest.TestCase):
         self.assertEqual(task.effective_workdir, "/srv/poco/api")
         self.assertIsNotNone(task.notification_message_id)
         self.assertEqual(response["reply_preview"], "[card] task_status:created")
+
+    def test_group_message_recreates_missing_workspace_card(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+            group_chat_id="oc_demo_chat",
+        )
+        payload = {
+            "token": "verify-token",
+            "event": {
+                "sender": {"sender_id": {"open_id": "ou_demo_user"}},
+                "message": {
+                    "chat_type": "group",
+                    "chat_id": "oc_demo_chat",
+                    "content": json.dumps({"text": "hello"}),
+                },
+            },
+        }
+
+        self.gateway.handle_event(
+            payload,
+            headers={},
+            raw_body=json.dumps(payload).encode("utf-8"),
+        )
+
+        self.assertGreaterEqual(len(self.message_client.sent_cards), 2)
+        updated_project = self.project_controller.get_project(project.id)
+        self.assertIsNotNone(updated_project.workspace_message_id)
 
     def test_second_group_message_queues_when_first_is_still_active(self) -> None:
         project = self.project_controller.create_project(
@@ -474,7 +517,7 @@ class FeishuGatewayTest(unittest.TestCase):
             )
 
             task = controller.get_task(response["task_id"])
-            self.assertEqual(task.notification_message_id, "om_1")
+            self.assertEqual(task.notification_message_id, "om_2")
 
     def test_unknown_slash_command_in_group_returns_help_instead_of_task(self) -> None:
         self.project_controller.create_project(

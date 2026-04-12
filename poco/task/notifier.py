@@ -187,6 +187,7 @@ class FeishuTaskNotifier:
             return
         workspace_message_id = project.workspace_message_id
         if not workspace_message_id:
+            self._bootstrap_workspace_card(project, task)
             return
         if workspace_message_id == task.notification_message_id:
             return
@@ -233,3 +234,45 @@ class FeishuTaskNotifier:
                         "project_id": project.id,
                     },
                 )
+            self._bootstrap_workspace_card(project, task)
+
+    def _bootstrap_workspace_card(self, project, task: Task) -> None:
+        if not project.group_chat_id or self._project_controller is None:
+            return
+        from poco.interaction.card_handlers import build_workspace_overview_result
+
+        context = (
+            self._workspace_controller.get_context(project)
+            if self._workspace_controller is not None
+            else None
+        )
+        instruction = build_render_instruction(
+            build_workspace_overview_result(
+                project,
+                context=context,
+                active_session=(
+                    self._session_controller.get_active_session(project.id)
+                    if self._session_controller is not None
+                    else None
+                ),
+                latest_task=task,
+                message=f"Workspace restored for {project.name}",
+            ),
+            surface=Surface.GROUP,
+        )
+        card = self._renderer.render(instruction)
+        result = self._message_client.send_interactive(
+            receive_id=project.group_chat_id,
+            receive_id_type="chat_id",
+            card=card,
+        )
+        if result.message_id:
+            self._project_controller.bind_workspace_message(project.id, result.message_id)
+        if self._debug_recorder is not None:
+            self._debug_recorder.record_outbound_attempt(
+                source="workspace_notifier_bootstrap",
+                receive_id=project.group_chat_id,
+                receive_id_type="chat_id",
+                text=f"[card] Workspace: {project.name}",
+                task_id=task.id,
+            )

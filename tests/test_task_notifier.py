@@ -269,6 +269,44 @@ class FeishuTaskNotifierTest(unittest.TestCase):
         snapshot = recorder.snapshot()
         self.assertEqual(snapshot["errors"][0]["stage"], "task_notifier_update")
 
+    def test_workspace_update_failure_bootstraps_new_workspace_card(self) -> None:
+        client = FailingUpdateMessageClient()
+        recorder = FeishuDebugRecorder()
+        project_controller = ProjectController(InMemoryProjectStore())
+        workspace_controller = WorkspaceContextController(InMemoryWorkspaceContextStore())
+        project = project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+            group_chat_id="oc_group_1",
+        )
+        project_controller.bind_workspace_message(project.id, "om_workspace_1")
+        notifier = FeishuTaskNotifier(
+            client,  # type: ignore[arg-type]
+            project_controller=project_controller,
+            workspace_controller=workspace_controller,
+            debug_recorder=recorder,
+        )
+        task = Task(
+            id="task_workspace_restore",
+            requester_id="ou_demo",
+            prompt="summarize",
+            source="feishu_card",
+            agent_backend="codex",
+            project_id=project.id,
+            effective_workdir="/srv/poco/api",
+            reply_receive_id="oc_group_1",
+            reply_receive_id_type="chat_id",
+            status=TaskStatus.COMPLETED,
+            raw_result="Done.",
+        )
+
+        notifier.notify_task(task)
+
+        self.assertEqual(len(client.sent_cards), 2)
+        refreshed = project_controller.get_project(project.id)
+        self.assertEqual(refreshed.workspace_message_id, "om_task_status_1")
+
     def test_notification_message_id_is_persisted_for_sqlite_backed_tasks(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             controller = TaskController(
