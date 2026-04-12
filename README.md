@@ -2,6 +2,20 @@
 
 PoCo is a Python-first MVP scaffold for controlling server-side AI agent workflows from mobile messaging entrypoints.
 
+## Quick Start
+
+```bash
+python3 -m pip install -e .
+poco config
+poco start
+```
+
+Then verify:
+
+```bash
+poco status
+```
+
 ## Current Scope
 
 - `FastAPI` webhook service
@@ -147,7 +161,7 @@ poco start
 - Feishu App ID
 - Feishu App Secret
 
-PoCo stores them in a local config file under [`.work/poco.config.json`](/Users/yihanc/project/PoCo/.work/poco.config.json), so normal users do not need to export shell variables.
+PoCo stores them in a local user config file under `~/.poco/poco.config.json`, so normal users do not need to export shell variables.
 
 PoCo now defaults to Feishu `longconn`, so the normal local/mobile-first path does not require setting an inbound delivery mode explicitly. Only set `POCO_FEISHU_DELIVERY_MODE` if you intentionally want to force `webhook`.
 
@@ -158,6 +172,20 @@ poco status
 poco shutdown
 poco restart
 ```
+
+### Packaging
+
+Build release artifacts locally:
+
+```bash
+python3 -m pip install build
+python3 -m build
+```
+
+This produces:
+
+- `dist/*.whl`
+- `dist/*.tar.gz`
 
 Advanced server-side overrides only:
 
@@ -178,7 +206,7 @@ Notes:
 - The current long-connection implementation now handles both `im.message.receive_v1` and card callback traffic for local/mobile-first operation.
 - Callback token/signature settings apply to webhook delivery. Feishu long-connection inbound events are authenticated by the long-connection session itself.
 - `POCO_STATE_BACKEND=sqlite` is now the default runtime path. PoCo persists projects, workspace state and tasks so restart does not lose existing group/workspace tracking.
-- `POCO_STATE_DB_PATH` defaults to `.work/poco.db`.
+- `POCO_STATE_DB_PATH` defaults to `~/.poco/poco.db`.
 
 Manual fallback start:
 

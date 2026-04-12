@@ -141,7 +141,7 @@ curl http://127.0.0.1:8000/tasks/<task_id>
 
 默认是 sqlite：
 
-- 路径默认 [`/.work/poco.db`](/Users/yihanc/project/PoCo/.work/poco.db)
+- 路径默认 `~/.poco/poco.db`
 
 保存内容：
 

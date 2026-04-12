@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 
 
 DEFAULT_REPO_ROOT = str(Path(__file__).resolve().parents[1])
-DEFAULT_RUNTIME_DIR = str(Path(DEFAULT_REPO_ROOT) / ".work")
+DEFAULT_RUNTIME_DIR = str(Path.home() / ".poco")
 DEFAULT_CONFIG_PATH = str(Path(DEFAULT_RUNTIME_DIR) / "poco.config.json")
 
 
@@ -77,9 +77,9 @@ class Settings:
     state_db_path: str = field(
         default_factory=lambda: _setting(
             "POCO_STATE_DB_PATH",
-            str(Path(DEFAULT_REPO_ROOT) / ".work" / "poco.db"),
+            str(Path(DEFAULT_RUNTIME_DIR) / "poco.db"),
         )
-        or str(Path(DEFAULT_REPO_ROOT) / ".work" / "poco.db")
+        or str(Path(DEFAULT_RUNTIME_DIR) / "poco.db")
     )
 
     @property
