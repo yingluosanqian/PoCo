@@ -319,6 +319,7 @@ def _render_workspace_overview(
     current_model = data.get("current_model")
     workdir_url = workdir_browser_url(app_base_url, project_id=project["id"])
     stop_enabled = bool(data.get("stop_enabled"))
+    config_locked = latest_status in {"created", "queued", "running", "waiting_for_confirmation"}
     elements: list[dict[str, Any]] = []
     if stop_enabled:
         elements.append(
@@ -337,8 +338,10 @@ def _render_workspace_overview(
         elements.append(_plain_text("Stop is available only while a task is running."))
     elements.extend(
         [
-            _action_button(
-                label="Change Workdir",
+            _locked_or_action_button(
+                locked=config_locked,
+                label="Working Dir",
+                locked_reason="Working Dir is unavailable while a task is active.",
                 url=workdir_url,
                 intent_value={
                     "intent_key": "workspace.enter_path",
@@ -347,8 +350,10 @@ def _render_workspace_overview(
                 } if workdir_url is None else None,
                 name=f"enter_workdir_path_{project['id']}",
             ),
-            _button(
-                label="Choose Model",
+            _locked_or_action_button(
+                locked=config_locked,
+                label="Model",
+                locked_reason="Model is unavailable while a task is active.",
                 intent_value={
                     "intent_key": "workspace.choose_model",
                     "surface": surface,
@@ -661,6 +666,7 @@ def _render_task_status(
 
     if task.get("project_id"):
         workdir_url = workdir_browser_url(app_base_url, project_id=task["project_id"])
+        config_locked = status in {"created", "queued", "running", "waiting_for_confirmation"}
         if status in {"created", "running"}:
             elements.append(
                 _button(
@@ -675,8 +681,10 @@ def _render_task_status(
                 )
             )
         elements.append(
-            _action_button(
-                label="Change Working Dir",
+            _locked_or_action_button(
+                locked=config_locked,
+                label="Working Dir",
+                locked_reason="Working Dir is unavailable while this task is active.",
                 url=workdir_url,
                 intent_value={
                     "intent_key": "workspace.enter_path",
@@ -687,8 +695,10 @@ def _render_task_status(
             )
         )
         elements.append(
-            _button(
-                label="Choose Model",
+            _locked_or_action_button(
+                locked=config_locked,
+                label="Model",
+                locked_reason="Model is unavailable while this task is active.",
                 intent_value={
                     "intent_key": "workspace.choose_model",
                     "surface": surface,
@@ -874,6 +884,27 @@ def _action_button(
         intent_value=intent_value,
         name=name,
         style=style,
+    )
+
+
+def _locked_or_action_button(
+    *,
+    locked: bool,
+    label: str,
+    name: str,
+    locked_reason: str,
+    style: str = "default",
+    intent_value: dict[str, str] | None = None,
+    url: str | None = None,
+) -> dict[str, Any]:
+    if locked:
+        return _plain_text(f"{label} · locked")
+    return _action_button(
+        label=label,
+        name=name,
+        style=style,
+        intent_value=intent_value,
+        url=url,
     )
 
 

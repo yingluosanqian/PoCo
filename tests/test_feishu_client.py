@@ -114,6 +114,8 @@ class FeishuClientTest(unittest.TestCase):
             change_workdir_button["url"],
             "https://poco.test/ui/workdir?project_id=proj_1",
         )
+        self.assertEqual(change_workdir_button["text"]["content"], "Working Dir")
+        self.assertEqual(change_model_button["text"]["content"], "Model")
         self.assertEqual(change_model_button["behaviors"][0]["value"]["surface"], "group")
         self.assertEqual(
             change_model_button["behaviors"][0]["value"]["intent_key"],
@@ -355,8 +357,8 @@ class FeishuClientTest(unittest.TestCase):
         self.assertEqual(approve_button["behaviors"][0]["value"]["intent_key"], "task.approve")
         self.assertEqual(approve_button["behaviors"][0]["value"]["task_id"], "task_1")
         self.assertEqual(stop_button["behaviors"][0]["value"]["intent_key"], "task.stop")
-        self.assertEqual(card["body"]["elements"][3]["behaviors"][0]["value"]["intent_key"], "workspace.enter_path")
-        self.assertEqual(card["body"]["elements"][4]["behaviors"][0]["value"]["intent_key"], "workspace.choose_model")
+        self.assertIn("Working Dir · locked", card["body"]["elements"][3]["text"]["content"])
+        self.assertIn("Model · locked", card["body"]["elements"][4]["text"]["content"])
 
     def test_task_status_card_contains_result_when_completed(self) -> None:
         task = {
@@ -432,8 +434,8 @@ class FeishuClientTest(unittest.TestCase):
         live_block = card["body"]["elements"][0]
         self.assertIn("Step 1", live_block["text"]["content"])
         self.assertEqual(card["body"]["elements"][1]["behaviors"][0]["value"]["intent_key"], "task.stop")
-        self.assertEqual(card["body"]["elements"][2]["behaviors"][0]["value"]["intent_key"], "workspace.enter_path")
-        self.assertEqual(card["body"]["elements"][3]["behaviors"][0]["value"]["intent_key"], "workspace.choose_model")
+        self.assertIn("Working Dir · locked", card["body"]["elements"][2]["text"]["content"])
+        self.assertIn("Model · locked", card["body"]["elements"][3]["text"]["content"])
 
     def test_task_status_card_adds_pagination_for_long_raw_result(self) -> None:
         task = {

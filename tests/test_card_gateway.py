@@ -293,7 +293,9 @@ class FeishuCardGatewayTest(unittest.TestCase):
             workdir_button["behaviors"][0]["value"]["intent_key"],
             "workspace.enter_path",
         )
+        self.assertEqual(workdir_button["text"]["content"], "Working Dir")
         change_model_button = response["card"]["data"]["body"]["elements"][2]
+        self.assertEqual(change_model_button["text"]["content"], "Model")
         self.assertEqual(
             change_model_button["behaviors"][0]["value"]["surface"],
             "group",
@@ -379,10 +381,9 @@ class FeishuCardGatewayTest(unittest.TestCase):
         response = self.gateway.handle_action(payload)
 
         self.assertIn(task.id, response["card"]["data"]["header"]["title"]["content"])
-        workdir_button = response["card"]["data"]["body"]["elements"][1]
-        self.assertEqual(
-            workdir_button["behaviors"][0]["value"]["intent_key"],
-            "workspace.enter_path",
+        self.assertIn(
+            "Working Dir · locked",
+            response["card"]["data"]["body"]["elements"][1]["text"]["content"],
         )
 
     def test_workspace_open_enables_stop_when_latest_task_is_running(self) -> None:
@@ -425,6 +426,8 @@ class FeishuCardGatewayTest(unittest.TestCase):
         stop_button = response["card"]["data"]["body"]["elements"][0]
         self.assertEqual(stop_button["behaviors"][0]["value"]["intent_key"], "task.stop")
         self.assertEqual(stop_button["behaviors"][0]["value"]["task_id"], task.id)
+        self.assertIn("Working Dir · locked", response["card"]["data"]["body"]["elements"][1]["text"]["content"])
+        self.assertIn("Model · locked", response["card"]["data"]["body"]["elements"][2]["text"]["content"])
 
     def test_task_composer_opens_from_workspace_card(self) -> None:
         project = self.project_controller.create_project(
