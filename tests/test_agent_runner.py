@@ -5,7 +5,14 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from poco.agent.runner import ClaudeCodeRunner, CodexAppServerRunner, CodexCliRunner, CursorAgentRunner
+from poco.agent.runner import (
+    ClaudeCodeRunner,
+    CocoRunner,
+    CodexAppServerRunner,
+    CodexCliRunner,
+    CursorAgentRunner,
+    _cleanup_subprocess,
+)
 from poco.task.models import Task, TaskStatus
 
 
@@ -723,6 +730,453 @@ class CursorAgentRunnerTest(unittest.TestCase):
             self.assertIn("plan", captured["command"])
             self.assertIn("--sandbox", captured["command"])
             self.assertIn("disabled", captured["command"])
+
+
+class CocoRunnerTest(unittest.TestCase):
+    def test_cleanup_subprocess_closes_pipes_and_waits(self) -> None:
+        class FakeStream:
+            def __init__(self) -> None:
+                self.closed = False
+
+            def close(self) -> None:
+                self.closed = True
+
+        class FakePopen:
+            def __init__(self) -> None:
+                self.stdin = FakeStream()
+                self.stdout = FakeStream()
+                self.stderr = FakeStream()
+                self.wait_calls = 0
+                self.killed = False
+
+            def wait(self, timeout=None):  # type: ignore[no-untyped-def]
+                self.wait_calls += 1
+                return 0
+
+            def kill(self) -> None:
+                self.killed = True
+
+        process = FakePopen()
+        _cleanup_subprocess(process)
+
+        self.assertTrue(process.stdin.closed)
+        self.assertTrue(process.stdout.closed)
+        self.assertTrue(process.stderr.closed)
+        self.assertEqual(process.wait_calls, 1)
+        self.assertFalse(process.killed)
+
+    def test_coco_runner_streams_updates_and_completes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = CocoRunner(command="traecli", workdir=tmpdir, model="GPT-5.2")
+            task = Task(
+                id="coco_task_stream",
+                requester_id="ou_demo",
+                prompt="stream output",
+                source="feishu",
+                status=TaskStatus.RUNNING,
+                agent_backend="coco",
+            )
+            fake_process = MagicMock()
+
+            class FakeSession:
+                def __init__(self, **kwargs):  # type: ignore[no-untyped-def]
+                    self.prompt_request_id = 99
+                    self.reads = iter(
+                        [
+                            {
+                                "method": "session/update",
+                                "params": {
+                                    "sessionId": "session_123",
+                                    "update": {
+                                        "sessionUpdate": "agent_message_chunk",
+                                        "_meta": {"id": "msg_1", "type": "full", "lastChunk": False},
+                                        "content": {"type": "text", "text": "Hello"},
+                                    },
+                                },
+                            },
+                            {
+                                "method": "session/update",
+                                "params": {
+                                    "sessionId": "session_123",
+                                    "update": {
+                                        "sessionUpdate": "agent_message_chunk",
+                                        "_meta": {"id": "msg_1", "type": "full", "lastChunk": False},
+                                        "content": {"type": "text", "text": "Hello world"},
+                                    },
+                                },
+                            },
+                            {
+                                "id": 99,
+                                "result": {"stopReason": "end_turn"},
+                            },
+                        ]
+                    )
+
+                def initialize(self) -> None:
+                    return None
+
+                def open_session(self, *, session_id: str | None, cwd: str) -> dict[str, object]:
+                    return {"sessionId": "session_123"}
+
+                def set_mode(self, *, session_id: str, mode_id: str) -> None:
+                    return None
+
+                def set_model(self, *, session_id: str, model_id: str) -> None:
+                    return None
+
+                def start_prompt(self, *, session_id: str, prompt: str) -> int:
+                    return self.prompt_request_id
+
+                def drain_pending_notifications(self) -> list[dict[str, object]]:
+                    return []
+
+                def read_next_message(self) -> dict[str, object] | None:
+                    return next(self.reads, None)
+
+                def failure_detail(self, default: str) -> str:
+                    return default
+
+            with (
+                patch("poco.agent.runner.shutil.which", return_value="/Users/bytedance/.local/bin/traecli"),
+                patch("poco.agent.runner.subprocess.Popen", return_value=fake_process),
+                patch("poco.agent.runner._TraeAcpClient", FakeSession),
+            ):
+                updates = list(runner.start(task))
+
+            self.assertEqual(updates[1].backend_session_id, "session_123")
+            self.assertEqual(updates[2].output_chunk, "Hello")
+            self.assertEqual(updates[3].output_chunk, " world")
+            self.assertEqual(updates[-1].kind, "completed")
+            self.assertEqual(updates[-1].backend_session_id, "session_123")
+            self.assertEqual(updates[-1].raw_result, "Hello world")
+
+    def test_coco_runner_accumulates_partial_chunks_with_different_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = CocoRunner(command="traecli", workdir=tmpdir, model="GPT-5.2")
+            task = Task(
+                id="coco_task_partial",
+                requester_id="ou_demo",
+                prompt="hello",
+                source="feishu",
+                status=TaskStatus.RUNNING,
+                agent_backend="coco",
+            )
+            fake_process = MagicMock()
+
+            class FakeSession:
+                def __init__(self, **kwargs):  # type: ignore[no-untyped-def]
+                    self.reads = iter(
+                        [
+                            {
+                                "method": "session/update",
+                                "params": {
+                                    "sessionId": "session_partial",
+                                    "update": {
+                                        "sessionUpdate": "agent_message_chunk",
+                                        "_meta": {"id": "m1", "type": "partial", "lastChunk": False},
+                                        "content": {"type": "text", "text": "你"},
+                                    },
+                                },
+                            },
+                            {
+                                "method": "session/update",
+                                "params": {
+                                    "sessionId": "session_partial",
+                                    "update": {
+                                        "sessionUpdate": "agent_message_chunk",
+                                        "_meta": {"id": "m2", "type": "partial", "lastChunk": False},
+                                        "content": {"type": "text", "text": "好"},
+                                    },
+                                },
+                            },
+                            {
+                                "method": "session/update",
+                                "params": {
+                                    "sessionId": "session_partial",
+                                    "update": {
+                                        "sessionUpdate": "agent_message_chunk",
+                                        "_meta": {"id": "m3", "type": "partial", "lastChunk": False},
+                                        "content": {"type": "text", "text": "？"},
+                                    },
+                                },
+                            },
+                            {
+                                "id": 90,
+                                "result": {"stopReason": "end_turn"},
+                            },
+                        ]
+                    )
+
+                def initialize(self) -> None:
+                    return None
+
+                def open_session(self, *, session_id: str | None, cwd: str) -> dict[str, object]:
+                    return {"sessionId": "session_partial"}
+
+                def set_mode(self, *, session_id: str, mode_id: str) -> None:
+                    return None
+
+                def set_model(self, *, session_id: str, model_id: str) -> None:
+                    return None
+
+                def start_prompt(self, *, session_id: str, prompt: str) -> int:
+                    return 90
+
+                def drain_pending_notifications(self) -> list[dict[str, object]]:
+                    return []
+
+                def read_next_message(self) -> dict[str, object] | None:
+                    return next(self.reads, None)
+
+                def failure_detail(self, default: str) -> str:
+                    return default
+
+            with (
+                patch("poco.agent.runner.shutil.which", return_value="/Users/bytedance/.local/bin/traecli"),
+                patch("poco.agent.runner.subprocess.Popen", return_value=fake_process),
+                patch("poco.agent.runner._TraeAcpClient", FakeSession),
+            ):
+                updates = list(runner.start(task))
+
+            self.assertEqual([u.output_chunk for u in updates if u.output_chunk], ["你", "好", "？"])
+            self.assertEqual(updates[-1].raw_result, "你好？")
+
+    def test_coco_runner_loads_existing_session_and_applies_yolo_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = CocoRunner(command="traecli", workdir=tmpdir, model="GPT-5.2")
+            task = Task(
+                id="coco_task_resume",
+                requester_id="ou_demo",
+                prompt="continue",
+                source="feishu",
+                status=TaskStatus.RUNNING,
+                agent_backend="coco",
+                backend_session_id="session_existing",
+                effective_backend_config={"approval_mode": "yolo"},
+            )
+            captured: dict[str, object] = {"requests": []}
+            fake_process = MagicMock()
+
+            class FakeSession:
+                def __init__(self, **kwargs):  # type: ignore[no-untyped-def]
+                    self.reads = iter(
+                        [
+                            {
+                                "id": 77,
+                                "result": {"stopReason": "end_turn"},
+                            },
+                        ]
+                    )
+
+                def initialize(self) -> None:
+                    return None
+
+                def open_session(self, *, session_id: str | None, cwd: str) -> dict[str, object]:
+                    captured["requests"].append(("session/load", {"sessionId": session_id, "cwd": cwd}))
+                    return {"sessionId": "session_existing"}
+
+                def set_mode(self, *, session_id: str, mode_id: str) -> None:
+                    captured["requests"].append(("session/set_mode", {"sessionId": session_id, "modeId": mode_id}))
+
+                def set_model(self, *, session_id: str, model_id: str) -> None:
+                    captured["requests"].append(("session/set_model", {"sessionId": session_id, "modelId": model_id}))
+
+                def start_prompt(self, *, session_id: str, prompt: str) -> int:
+                    captured["prompt"] = ("session/prompt", {"sessionId": session_id, "prompt": prompt})
+                    return 77
+
+                def drain_pending_notifications(self) -> list[dict[str, object]]:
+                    return []
+
+                def read_next_message(self) -> dict[str, object] | None:
+                    return next(self.reads, None)
+
+                def failure_detail(self, default: str) -> str:
+                    return default
+
+            with (
+                patch("poco.agent.runner.shutil.which", return_value="/Users/bytedance/.local/bin/traecli"),
+                patch("poco.agent.runner.subprocess.Popen", return_value=fake_process),
+                patch("poco.agent.runner._TraeAcpClient", FakeSession),
+            ):
+                updates = list(runner.start(task))
+
+            self.assertEqual(updates[-1].backend_session_id, "session_existing")
+            requests = captured["requests"]
+            self.assertEqual(requests[0][0], "session/load")
+            self.assertEqual(requests[0][1]["sessionId"], "session_existing")
+            self.assertEqual(requests[1][0], "session/set_mode")
+            self.assertEqual(requests[1][1]["modeId"], "bypass_permissions")
+            self.assertEqual(requests[2][0], "session/set_model")
+            self.assertEqual(requests[2][1]["modelId"], "GPT-5.2")
+
+    def test_coco_runner_ignores_pre_prompt_message_ids_from_loaded_session(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = CocoRunner(command="traecli", workdir=tmpdir, model="GPT-5.2")
+            task = Task(
+                id="coco_task_history",
+                requester_id="ou_demo",
+                prompt="new prompt",
+                source="feishu",
+                status=TaskStatus.RUNNING,
+                agent_backend="coco",
+                backend_session_id="session_existing",
+            )
+            fake_process = MagicMock()
+
+            class FakeSession:
+                def __init__(self, **kwargs):  # type: ignore[no-untyped-def]
+                    self._pending_notifications = [
+                        {
+                            "method": "session/update",
+                            "params": {
+                                "sessionId": "session_existing",
+                                "update": {
+                                    "sessionUpdate": "agent_message_chunk",
+                                    "_meta": {"id": "old_msg", "type": "full", "lastChunk": False},
+                                    "content": {"type": "text", "text": "old history"},
+                                },
+                            },
+                        }
+                    ]
+                    self.reads = iter(
+                        [
+                            {
+                                "method": "session/update",
+                                "params": {
+                                    "sessionId": "session_existing",
+                                    "update": {
+                                        "sessionUpdate": "agent_message_chunk",
+                                        "_meta": {"id": "old_msg", "type": "full", "lastChunk": True},
+                                        "content": {"type": "text", "text": "old history continued"},
+                                    },
+                                },
+                            },
+                            {
+                                "method": "session/update",
+                                "params": {
+                                    "sessionId": "session_existing",
+                                    "update": {
+                                        "sessionUpdate": "agent_message_chunk",
+                                        "_meta": {"id": "new_msg", "type": "full", "lastChunk": True},
+                                        "content": {"type": "text", "text": "fresh answer"},
+                                    },
+                                },
+                            },
+                            {
+                                "id": 88,
+                                "result": {"stopReason": "end_turn"},
+                            },
+                        ]
+                    )
+
+                def initialize(self) -> None:
+                    return None
+
+                def request(self, method: str, params: dict[str, object]) -> dict[str, object]:
+                    if method == "session/load":
+                        return {"sessionId": "session_existing"}
+                    return {}
+
+                def open_session(self, *, session_id: str | None, cwd: str) -> dict[str, object]:
+                    return self.request("session/load", {"sessionId": session_id, "cwd": cwd})
+
+                def set_mode(self, *, session_id: str, mode_id: str) -> None:
+                    return None
+
+                def set_model(self, *, session_id: str, model_id: str) -> None:
+                    return None
+
+                def start_prompt(self, *, session_id: str, prompt: str) -> int:
+                    return 88
+
+                def drain_pending_notifications(self) -> list[dict[str, object]]:
+                    drained = list(self._pending_notifications)
+                    self._pending_notifications.clear()
+                    return drained
+
+                def read_next_message(self) -> dict[str, object] | None:
+                    return next(self.reads, None)
+
+                def failure_detail(self, default: str) -> str:
+                    return default
+
+            with (
+                patch("poco.agent.runner.shutil.which", return_value="/Users/bytedance/.local/bin/traecli"),
+                patch("poco.agent.runner.subprocess.Popen", return_value=fake_process),
+                patch("poco.agent.runner._TraeAcpClient", FakeSession),
+            ):
+                updates = list(runner.start(task))
+
+            self.assertEqual(updates[-1].kind, "completed")
+            self.assertEqual([u.output_chunk for u in updates if u.output_chunk], ["fresh answer"])
+            self.assertEqual(updates[-1].raw_result, "fresh answer")
+
+    def test_coco_runner_does_not_complete_on_last_chunk_without_terminal_signal(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = CocoRunner(command="traecli", workdir=tmpdir, model="GPT-5.2")
+            task = Task(
+                id="coco_task_last_chunk",
+                requester_id="ou_demo",
+                prompt="hello",
+                source="feishu",
+                status=TaskStatus.RUNNING,
+                agent_backend="coco",
+            )
+            fake_process = MagicMock()
+
+            class FakeSession:
+                def __init__(self, **kwargs):  # type: ignore[no-untyped-def]
+                    self.reads = iter(
+                        [
+                            {
+                                "method": "session/update",
+                                "params": {
+                                    "sessionId": "session_456",
+                                    "update": {
+                                        "sessionUpdate": "agent_message_chunk",
+                                        "_meta": {"id": "msg_2", "type": "full", "lastChunk": True},
+                                        "content": {"type": "text", "text": "final answer"},
+                                    },
+                                },
+                            },
+                        ]
+                    )
+
+                def initialize(self) -> None:
+                    return None
+
+                def open_session(self, *, session_id: str | None, cwd: str) -> dict[str, object]:
+                    return {"sessionId": "session_456"}
+
+                def set_mode(self, *, session_id: str, mode_id: str) -> None:
+                    return None
+
+                def set_model(self, *, session_id: str, model_id: str) -> None:
+                    return None
+
+                def start_prompt(self, *, session_id: str, prompt: str) -> int:
+                    return 88
+
+                def drain_pending_notifications(self) -> list[dict[str, object]]:
+                    return []
+
+                def read_next_message(self) -> dict[str, object] | None:
+                    return next(self.reads, None)
+
+                def failure_detail(self, default: str) -> str:
+                    return default
+
+            with (
+                patch("poco.agent.runner.shutil.which", return_value="/Users/bytedance/.local/bin/traecli"),
+                patch("poco.agent.runner.subprocess.Popen", return_value=fake_process),
+                patch("poco.agent.runner._TraeAcpClient", FakeSession),
+            ):
+                updates = list(runner.start(task))
+
+            self.assertEqual([u.output_chunk for u in updates if u.output_chunk], ["final answer"])
+            self.assertEqual(updates[-1].kind, "failed")
+            self.assertIn("closed before task completion", updates[-1].message)
 
 
 if __name__ == "__main__":

@@ -98,6 +98,7 @@ PoCo currently plans to support:
 - Codex
 - Claude Code
 - Cursor Agent
+- Trae CLI
 
 Current implementation priority is Codex, and the default backend is `codex`.
 
@@ -151,9 +152,19 @@ export POCO_CURSOR_SANDBOX="default"
 export POCO_CURSOR_TIMEOUT_SECONDS="900"
 ```
 
+Optional server-side defaults for Trae CLI:
+
+```bash
+export POCO_COCO_COMMAND="traecli"
+export POCO_COCO_WORKDIR="/absolute/path/to/your/repo"
+export POCO_COCO_MODEL="GPT-5.2"
+export POCO_COCO_APPROVAL_MODE="default"
+export POCO_COCO_TIMEOUT_SECONDS="900"
+```
+
 Use `POCO_AGENT_BACKEND=stub` only for local flow validation without a real agent backend.
 
-PoCo now supports `codex`, `claude_code`, and `cursor_agent`. `coco` is still recognized as planned but not implemented yet.
+PoCo now supports `codex`, `claude_code`, `cursor_agent`, and `coco` (Trae CLI).
 
 ### Normal User Flow
 

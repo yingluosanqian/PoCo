@@ -504,6 +504,53 @@ class FeishuClientTest(unittest.TestCase):
         self.assertEqual(form["elements"][2]["name"], "sandbox")
         self.assertEqual(form["elements"][2]["value"], "enabled")
 
+    def test_workspace_choose_agent_card_contains_coco_specific_dropdowns(self) -> None:
+        project = Project(
+            id="proj_coco",
+            name="PoCo Trae",
+            created_by="ou_demo_user",
+            backend="coco",
+            backend_config={"model": "GPT-5.2", "approval_mode": "yolo"},
+        )
+        card = FeishuCardRenderer().render(
+            build_render_instruction(
+                IntentDispatchResult(
+                    status=DispatchStatus.OK,
+                    intent_key="workspace.choose_agent",
+                    resource_refs=ResourceRefs(project_id=project.id),
+                    view_model=ViewModel(
+                        "workspace_choose_agent",
+                        {
+                            "project": project.to_dict(),
+                            "agent_label": "Trae CLI",
+                            "current_model": "GPT-5.2",
+                            "model_options": [
+                                {"label": "GPT-5.2", "value": "GPT-5.2"},
+                            ],
+                            "config_fields": [
+                                {
+                                    "key": "approval_mode",
+                                    "label": "Permission",
+                                    "current_value": "yolo",
+                                    "options": [
+                                        {"label": "Default", "value": "default"},
+                                        {"label": "YOLO", "value": "yolo"},
+                                    ],
+                                },
+                            ],
+                        },
+                    ),
+                    refresh_mode=RefreshMode.REPLACE_CURRENT,
+                ),
+                surface=Surface.GROUP,
+            )
+        )
+
+        form = card["body"]["elements"][1]
+        self.assertEqual(form["elements"][0]["name"], "model")
+        self.assertEqual(form["elements"][1]["name"], "approval_mode")
+        self.assertEqual(form["elements"][1]["value"], "yolo")
+
     def test_project_dir_presets_card_contains_input_and_add(self) -> None:
         project = Project(
             id="proj_1",

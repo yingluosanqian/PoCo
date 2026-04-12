@@ -115,6 +115,31 @@ class DemoCardApiTest(unittest.TestCase):
         payload = response.json()
         self.assertEqual(payload["instruction"]["template_key"], "project_home")
 
+    def test_demo_card_action_creates_coco_project(self) -> None:
+        response = self.client.post(
+            "/demo/card-actions",
+            json={
+                "event": {
+                    "operator": {"open_id": "ou_demo_user"},
+                    "context": {"open_message_id": "om_demo_card_coco"},
+                    "action": {
+                        "value": {
+                            "intent_key": "project.create",
+                            "surface": "dm",
+                            "request_id": "req_demo_project_create_coco_1",
+                        },
+                        "form_value": {
+                            "name": "PoCo Trae",
+                            "backend": "coco",
+                        },
+                    },
+                }
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["instruction"]["template_key"], "project_home")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -75,6 +75,11 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
         cursor_mode=settings.cursor_mode,
         cursor_sandbox=settings.cursor_sandbox,
         cursor_timeout_seconds=settings.cursor_timeout_seconds,
+        coco_command=settings.coco_command,
+        coco_workdir=settings.coco_workdir,
+        coco_model=settings.coco_model,
+        coco_approval_mode=settings.coco_approval_mode,
+        coco_timeout_seconds=settings.coco_timeout_seconds,
     )
     session_controller = SessionController(session_store)
     controller = TaskController(store=store, runner=runner, session_controller=session_controller)

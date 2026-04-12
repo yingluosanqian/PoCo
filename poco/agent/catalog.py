@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import subprocess
+from pathlib import Path
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,7 +102,19 @@ _BACKEND_DESCRIPTORS: dict[str, BackendDescriptor] = {
     ),
     "coco": BackendDescriptor(
         key="coco",
-        label="CoCo",
+        label="Trae CLI",
+        model_options=("GPT-5.2",),
+        config_fields=(
+            BackendConfigField(
+                key="approval_mode",
+                label="Permission",
+                options=(
+                    ("Default", "default"),
+                    ("YOLO", "yolo"),
+                ),
+            ),
+        ),
+        default_config={"model": "GPT-5.2", "approval_mode": "default"},
     ),
 }
 
@@ -117,6 +130,9 @@ _CODEX_MODEL_FALLBACK: tuple[tuple[str, str], ...] = (
     ("GPT-5.4-Mini", "gpt-5.4-mini"),
     ("gpt-5.3-codex", "gpt-5.3-codex"),
     ("GPT-5.3-Codex-Spark", "gpt-5.3-codex-spark"),
+)
+_COCO_MODEL_FALLBACK: tuple[tuple[str, str], ...] = (
+    ("GPT-5.2", "GPT-5.2"),
 )
 
 
@@ -134,6 +150,8 @@ def get_backend_model_options(backend: str) -> tuple[tuple[str, str], ...]:
         return _discover_codex_model_options(_codex_command())
     if normalized == "cursor_agent":
         return _discover_cursor_model_options(_cursor_command())
+    if normalized == "coco":
+        return _discover_coco_model_options(_coco_command())
     descriptor = get_backend_descriptor(normalized)
     return tuple((option, option) for option in descriptor.model_options)
 
@@ -167,6 +185,10 @@ def _codex_command() -> str:
     return os.getenv("POCO_CODEX_COMMAND", "codex")
 
 
+def _coco_command() -> str:
+    return os.getenv("POCO_COCO_COMMAND", "traecli")
+
+
 @lru_cache(maxsize=4)
 def _discover_codex_model_options(command: str) -> tuple[tuple[str, str], ...]:
     executable = shutil.which(command)
@@ -195,6 +217,22 @@ def _discover_cursor_model_options(command: str) -> tuple[tuple[str, str], ...]:
     output = completed.stdout or completed.stderr or ""
     parsed = _parse_cursor_model_output(output)
     return parsed or _CURSOR_MODEL_FALLBACK
+
+
+@lru_cache(maxsize=4)
+def _discover_coco_model_options(command: str) -> tuple[tuple[str, str], ...]:
+    executable = shutil.which(command)
+    discovered = _request_coco_model_list(command) if executable else ()
+    options: list[tuple[str, str]] = list(discovered)
+    configured = _read_coco_configured_model()
+    if configured:
+        configured_option = (configured, configured)
+        options = [option for option in options if option != configured_option]
+        options.insert(0, configured_option)
+    for fallback in _COCO_MODEL_FALLBACK:
+        if fallback not in options:
+            options.append(fallback)
+    return tuple(options)
 
 
 def _parse_cursor_model_output(output: str) -> tuple[tuple[str, str], ...]:
@@ -242,6 +280,43 @@ def _request_codex_model_list(command: str) -> dict[str, object]:
             process.terminate()
 
 
+def _request_coco_model_list(command: str) -> tuple[tuple[str, str], ...]:
+    from poco.agent.runner import _TraeAcpClient, _cleanup_subprocess
+
+    process = subprocess.Popen(
+        [command, "acp", "serve"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1,
+    )
+    try:
+        session = _TraeAcpClient(process=process)
+        session.initialize()
+        result = session.open_session(session_id=None, cwd=str(Path.cwd()))
+    except Exception:
+        return ()
+    finally:
+        _cleanup_subprocess(process)
+    models = result.get("models")
+    if not isinstance(models, dict):
+        return ()
+    available = models.get("availableModels")
+    if not isinstance(available, list):
+        return ()
+    options: list[tuple[str, str]] = []
+    for item in available:
+        if not isinstance(item, dict):
+            continue
+        model_id = str(item.get("modelId") or "").strip()
+        if not model_id:
+            continue
+        label = str(item.get("name") or model_id).strip()
+        options.append((label or model_id, model_id))
+    return tuple(options)
+
+
 def _parse_codex_model_response(result: dict[str, object]) -> tuple[tuple[str, str], ...]:
     data = result.get("data")
     if not isinstance(data, list):
@@ -256,3 +331,16 @@ def _parse_codex_model_response(result: dict[str, object]) -> tuple[tuple[str, s
         label = str(item.get("displayName") or item.get("model") or model_id).strip()
         options.append((label or model_id, model_id))
     return tuple(options)
+
+
+def _read_coco_configured_model() -> str | None:
+    path = Path.home() / ".trae" / "traecli.yaml"
+    try:
+        content = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    match = re.search(r"^\s*name:\s*['\"]?([^'\"]+)['\"]?\s*$", content, flags=re.MULTILINE)
+    if not match:
+        return None
+    value = match.group(1).strip()
+    return value or None

@@ -3,10 +3,13 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from poco.agent.catalog import get_backend_model_options
+from poco.agent.catalog import _discover_coco_model_options, get_backend_model_options
 
 
 class AgentCatalogTest(unittest.TestCase):
+    def setUp(self) -> None:
+        _discover_coco_model_options.cache_clear()
+
     def test_codex_model_options_are_discovered_from_app_server(self) -> None:
         with patch(
             "poco.agent.catalog._request_codex_model_list",
@@ -60,5 +63,40 @@ Tip: use --model <id> to switch.
                 ("Composer 2 Fast", "composer-2-fast"),
                 ("GPT-5.4 1M", "gpt-5.4-medium"),
                 ("Sonnet 4.5 1M", "claude-4.5-sonnet"),
+            ),
+        )
+
+    def test_coco_model_options_include_local_configured_model(self) -> None:
+        with (
+            patch("poco.agent.catalog._request_coco_model_list", return_value=(("GPT-5.2", "GPT-5.2"), ("GPT-5.4", "GPT-5.4"))),
+            patch("poco.agent.catalog.Path.read_text", return_value="model:\n    name: GPT-5.4\n"),
+            patch("poco.agent.catalog.shutil.which", return_value="/Users/bytedance/.local/bin/traecli"),
+        ):
+            options = get_backend_model_options("coco")
+
+        self.assertEqual(
+            options,
+            (
+                ("GPT-5.4", "GPT-5.4"),
+                ("GPT-5.2", "GPT-5.2"),
+            ),
+        )
+
+    def test_coco_model_options_are_discovered_from_acp(self) -> None:
+        with (
+            patch(
+                "poco.agent.catalog._request_coco_model_list",
+                return_value=(("GPT-5.2", "GPT-5.2"), ("GPT-5.4", "GPT-5.4")),
+            ),
+            patch("poco.agent.catalog._read_coco_configured_model", return_value=None),
+            patch("poco.agent.catalog.shutil.which", return_value="/Users/bytedance/.local/bin/traecli"),
+        ):
+            options = get_backend_model_options("coco")
+
+        self.assertEqual(
+            options,
+            (
+                ("GPT-5.2", "GPT-5.2"),
+                ("GPT-5.4", "GPT-5.4"),
             ),
         )
