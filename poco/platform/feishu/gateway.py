@@ -125,6 +125,7 @@ class FeishuGateway:
             message_surface=self._message_surface(event),
             project_id=self._resolve_project_id(event),
             effective_model=self._resolve_effective_model(event),
+            effective_sandbox=self._resolve_effective_sandbox(event),
             effective_workdir=self._resolve_effective_workdir(event),
             reply_receive_id=target["receive_id"],
             reply_receive_id_type=target["receive_id_type"],
@@ -361,6 +362,12 @@ class FeishuGateway:
         if project is None:
             return None
         return project.model
+
+    def _resolve_effective_sandbox(self, event: dict[str, Any]) -> str | None:
+        project = self._resolve_group_project(event)
+        if project is None:
+            return None
+        return project.sandbox
 
     def _resolve_group_project(self, event: dict[str, Any]) -> Project | None:
         if self._project_controller is None:

@@ -818,36 +818,78 @@ def _render_workspace_choose_model(
 ) -> dict[str, Any]:
     project = data["project"]
     current_model = data.get("current_model")
-    options = data.get("options") or []
-    elements: list[dict[str, Any]] = []
-    if current_model:
-        elements.append(_markdown(f"**Current Model**\n`{current_model}`"))
-    elements.append(_markdown(data["note"]))
-    for option in options:
-        elements.append(
-            _button(
-                label=option["label"],
-                intent_value={
-                    "intent_key": "workspace.apply_model",
-                    "surface": surface,
-                    "project_id": project["id"],
-                    "model": option["value"],
-                },
-                name=f"apply_model_{project['id']}_{option['label'].lower().replace(' ', '_')}",
-                style="primary" if option["value"] else "default",
+    current_sandbox = data.get("current_sandbox") or "workspace-write"
+    model_options = data.get("model_options") or []
+    sandbox_options = data.get("sandbox_options") or []
+    elements: list[dict[str, Any]] = [
+        _markdown(
+            "\n".join(
+                [
+                    f"**Model:** `{current_model or 'not set'}`",
+                    f"**Access:** `{_sandbox_label(current_sandbox)}`",
+                ]
             )
-        )
-    elements.append(
-        _button(
-            label="Cancel",
-            intent_value={
-                "intent_key": "workspace.open",
-                "surface": surface,
-                "project_id": project["id"],
-            },
-            name=f"cancel_workspace_choose_model_{project['id']}",
-        )
-    )
+        ),
+        {
+            "tag": "form",
+            "name": f"workspace_choose_model_form_{project['id']}",
+            "elements": [
+                _select_static(
+                    name="model",
+                    placeholder="Select a model",
+                    options=model_options,
+                    value=current_model,
+                ),
+                _select_static(
+                    name="sandbox",
+                    placeholder="Select an access level",
+                    options=sandbox_options,
+                    value=current_sandbox,
+                ),
+                _two_up(
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "Apply"},
+                        "type": "primary",
+                        "width": "default",
+                        "size": "medium",
+                        "name": f"apply_model_{project['id']}",
+                        "form_action_type": "submit",
+                        "behaviors": [
+                            {
+                                "type": "callback",
+                                "value": {
+                                    "intent_key": "workspace.apply_model",
+                                    "surface": surface,
+                                    "project_id": project["id"],
+                                },
+                            }
+                        ],
+                        "margin": "0px 0px 12px 0px",
+                    },
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "Cancel"},
+                        "type": "default",
+                        "width": "default",
+                        "size": "medium",
+                        "name": f"cancel_workspace_choose_model_{project['id']}",
+                        "behaviors": [
+                            {
+                                "type": "callback",
+                                "value": {
+                                    "intent_key": "workspace.open",
+                                    "surface": surface,
+                                    "project_id": project["id"],
+                                },
+                            }
+                        ],
+                        "margin": "0px 0px 12px 0px",
+                    },
+                ),
+            ],
+        },
+    ]
     return _card_shell(
         title=f"Choose Model: {project['name']}",
         template="blue",
@@ -1398,6 +1440,14 @@ def _task_template_for_status(status: str) -> str:
     if status == "cancelled":
         return "grey"
     return "blue"
+
+
+def _sandbox_label(sandbox: str) -> str:
+    if sandbox == "read-only":
+        return "Read Only"
+    if sandbox == "danger-full-access":
+        return "Full Access"
+    return "Project Only"
 
 
 def _task_title(

@@ -37,6 +37,7 @@ class ProjectController:
         created_by: str,
         backend: str = "codex",
         model: str | None = None,
+        sandbox: str = "workspace-write",
         repo: str | None = None,
         workdir: str | None = None,
         group_chat_id: str | None = None,
@@ -48,6 +49,7 @@ class ProjectController:
                 created_by=created_by,
                 backend=backend,
                 model=model,
+                sandbox=sandbox,
                 repo=repo,
                 workdir=workdir,
                 group_chat_id=group_chat_id,
@@ -124,6 +126,20 @@ class ProjectController:
         with self._lock:
             project = self.get_project(project_id)
             project.set_model(model)
+            self._store.save(project)
+            return project
+
+    def set_model_config(
+        self,
+        project_id: str,
+        *,
+        model: str | None,
+        sandbox: str | None,
+    ) -> Project:
+        with self._lock:
+            project = self.get_project(project_id)
+            project.set_model(model)
+            project.set_sandbox(sandbox)
             self._store.save(project)
             return project
 

@@ -1173,6 +1173,8 @@ class FeishuCardGatewayTest(unittest.TestCase):
         opened = self.gateway.handle_action(open_payload)
 
         self.assertEqual(opened["instruction"]["template_key"], "workspace_choose_model")
+        form = opened["card"]["data"]["body"]["elements"][1]
+        self.assertEqual(form["tag"], "form")
         apply_payload = {
             "event": {
                 "operator": {"open_id": "ou_demo_user"},
@@ -1183,7 +1185,10 @@ class FeishuCardGatewayTest(unittest.TestCase):
                         "surface": "group",
                         "project_id": project.id,
                         "request_id": "req_apply_model_1",
+                    },
+                    "form_value": {
                         "model": "gpt-5.4",
+                        "sandbox": "danger-full-access",
                     },
                 },
             }
@@ -1194,6 +1199,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
         self.assertEqual(applied["instruction"]["template_key"], "workspace_overview")
         updated = self.project_controller.get_project(project.id)
         self.assertEqual(updated.model, "gpt-5.4")
+        self.assertEqual(updated.sandbox, "danger-full-access")
 
     def test_workspace_apply_preset_rejects_unknown_preset(self) -> None:
         project = self.project_controller.create_project(

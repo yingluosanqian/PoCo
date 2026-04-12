@@ -480,8 +480,13 @@ class WorkspaceIntentHandler:
         project = _get_project_or_reject(self.project_controller, intent)
         if isinstance(project, IntentDispatchResult):
             return project
-        model = _optional_string(intent.payload.get("model"))
-        project = self.project_controller.set_model(project.id, model)
+        model = _extract_model_value(intent.payload, current=project.model)
+        sandbox = _extract_sandbox_value(intent.payload, current=project.sandbox)
+        project = self.project_controller.set_model_config(
+            project.id,
+            model=model,
+            sandbox=sandbox,
+        )
         context = self.workspace_controller.get_context(project)
         return build_workspace_overview_result(
             project,
@@ -554,6 +559,7 @@ class TaskIntentHandler:
                 actor_id=intent.actor_id,
             ),
             effective_model=project.model,
+            effective_sandbox=project.sandbox,
             effective_workdir=context.active_workdir,
             notification_message_id=_optional_string(intent.source_message_id),
             reply_receive_id=reply_receive_id,
@@ -889,14 +895,18 @@ def _workspace_choose_model_view_model(project) -> ViewModel:
         {
             "project": project.to_dict(),
             "current_model": project.model,
-            "options": [
-                {"label": "Clear Model", "value": ""},
+            "current_sandbox": getattr(project, "sandbox", "workspace-write"),
+            "model_options": [
                 {"label": "gpt-5.4", "value": "gpt-5.4"},
                 {"label": "gpt-5.4-mini", "value": "gpt-5.4-mini"},
                 {"label": "gpt-5.3-codex", "value": "gpt-5.3-codex"},
                 {"label": "gpt-5.3-codex-spark", "value": "gpt-5.3-codex-spark"},
             ],
-            "note": "Apply updates the project model and returns to the main workspace card.",
+            "sandbox_options": [
+                {"label": "Read Only", "value": "read-only"},
+                {"label": "Project Only", "value": "workspace-write"},
+                {"label": "Full Access", "value": "danger-full-access"},
+            ],
         },
     )
 
@@ -943,6 +953,40 @@ def _extract_workdir_path(payload: dict[str, object]) -> str:
         if nested is not None:
             return nested
     return ""
+
+
+def _extract_model_value(payload: dict[str, object], *, current: str | None) -> str | None:
+    direct = _optional_string(payload.get("model"))
+    if direct is not None:
+        return direct
+    input_value = payload.get("input_value")
+    if isinstance(input_value, dict):
+        nested = input_value.get("model")
+        if isinstance(nested, dict):
+            selected = _optional_string(nested.get("value"))
+            if selected is not None:
+                return selected
+        selected = _optional_string(nested)
+        if selected is not None:
+            return selected
+    return current
+
+
+def _extract_sandbox_value(payload: dict[str, object], *, current: str | None) -> str | None:
+    direct = _optional_string(payload.get("sandbox"))
+    if direct is not None:
+        return direct
+    input_value = payload.get("input_value")
+    if isinstance(input_value, dict):
+        nested = input_value.get("sandbox")
+        if isinstance(nested, dict):
+            selected = _optional_string(nested.get("value"))
+            if selected is not None:
+                return selected
+        selected = _optional_string(nested)
+        if selected is not None:
+            return selected
+    return current
 
 
 def _extract_browse_path(payload: dict[str, object]) -> str | None:

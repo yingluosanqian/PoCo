@@ -47,7 +47,7 @@ class AgentRunner(Protocol):
     def cancel(self, task_id: str) -> bool:
         ...
 
-    def resolve_execution_context(self, task: Task) -> tuple[str | None, str | None]:
+    def resolve_execution_context(self, task: Task) -> tuple[str | None, str | None, str | None]:
         ...
 
 
@@ -91,8 +91,8 @@ class StubAgentRunner:
     def cancel(self, task_id: str) -> bool:
         return False
 
-    def resolve_execution_context(self, task: Task) -> tuple[str | None, str | None]:
-        return self.name, task.effective_workdir
+    def resolve_execution_context(self, task: Task) -> tuple[str | None, str | None, str | None]:
+        return self.name, task.effective_workdir, task.effective_sandbox
 
 
 class UnavailableAgentRunner:
@@ -112,8 +112,8 @@ class UnavailableAgentRunner:
     def cancel(self, task_id: str) -> bool:
         return False
 
-    def resolve_execution_context(self, task: Task) -> tuple[str | None, str | None]:
-        return self.name, task.effective_workdir
+    def resolve_execution_context(self, task: Task) -> tuple[str | None, str | None, str | None]:
+        return self.name, task.effective_workdir, task.effective_sandbox
 
 
 class CodexAppServerRunner:
@@ -177,8 +177,12 @@ class CodexAppServerRunner:
         process.kill()
         return True
 
-    def resolve_execution_context(self, task: Task) -> tuple[str | None, str | None]:
-        return task.effective_model or self._model, task.effective_workdir or self._workdir
+    def resolve_execution_context(self, task: Task) -> tuple[str | None, str | None, str | None]:
+        return (
+            task.effective_model or self._model,
+            task.effective_workdir or self._workdir,
+            task.effective_sandbox or self._sandbox,
+        )
 
     def _execute_prompt(self, task: Task, prompt: str) -> Iterator[AgentRunUpdate]:
         executable = shutil.which(self._command)
@@ -220,7 +224,7 @@ class CodexAppServerRunner:
                         "threadId": task.backend_session_id,
                         "cwd": workdir,
                         "model": resolved_model,
-                        "sandbox": self._sandbox,
+                        "sandbox": task.effective_sandbox or self._sandbox,
                         "approvalPolicy": self._approval_policy,
                     },
                 )
@@ -230,7 +234,7 @@ class CodexAppServerRunner:
                     {
                         "cwd": workdir,
                         "model": resolved_model,
-                        "sandbox": self._sandbox,
+                        "sandbox": task.effective_sandbox or self._sandbox,
                         "approvalPolicy": self._approval_policy,
                     },
                 )
@@ -426,8 +430,12 @@ class CodexCliRunner:
         process.kill()
         return True
 
-    def resolve_execution_context(self, task: Task) -> tuple[str | None, str | None]:
-        return task.effective_model or self._model, task.effective_workdir or self._workdir
+    def resolve_execution_context(self, task: Task) -> tuple[str | None, str | None, str | None]:
+        return (
+            task.effective_model or self._model,
+            task.effective_workdir or self._workdir,
+            task.effective_sandbox or self._sandbox,
+        )
 
     def _execute_prompt(self, task: Task, prompt: str) -> Iterator[AgentRunUpdate]:
         executable = shutil.which(self._command)
@@ -577,8 +585,9 @@ class CodexCliRunner:
             command.extend(["-m", resolved_model])
         if self._approval_policy:
             command.extend(["-a", self._approval_policy])
-        if self._sandbox:
-            command.extend(["-s", self._sandbox])
+        resolved_sandbox = task.effective_sandbox or self._sandbox
+        if resolved_sandbox:
+            command.extend(["-s", resolved_sandbox])
         command.extend(["exec"])
         if task.backend_session_id:
             command.extend(

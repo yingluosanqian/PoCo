@@ -15,6 +15,7 @@ class Project:
     created_by: str
     backend: str = "codex"
     model: str | None = None
+    sandbox: str = "workspace-write"
     repo: str | None = None
     workdir: str | None = None
     workdir_presets: list[str] = field(default_factory=list)
@@ -47,6 +48,11 @@ class Project:
         self.model = normalized or None
         self.updated_at = utc_now()
 
+    def set_sandbox(self, sandbox: str | None) -> None:
+        normalized = sandbox.strip() if sandbox else None
+        self.sandbox = normalized or "workspace-write"
+        self.updated_at = utc_now()
+
     def to_dict(self) -> dict[str, object]:
         return {
             "id": self.id,
@@ -54,6 +60,7 @@ class Project:
             "created_by": self.created_by,
             "backend": self.backend,
             "model": self.model,
+            "sandbox": self.sandbox,
             "repo": self.repo,
             "workdir": self.workdir,
             "workdir_presets": list(self.workdir_presets),

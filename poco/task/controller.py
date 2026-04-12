@@ -39,6 +39,7 @@ class TaskController:
         project_id: str | None = None,
         session_id: str | None = None,
         effective_model: str | None = None,
+        effective_sandbox: str | None = None,
         effective_workdir: str | None = None,
         notification_message_id: str | None = None,
         reply_receive_id: str | None = None,
@@ -51,7 +52,7 @@ class TaskController:
                     backend_session_id = self._session_controller.get_session(session_id).backend_session_id
                 except ValueError:
                     backend_session_id = None
-            effective_model, resolved_workdir = self._runner.resolve_execution_context(
+            effective_model, resolved_workdir, resolved_sandbox = self._runner.resolve_execution_context(
                 Task(
                     id="preview",
                     requester_id=requester_id,
@@ -59,6 +60,7 @@ class TaskController:
                     source=source,
                     agent_backend=self._runner.name,
                     effective_model=effective_model,
+                    effective_sandbox=effective_sandbox,
                     backend_session_id=backend_session_id,
                     project_id=project_id,
                     session_id=session_id,
@@ -75,6 +77,7 @@ class TaskController:
                 source=source,
                 agent_backend=self._runner.name,
                 effective_model=effective_model,
+                effective_sandbox=resolved_sandbox,
                 backend_session_id=backend_session_id,
                 project_id=project_id,
                 session_id=session_id,
@@ -278,9 +281,10 @@ class TaskController:
                 raise TaskStateError(f"Task {task_id} is not in a startable state.")
             if mode == "resume" and task.status != TaskStatus.RUNNING:
                 raise TaskStateError(f"Task {task_id} is not in a resumable state.")
-            effective_model, effective_workdir = self._runner.resolve_execution_context(task)
+            effective_model, effective_workdir, effective_sandbox = self._runner.resolve_execution_context(task)
             task.set_execution_context(
                 effective_model=effective_model,
+                effective_sandbox=effective_sandbox,
                 effective_workdir=effective_workdir,
                 backend_session_id=task.backend_session_id,
             )
@@ -314,6 +318,7 @@ class TaskController:
                     if getattr(update, "backend_session_id", None):
                         task.set_execution_context(
                             effective_model=task.effective_model,
+                            effective_sandbox=task.effective_sandbox,
                             effective_workdir=task.effective_workdir,
                             backend_session_id=update.backend_session_id,
                         )
@@ -328,6 +333,7 @@ class TaskController:
                     if getattr(update, "backend_session_id", None):
                         task.set_execution_context(
                             effective_model=task.effective_model,
+                            effective_sandbox=task.effective_sandbox,
                             effective_workdir=task.effective_workdir,
                             backend_session_id=update.backend_session_id,
                         )
@@ -339,6 +345,7 @@ class TaskController:
                     if getattr(update, "backend_session_id", None):
                         task.set_execution_context(
                             effective_model=task.effective_model,
+                            effective_sandbox=task.effective_sandbox,
                             effective_workdir=task.effective_workdir,
                             backend_session_id=update.backend_session_id,
                         )

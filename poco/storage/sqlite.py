@@ -37,6 +37,7 @@ class _SqliteStoreBase:
                     created_by TEXT NOT NULL,
                     backend TEXT NOT NULL,
                     model TEXT,
+                    sandbox TEXT NOT NULL DEFAULT 'workspace-write',
                     repo TEXT,
                     workdir TEXT,
                     workdir_presets TEXT NOT NULL,
@@ -57,6 +58,7 @@ class _SqliteStoreBase:
                     prompt TEXT NOT NULL,
                     agent_backend TEXT NOT NULL,
                     effective_model TEXT,
+                    effective_sandbox TEXT,
                     backend_session_id TEXT,
                     project_id TEXT,
                     session_id TEXT,
@@ -112,10 +114,16 @@ class _SqliteStoreBase:
             }
             if "model" not in project_columns:
                 connection.execute("ALTER TABLE projects ADD COLUMN model TEXT")
+            if "sandbox" not in project_columns:
+                connection.execute(
+                    "ALTER TABLE projects ADD COLUMN sandbox TEXT NOT NULL DEFAULT 'workspace-write'"
+                )
             if "session_id" not in task_columns:
                 connection.execute("ALTER TABLE tasks ADD COLUMN session_id TEXT")
             if "effective_model" not in task_columns:
                 connection.execute("ALTER TABLE tasks ADD COLUMN effective_model TEXT")
+            if "effective_sandbox" not in task_columns:
+                connection.execute("ALTER TABLE tasks ADD COLUMN effective_sandbox TEXT")
             if "backend_session_id" not in task_columns:
                 connection.execute("ALTER TABLE tasks ADD COLUMN backend_session_id TEXT")
             session_columns = {
@@ -132,14 +140,15 @@ class SqliteProjectStore(_SqliteStoreBase):
             connection.execute(
                 """
                 INSERT INTO projects (
-                    id, name, created_by, backend, model, repo, workdir, workdir_presets,
+                    id, name, created_by, backend, model, sandbox, repo, workdir, workdir_presets,
                     group_chat_id, workspace_message_id, archived, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     name = excluded.name,
                     created_by = excluded.created_by,
                     backend = excluded.backend,
                     model = excluded.model,
+                    sandbox = excluded.sandbox,
                     repo = excluded.repo,
                     workdir = excluded.workdir,
                     workdir_presets = excluded.workdir_presets,
@@ -155,6 +164,7 @@ class SqliteProjectStore(_SqliteStoreBase):
                     project.created_by,
                     project.backend,
                     project.model,
+                    project.sandbox,
                     project.repo,
                     project.workdir,
                     json.dumps(project.workdir_presets, ensure_ascii=False),
@@ -196,6 +206,7 @@ class SqliteProjectStore(_SqliteStoreBase):
             created_by=row["created_by"],
             backend=row["backend"],
             model=row["model"],
+            sandbox=row["sandbox"] or "workspace-write",
             repo=row["repo"],
             workdir=row["workdir"],
             workdir_presets=list(presets),
@@ -213,17 +224,18 @@ class SqliteTaskStore(_SqliteStoreBase):
             connection.execute(
                 """
                 INSERT INTO tasks (
-                    id, source, requester_id, prompt, agent_backend, effective_model, backend_session_id, project_id, session_id,
+                    id, source, requester_id, prompt, agent_backend, effective_model, effective_sandbox, backend_session_id, project_id, session_id,
                     effective_workdir, notification_message_id, reply_receive_id,
                     reply_receive_id_type, status, awaiting_confirmation_reason,
                     live_output, raw_result, result_summary, created_at, updated_at, events
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     source = excluded.source,
                     requester_id = excluded.requester_id,
                     prompt = excluded.prompt,
                     agent_backend = excluded.agent_backend,
                     effective_model = excluded.effective_model,
+                    effective_sandbox = excluded.effective_sandbox,
                     backend_session_id = excluded.backend_session_id,
                     project_id = excluded.project_id,
                     session_id = excluded.session_id,
@@ -247,6 +259,7 @@ class SqliteTaskStore(_SqliteStoreBase):
                     task.prompt,
                     task.agent_backend,
                     task.effective_model,
+                    task.effective_sandbox,
                     task.backend_session_id,
                     task.project_id,
                     task.session_id,
@@ -314,6 +327,7 @@ class SqliteTaskStore(_SqliteStoreBase):
             prompt=row["prompt"],
             agent_backend=row["agent_backend"],
             effective_model=row["effective_model"],
+            effective_sandbox=row["effective_sandbox"],
             backend_session_id=row["backend_session_id"],
             project_id=row["project_id"],
             session_id=row["session_id"],

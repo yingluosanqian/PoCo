@@ -29,8 +29,8 @@ class StreamingRunner:
     def is_ready(self) -> tuple[bool, str]:
         return True, "ready"
 
-    def resolve_execution_context(self, task: Task) -> tuple[str | None, str | None]:
-        return task.effective_model, task.effective_workdir
+    def resolve_execution_context(self, task: Task) -> tuple[str | None, str | None, str | None]:
+        return task.effective_model, task.effective_workdir, task.effective_sandbox
 
     def start(self, task: Task):
         yield AgentRunUpdate(

@@ -339,6 +339,64 @@ class FeishuClientTest(unittest.TestCase):
         self.assertEqual(cancel_button["behaviors"][0]["value"]["intent_key"], "workspace.open")
         self.assertEqual(cancel_button["behaviors"][0]["value"]["mode"], "manual")
 
+    def test_workspace_choose_model_card_contains_model_and_access_dropdowns(self) -> None:
+        project = Project(
+            id="proj_1",
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+            model="gpt-5.4",
+            sandbox="workspace-write",
+        )
+        card = FeishuCardRenderer().render(
+            build_render_instruction(
+                IntentDispatchResult(
+                    status=DispatchStatus.OK,
+                    intent_key="workspace.choose_model",
+                    resource_refs=ResourceRefs(project_id=project.id),
+                    view_model=ViewModel(
+                        "workspace_choose_model",
+                        {
+                            "project": project.to_dict(),
+                            "current_model": "gpt-5.4",
+                            "current_sandbox": "workspace-write",
+                            "model_options": [
+                                {"label": "gpt-5.4", "value": "gpt-5.4"},
+                                {"label": "gpt-5.4-mini", "value": "gpt-5.4-mini"},
+                            ],
+                            "sandbox_options": [
+                                {"label": "Read Only", "value": "read-only"},
+                                {"label": "Project Only", "value": "workspace-write"},
+                                {"label": "Full Access", "value": "danger-full-access"},
+                            ],
+                        },
+                    ),
+                    refresh_mode=RefreshMode.REPLACE_CURRENT,
+                ),
+                surface=Surface.GROUP,
+            )
+        )
+
+        self.assertEqual(card["header"]["title"]["content"], "Choose Model: PoCo")
+        form = card["body"]["elements"][1]
+        self.assertEqual(form["tag"], "form")
+        self.assertEqual(form["elements"][0]["tag"], "select_static")
+        self.assertEqual(form["elements"][0]["name"], "model")
+        self.assertEqual(form["elements"][0]["value"], "gpt-5.4")
+        self.assertEqual(form["elements"][1]["tag"], "select_static")
+        self.assertEqual(form["elements"][1]["name"], "sandbox")
+        self.assertEqual(form["elements"][1]["value"], "workspace-write")
+        action_row = form["elements"][2]
+        self.assertEqual(action_row["tag"], "column_set")
+        self.assertEqual(
+            action_row["columns"][0]["elements"][0]["behaviors"][0]["value"]["intent_key"],
+            "workspace.apply_model",
+        )
+        self.assertEqual(
+            action_row["columns"][1]["elements"][0]["behaviors"][0]["value"]["intent_key"],
+            "workspace.open",
+        )
+
     def test_project_dir_presets_card_contains_input_and_add(self) -> None:
         project = Project(
             id="proj_1",

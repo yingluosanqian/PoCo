@@ -179,6 +179,7 @@ class TaskControllerTest(unittest.TestCase):
             )
 
             self.assertEqual(task.effective_model, "gpt-5.4")
+            self.assertEqual(task.effective_sandbox, "workspace-write")
             self.assertEqual(task.effective_workdir, tmpdir)
 
 
