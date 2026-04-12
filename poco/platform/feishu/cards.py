@@ -219,13 +219,14 @@ def _render_project_manage(data: dict[str, Any]) -> dict[str, Any]:
                         )
                     ),
                     _button(
-                        label=f"Open {project['name']}",
+                        label="Delete Project",
                         intent_value={
-                            "intent_key": "project.open",
+                            "intent_key": "project.delete",
                             "surface": "dm",
                             "project_id": project["id"],
                         },
-                        name=f"open_project_{project['id']}",
+                        style="danger",
+                        name=f"delete_project_{project['id']}",
                     ),
                 ]
             )

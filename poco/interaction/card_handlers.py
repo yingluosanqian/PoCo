@@ -35,6 +35,8 @@ class ProjectIntentHandler:
             return self._list_projects(intent)
         if intent.intent_key == "project.create":
             return self._create_project(intent)
+        if intent.intent_key == "project.delete":
+            return self._delete_project(intent)
         if intent.intent_key == "project.open":
             return self._open_project(intent)
         if intent.intent_key == "project.configure_agent":
@@ -257,6 +259,37 @@ class ProjectIntentHandler:
             view_model=_project_list_view_model(self.project_controller.list_projects()),
             refresh_mode=RefreshMode.REPLACE_CURRENT,
             message=f"Archived project: {project.name}",
+        )
+
+    def _delete_project(self, intent: ActionIntent) -> IntentDispatchResult:
+        project_id = _required_id(intent.project_id, "project_id")
+        try:
+            project = self.project_controller.get_project(project_id)
+        except ProjectNotFoundError as exc:
+            return _rejected(intent, str(exc))
+
+        message = f"Project deleted: {project.name}"
+        if self.bootstrapper is not None:
+            try:
+                self.bootstrapper.destroy_project_workspace(
+                    project=project,
+                    actor_id=intent.actor_id,
+                )
+            except ProjectBootstrapError as exc:
+                if "not found" in str(exc).lower():
+                    message = f"Project deleted. Group not found for {project.name}"
+                else:
+                    return _rejected(intent, str(exc))
+
+        self.project_controller.delete_project(project.id)
+        projects = self.project_controller.list_projects_for_user(intent.actor_id)
+        return IntentDispatchResult(
+            status=DispatchStatus.OK,
+            intent_key=intent.intent_key,
+            resource_refs=ResourceRefs(),
+            view_model=_project_manage_view_model(projects),
+            refresh_mode=RefreshMode.REPLACE_CURRENT,
+            message=message,
         )
 
 

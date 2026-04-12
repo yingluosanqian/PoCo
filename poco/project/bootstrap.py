@@ -30,6 +30,13 @@ class ProjectBootstrapper(Protocol):
         actor_id: str,
     ) -> None: ...
 
+    def destroy_project_workspace(
+        self,
+        *,
+        project: Project,
+        actor_id: str,
+    ) -> None: ...
+
 
 class NullProjectBootstrapper:
     def bootstrap_project(
@@ -41,6 +48,14 @@ class NullProjectBootstrapper:
         return ProjectBootstrapResult()
 
     def notify_project_workspace(
+        self,
+        *,
+        project: Project,
+        actor_id: str,
+    ) -> None:
+        return None
+
+    def destroy_project_workspace(
         self,
         *,
         project: Project,

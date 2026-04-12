@@ -3,7 +3,7 @@ from __future__ import annotations
 from poco.interaction.card_dispatcher import build_render_instruction
 from poco.interaction.card_handlers import build_workspace_overview_result
 from poco.interaction.card_models import Surface
-from poco.platform.feishu.client import FeishuApiError, FeishuMessageClient
+from poco.platform.feishu.client import FeishuApiError, FeishuChatNotFoundError, FeishuMessageClient
 from poco.platform.feishu.cards import FeishuCardRenderer
 from poco.platform.feishu.debug import FeishuDebugRecorder
 from poco.project.bootstrap import (
@@ -106,6 +106,43 @@ class FeishuProjectBootstrapper:
                 text=f"[card] Workspace: {project.name}",
                 task_id=project.id,
             )
+
+    def destroy_project_workspace(
+        self,
+        *,
+        project: Project,
+        actor_id: str,
+    ) -> None:
+        if not project.group_chat_id:
+            raise ProjectBootstrapError("Project group not found.")
+        try:
+            self._message_client.delete_group_chat(chat_id=project.group_chat_id)
+        except FeishuChatNotFoundError as exc:
+            if self._debug_recorder is not None:
+                self._debug_recorder.record_error(
+                    stage="project_group_destroy",
+                    message=str(exc),
+                    context={
+                        "project_id": project.id,
+                        "project_name": project.name,
+                        "group_chat_id": project.group_chat_id,
+                        "actor_id": actor_id,
+                    },
+                )
+            raise ProjectBootstrapError("Project group not found.") from exc
+        except FeishuApiError as exc:
+            if self._debug_recorder is not None:
+                self._debug_recorder.record_error(
+                    stage="project_group_destroy",
+                    message=str(exc),
+                    context={
+                        "project_id": project.id,
+                        "project_name": project.name,
+                        "group_chat_id": project.group_chat_id,
+                        "actor_id": actor_id,
+                    },
+                )
+            raise ProjectBootstrapError(str(exc)) from exc
 
 
 def _group_name_for_project(project_name: str) -> str:

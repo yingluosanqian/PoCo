@@ -14,6 +14,10 @@ class FeishuApiError(RuntimeError):
     pass
 
 
+class FeishuChatNotFoundError(FeishuApiError):
+    pass
+
+
 @dataclass(frozen=True, slots=True)
 class FeishuSendResult:
     message_id: str | None
@@ -174,6 +178,28 @@ class FeishuMessageClient:
             name=data.get("name"),
             raw_response=response,
         )
+
+    def delete_group_chat(self, *, chat_id: str) -> None:
+        token = self._token_provider.get_token()
+        response = _request_json(
+            method="DELETE",
+            url=f"{self._base_url}/open-apis/im/v1/chats/{chat_id}",
+            payload={},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json; charset=utf-8",
+            },
+        )
+
+        code = response.get("code", 0)
+        if code == 232006:
+            raise FeishuChatNotFoundError(
+                f"Feishu group chat not found: chat_id={chat_id}"
+            )
+        if code != 0:
+            raise FeishuApiError(
+                f"Failed to delete Feishu group chat: code={code} msg={response.get('msg', 'unknown error')}"
+            )
 
     def _send_message(
         self,

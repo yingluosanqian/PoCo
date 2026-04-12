@@ -30,6 +30,7 @@ class RenderTarget(StrEnum):
 
 WRITE_INTENT_KEYS = {
     "project.create",
+    "project.delete",
     "project.bind_group",
     "project.archive",
     "project.add_dir_preset",

@@ -19,6 +19,7 @@ class FakeProjectBootstrapper:
     def __init__(self) -> None:
         self.calls: list[dict[str, str]] = []
         self.workspace_notifications: list[dict[str, str]] = []
+        self.destroy_calls: list[dict[str, str]] = []
 
     def bootstrap_project(self, *, project, actor_id: str) -> ProjectBootstrapResult:
         self.calls.append(
@@ -40,6 +41,16 @@ class FakeProjectBootstrapper:
             }
         )
 
+    def destroy_project_workspace(self, *, project, actor_id: str) -> None:
+        self.destroy_calls.append(
+            {
+                "project_id": project.id,
+                "project_name": project.name,
+                "group_chat_id": project.group_chat_id or "",
+                "actor_id": actor_id,
+            }
+        )
+
 
 class FailingProjectBootstrapper:
     def bootstrap_project(self, *, project, actor_id: str) -> ProjectBootstrapResult:
@@ -47,6 +58,9 @@ class FailingProjectBootstrapper:
 
     def notify_project_workspace(self, *, project, actor_id: str) -> None:
         return None
+
+    def destroy_project_workspace(self, *, project, actor_id: str) -> None:
+        raise ProjectBootstrapError("simulated destroy failure")
 
 
 class NotifyFailingProjectBootstrapper(FakeProjectBootstrapper):
@@ -105,6 +119,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
                     "project.manage": self.project_handler,
                     "project.list": self.project_handler,
                     "project.create": self.project_handler,
+                    "project.delete": self.project_handler,
                     "project.open": self.project_handler,
                     "project.configure_agent": self.project_handler,
                     "project.configure_repo": self.project_handler,
@@ -229,6 +244,35 @@ class FeishuCardGatewayTest(unittest.TestCase):
 
         self.assertEqual(response["instruction"]["template_key"], "project_home")
         self.assertEqual(response["card"]["data"]["header"]["title"]["content"], "PoCo Projects")
+
+    def test_project_delete_action_removes_project_and_group(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+            group_chat_id="oc_group_delete_1",
+        )
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_card_delete_1"},
+                "action": {
+                    "value": {
+                        "intent_key": "project.delete",
+                        "surface": "dm",
+                        "project_id": project.id,
+                        "request_id": "req_project_delete_1",
+                    },
+                },
+            }
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        self.assertEqual(response["instruction"]["template_key"], "project_manage")
+        self.assertEqual(self.project_controller.list_projects(), [])
+        self.assertEqual(len(self.bootstrapper.destroy_calls), 1)
+        self.assertEqual(self.bootstrapper.destroy_calls[0]["group_chat_id"], "oc_group_delete_1")
 
     def test_project_create_rolls_back_when_group_bootstrap_fails(self) -> None:
         failing_gateway = FeishuCardActionGateway(
@@ -1148,6 +1192,9 @@ class FeishuCardGatewayTest(unittest.TestCase):
 
         self.assertEqual(response["instruction"]["template_key"], "project_manage")
         self.assertEqual(response["card"]["data"]["header"]["title"]["content"], "Manage Projects")
+        delete_button = response["card"]["data"]["body"]["elements"][1]
+        self.assertEqual(delete_button["text"]["content"], "Delete Project")
+        self.assertEqual(delete_button["behaviors"][0]["value"]["intent_key"], "project.delete")
 
     def test_write_action_uses_top_level_event_id_for_idempotency(self) -> None:
         payload = {

@@ -8,6 +8,7 @@ from poco.interaction.card_handlers import build_workspace_overview_result
 from poco.interaction.card_models import DispatchStatus, IntentDispatchResult, RefreshMode, ResourceRefs, Surface, ViewModel
 from poco.platform.feishu.client import (
     FeishuAccessTokenProvider,
+    FeishuChatNotFoundError,
     FeishuMessageClient,
 )
 from poco.platform.feishu.cards import FeishuCardRenderer
@@ -86,6 +87,35 @@ class FeishuClientTest(unittest.TestCase):
         self.assertEqual(kwargs["method"], "PATCH")
         self.assertIn("/open-apis/im/v1/messages/om_original_123", kwargs["url"])
         self.assertEqual(kwargs["payload"]["msg_type"], "interactive")
+
+    def test_delete_group_chat_uses_delete_chat_api(self) -> None:
+        with (
+            patch.object(self.token_provider, "get_token", return_value="tenant-token"),
+            patch("poco.platform.feishu.client._request_json") as request_json,
+        ):
+            request_json.return_value = {
+                "code": 0,
+                "data": {},
+            }
+
+            self.client.delete_group_chat(chat_id="oc_group_123")
+
+        kwargs = request_json.call_args.kwargs
+        self.assertEqual(kwargs["method"], "DELETE")
+        self.assertIn("/open-apis/im/v1/chats/oc_group_123", kwargs["url"])
+
+    def test_delete_group_chat_raises_not_found_for_missing_group(self) -> None:
+        with (
+            patch.object(self.token_provider, "get_token", return_value="tenant-token"),
+            patch("poco.platform.feishu.client._request_json") as request_json,
+        ):
+            request_json.return_value = {
+                "code": 232006,
+                "msg": "chat not found",
+            }
+
+            with self.assertRaises(FeishuChatNotFoundError):
+                self.client.delete_group_chat(chat_id="oc_group_missing")
 
     def test_workspace_renderer_uses_group_surface_for_workspace_cards(self) -> None:
         project = Project(

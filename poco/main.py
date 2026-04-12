@@ -142,6 +142,7 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
             "project.manage": project_intent_handler,
             "project.list": project_intent_handler,
             "project.create": project_intent_handler,
+            "project.delete": project_intent_handler,
             "project.open": project_intent_handler,
             "project.configure_agent": project_intent_handler,
             "project.configure_repo": project_intent_handler,
