@@ -3,7 +3,7 @@ name = "poco"
 version = "0.1.0"
 description = "PoCo: pocket coding for server-side AI agents through mobile messaging entrypoints."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 authors = [
     { name = "Yihanc" },
 ]
@@ -19,6 +19,8 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Framework :: FastAPI",
     "Topic :: Software Development :: Build Tools",
