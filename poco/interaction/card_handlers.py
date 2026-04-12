@@ -96,7 +96,7 @@ class ProjectIntentHandler:
         return self._manage_projects(intent)
 
     def _create_project(self, intent: ActionIntent) -> IntentDispatchResult:
-        name = str(intent.payload.get("name", "")).strip()
+        name = _extract_project_name(intent.payload)
         if not name:
             return _rejected(intent, "Project name cannot be empty.")
         backend = str(intent.payload.get("backend", "codex")).strip() or "codex"
@@ -866,6 +866,20 @@ def _extract_workdir_path(payload: dict[str, object]) -> str:
         return input_value.strip()
     if isinstance(input_value, dict):
         nested = _optional_string(input_value.get("workdir"))
+        if nested is not None:
+            return nested
+    return ""
+
+
+def _extract_project_name(payload: dict[str, object]) -> str:
+    explicit = _optional_string(payload.get("name"))
+    if explicit is not None:
+        return explicit
+    input_value = payload.get("input_value")
+    if isinstance(input_value, str) and input_value.strip():
+        return input_value.strip()
+    if isinstance(input_value, dict):
+        nested = _optional_string(input_value.get("name"))
         if nested is not None:
             return nested
     return ""

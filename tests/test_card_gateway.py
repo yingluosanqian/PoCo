@@ -209,6 +209,28 @@ class FeishuCardGatewayTest(unittest.TestCase):
             "project.configure_agent",
         )
 
+    def test_project_create_accepts_project_name_from_input_value(self) -> None:
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_card_create_input_1"},
+                "action": {
+                    "value": {
+                        "intent_key": "project.create",
+                        "surface": "dm",
+                        "request_id": "req_project_create_input_1",
+                        "backend": "codex",
+                    },
+                    "input_value": "PoCo Input",
+                },
+            }
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        self.assertEqual(response["instruction"]["template_key"], "project_config")
+        self.assertEqual(response["card"]["data"]["header"]["title"]["content"], "Project: PoCo Input")
+
     def test_project_create_rolls_back_when_group_bootstrap_fails(self) -> None:
         failing_gateway = FeishuCardActionGateway(
             dispatcher=CardActionDispatcher(
