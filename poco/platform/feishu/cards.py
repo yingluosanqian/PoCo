@@ -588,6 +588,7 @@ def _render_workspace_enter_path(
     ]
     if error:
         elements.append(_markdown(error))
+
     if mode == "browse":
         if child_dirs or parent_path:
             options: list[dict[str, str]] = []
@@ -611,46 +612,115 @@ def _render_workspace_enter_path(
                             options=options,
                             value=options[0]["value"] if options else None,
                         ),
-                        {
-                            "tag": "button",
-                            "text": {
-                                "tag": "plain_text",
-                                "content": "Open Selected",
+                        _four_up(
+                            {
+                                "tag": "button",
+                                "text": {"tag": "plain_text", "content": "Open Selected"},
+                                "type": "default",
+                                "width": "default",
+                                "size": "medium",
+                                "name": f"open_selected_folder_{project['id']}",
+                                "form_action_type": "submit",
+                                "behaviors": [
+                                    {
+                                        "type": "callback",
+                                        "value": {
+                                            "intent_key": "workspace.enter_path",
+                                            "surface": surface,
+                                            "project_id": project["id"],
+                                        },
+                                    }
+                                ],
+                                "margin": "0px 0px 12px 0px",
                             },
-                            "type": "default",
-                            "width": "default",
-                            "size": "medium",
-                            "name": f"open_selected_folder_{project['id']}",
-                            "form_action_type": "submit",
-                            "behaviors": [
-                                {
-                                    "type": "callback",
-                                    "value": {
-                                        "intent_key": "workspace.enter_path",
-                                        "surface": surface,
-                                        "project_id": project["id"],
-                                    },
-                                }
-                            ],
-                            "margin": "0px 0px 12px 0px",
-                        },
+                            {
+                                "tag": "button",
+                                "text": {"tag": "plain_text", "content": "Apply"},
+                                "type": "primary",
+                                "width": "default",
+                                "size": "medium",
+                                "name": f"apply_selected_folder_{project['id']}",
+                                "form_action_type": "submit",
+                                "behaviors": [
+                                    {
+                                        "type": "callback",
+                                        "value": {
+                                            "intent_key": "workspace.apply_entered_path",
+                                            "surface": surface,
+                                            "project_id": project["id"],
+                                        },
+                                    }
+                                ],
+                                "margin": "0px 0px 12px 0px",
+                            },
+                            {
+                                "tag": "button",
+                                "text": {"tag": "plain_text", "content": "Enter Path Manually"},
+                                "type": "default",
+                                "width": "default",
+                                "size": "medium",
+                                "name": f"open_manual_path_{project['id']}",
+                                "behaviors": [
+                                    {
+                                        "type": "callback",
+                                        "value": {
+                                            "intent_key": "workspace.enter_path_manual",
+                                            "surface": surface,
+                                            "project_id": project["id"],
+                                            "browse_path": browse_path,
+                                        },
+                                    }
+                                ],
+                                "margin": "0px 0px 12px 0px",
+                            },
+                            {
+                                "tag": "button",
+                                "text": {"tag": "plain_text", "content": "Cancel"},
+                                "type": "default",
+                                "width": "default",
+                                "size": "medium",
+                                "name": f"cancel_browse_path_{project['id']}",
+                                "behaviors": [
+                                    {
+                                        "type": "callback",
+                                        "value": {
+                                            "intent_key": "workspace.open",
+                                            "surface": surface,
+                                            "project_id": project["id"],
+                                        },
+                                    }
+                                ],
+                                "margin": "0px 0px 12px 0px",
+                            },
+                        ),
                     ],
                 }
             )
         else:
             elements.append(_markdown("No subfolders here."))
-        elements.append(
-            _button(
-                label="Enter Path Manually",
-                intent_value={
-                    "intent_key": "workspace.enter_path_manual",
-                    "surface": surface,
-                    "project_id": project["id"],
-                    "browse_path": browse_path,
-                },
-                name=f"open_manual_path_{project['id']}",
+            elements.append(
+                _two_up(
+                    _button(
+                        label="Enter Path Manually",
+                        intent_value={
+                            "intent_key": "workspace.enter_path_manual",
+                            "surface": surface,
+                            "project_id": project["id"],
+                            "browse_path": browse_path,
+                        },
+                        name=f"open_manual_path_{project['id']}",
+                    ),
+                    _button(
+                        label="Cancel",
+                        intent_value={
+                            "intent_key": "workspace.open",
+                            "surface": surface,
+                            "project_id": project["id"],
+                        },
+                        name=f"cancel_browse_path_{project['id']}",
+                    ),
+                )
             )
-        )
     else:
         elements.append(
             {
@@ -663,13 +733,10 @@ def _render_workspace_enter_path(
                         placeholder="Enter workdir path",
                         value=current_workdir or browse_path,
                     ),
-                    _two_up(
+                    _three_up(
                         {
                             "tag": "button",
-                            "text": {
-                                "tag": "plain_text",
-                                "content": "Apply",
-                            },
+                            "text": {"tag": "plain_text", "content": "Apply"},
                             "type": "primary",
                             "width": "default",
                             "size": "medium",
@@ -689,10 +756,7 @@ def _render_workspace_enter_path(
                         },
                         {
                             "tag": "button",
-                            "text": {
-                                "tag": "plain_text",
-                                "content": "Back to Browse",
-                            },
+                            "text": {"tag": "plain_text", "content": "Switch to Browse"},
                             "type": "default",
                             "width": "default",
                             "size": "medium",
@@ -705,6 +769,25 @@ def _render_workspace_enter_path(
                                         "surface": surface,
                                         "project_id": project["id"],
                                         "browse_path": browse_path,
+                                    },
+                                }
+                            ],
+                            "margin": "0px 0px 12px 0px",
+                        },
+                        {
+                            "tag": "button",
+                            "text": {"tag": "plain_text", "content": "Cancel"},
+                            "type": "default",
+                            "width": "default",
+                            "size": "medium",
+                            "name": f"cancel_manual_path_{project['id']}",
+                            "behaviors": [
+                                {
+                                    "type": "callback",
+                                    "value": {
+                                        "intent_key": "workspace.open",
+                                        "surface": surface,
+                                        "project_id": project["id"],
                                     },
                                 }
                             ],
@@ -1182,6 +1265,68 @@ def _two_up(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
                 "width": "weighted",
                 "weight": 1,
                 "elements": [right],
+            },
+        ],
+    }
+
+
+def _three_up(left: dict[str, Any], middle: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "tag": "column_set",
+        "horizontal_spacing": "12px",
+        "margin": "0px 0px 12px 0px",
+        "columns": [
+            {
+                "tag": "column",
+                "width": "weighted",
+                "weight": 1,
+                "elements": [left],
+            },
+            {
+                "tag": "column",
+                "width": "weighted",
+                "weight": 1,
+                "elements": [middle],
+            },
+            {
+                "tag": "column",
+                "width": "weighted",
+                "weight": 1,
+                "elements": [right],
+            },
+        ],
+    }
+
+
+def _four_up(a: dict[str, Any], b: dict[str, Any], c: dict[str, Any], d: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "tag": "column_set",
+        "horizontal_spacing": "12px",
+        "margin": "0px 0px 12px 0px",
+        "columns": [
+            {
+                "tag": "column",
+                "width": "weighted",
+                "weight": 1,
+                "elements": [a],
+            },
+            {
+                "tag": "column",
+                "width": "weighted",
+                "weight": 1,
+                "elements": [b],
+            },
+            {
+                "tag": "column",
+                "width": "weighted",
+                "weight": 1,
+                "elements": [c],
+            },
+            {
+                "tag": "column",
+                "width": "weighted",
+                "weight": 1,
+                "elements": [d],
             },
         ],
     }

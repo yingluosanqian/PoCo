@@ -854,7 +854,9 @@ class FeishuCardGatewayTest(unittest.TestCase):
         )
         self.assertIn("/srv/poco/demo", summary["content"])
         select_box = form["elements"][0]
+        action_row = form["elements"][1]
         self.assertEqual(select_box["tag"], "select_static")
+        self.assertEqual(action_row["tag"], "column_set")
 
     def test_workspace_use_default_dir_updates_context(self) -> None:
         project = self.project_controller.create_project(
@@ -959,6 +961,11 @@ class FeishuCardGatewayTest(unittest.TestCase):
         self.assertEqual(
             back_button["behaviors"][0]["value"]["intent_key"],
             "workspace.enter_path",
+        )
+        cancel_button = action_row["columns"][2]["elements"][0]
+        self.assertEqual(
+            cancel_button["behaviors"][0]["value"]["intent_key"],
+            "workspace.open",
         )
 
     def test_workspace_apply_entered_path_updates_context(self) -> None:

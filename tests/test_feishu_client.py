@@ -267,18 +267,24 @@ class FeishuClientTest(unittest.TestCase):
         self.assertEqual(card["header"]["title"]["content"], "Working Dir: PoCo")
         browse_summary = card["body"]["elements"][0]
         browse_form = card["body"]["elements"][1]
-        manual_button = card["body"]["elements"][2]
         select_box = browse_form["elements"][0]
-        open_button = browse_form["elements"][1]
+        action_row = browse_form["elements"][1]
+        open_button = action_row["columns"][0]["elements"][0]
+        apply_button = action_row["columns"][1]["elements"][0]
+        manual_shortcut = action_row["columns"][2]["elements"][0]
+        cancel_button = action_row["columns"][3]["elements"][0]
         self.assertEqual(browse_summary["tag"], "markdown")
         self.assertEqual(select_box["tag"], "select_static")
         self.assertEqual(select_box["name"], "browse_path")
         self.assertEqual(select_box["options"][0]["value"], "/srv")
         self.assertEqual(select_box["options"][0]["text"]["content"], "..")
         self.assertEqual(select_box["options"][1]["value"], "/srv/poco/api")
+        self.assertEqual(action_row["tag"], "column_set")
         self.assertEqual(open_button["form_action_type"], "submit")
         self.assertEqual(open_button["behaviors"][0]["value"]["intent_key"], "workspace.enter_path")
-        self.assertEqual(manual_button["behaviors"][0]["value"]["intent_key"], "workspace.enter_path_manual")
+        self.assertEqual(apply_button["behaviors"][0]["value"]["intent_key"], "workspace.apply_entered_path")
+        self.assertEqual(manual_shortcut["behaviors"][0]["value"]["intent_key"], "workspace.enter_path_manual")
+        self.assertEqual(cancel_button["behaviors"][0]["value"]["intent_key"], "workspace.open")
 
     def test_workspace_manual_path_card_contains_input_and_back_to_browse(self) -> None:
         project = Project(
@@ -319,9 +325,11 @@ class FeishuClientTest(unittest.TestCase):
         action_row = form["elements"][2]
         apply_button = action_row["columns"][0]["elements"][0]
         back_button = action_row["columns"][1]["elements"][0]
+        cancel_button = action_row["columns"][2]["elements"][0]
         self.assertEqual(input_box["tag"], "input")
         self.assertEqual(apply_button["behaviors"][0]["value"]["intent_key"], "workspace.apply_entered_path")
         self.assertEqual(back_button["behaviors"][0]["value"]["intent_key"], "workspace.enter_path")
+        self.assertEqual(cancel_button["behaviors"][0]["value"]["intent_key"], "workspace.open")
 
     def test_project_dir_presets_card_contains_input_and_add(self) -> None:
         project = Project(
