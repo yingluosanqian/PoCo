@@ -521,6 +521,43 @@ class FeishuClientTest(unittest.TestCase):
         self.assertEqual(change_workdir_button["behaviors"][0]["value"]["intent_key"], "workspace.enter_path")
         self.assertEqual(change_model_button["behaviors"][0]["value"]["intent_key"], "workspace.choose_model")
 
+    def test_task_status_card_uses_stopped_title_and_grey_template_when_cancelled(self) -> None:
+        task = {
+            "id": "task_stop_1",
+            "project_id": "proj_1",
+            "agent_backend": "codex",
+            "effective_workdir": "/srv/poco/api",
+            "prompt": "stop me",
+            "status": "cancelled",
+            "awaiting_confirmation_reason": None,
+            "raw_result": "Task stopped by user.",
+        }
+        card = FeishuCardRenderer().render(
+            build_render_instruction(
+                IntentDispatchResult(
+                    status=DispatchStatus.OK,
+                    intent_key="task.status",
+                    resource_refs=ResourceRefs(project_id="proj_1", task_id="task_stop_1"),
+                    view_model=ViewModel(
+                        "task_status",
+                        {
+                            "task": task,
+                        },
+                    ),
+                    refresh_mode=RefreshMode.REPLACE_CURRENT,
+                ),
+                surface=Surface.GROUP,
+            )
+        )
+
+        self.assertEqual(
+            card["header"]["title"]["content"],
+            "[Stopped] Task: task_stop_1 (codex, /srv/poco/api)",
+        )
+        self.assertEqual(card["header"]["template"], "grey")
+        self.assertEqual(card["body"]["elements"][0]["tag"], "markdown")
+        self.assertEqual(card["body"]["elements"][1]["tag"], "column_set")
+
 
 if __name__ == "__main__":
     unittest.main()

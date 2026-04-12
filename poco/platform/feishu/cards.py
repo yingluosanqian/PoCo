@@ -1083,8 +1083,10 @@ def _task_template_for_status(status: str) -> str:
         return "orange"
     if status == "completed":
         return "green"
-    if status in {"failed", "cancelled"}:
+    if status == "failed":
         return "red"
+    if status == "cancelled":
+        return "grey"
     return "blue"
 
 
