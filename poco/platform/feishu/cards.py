@@ -14,12 +14,10 @@ class FeishuCardRenderer:
         if instruction.template_key == "project_home":
             return _render_project_home(
                 instruction.template_data,
-                app_base_url=self._app_base_url,
             )
         if instruction.template_key == "project_create":
             return _render_project_create(
                 instruction.template_data,
-                app_base_url=self._app_base_url,
             )
         if instruction.template_key == "project_manage":
             return _render_project_manage(instruction.template_data)
@@ -97,28 +95,20 @@ class FeishuCardRenderer:
 
 def _render_project_home(
     data: dict[str, Any],
-    *,
-    app_base_url: str | None,
 ) -> dict[str, Any]:
     project_count = data.get("project_count", 0)
-    actor_id = data.get("actor_id")
-    new_url = project_new_url(
-        app_base_url,
-        actor_id=actor_id if isinstance(actor_id, str) else None,
-    )
     return _card_shell(
         title="PoCo Projects",
         template="blue",
         elements=[
             _markdown(f"DM 控制台。当前共有 **{project_count}** 个 project。"),
-            _action_button(
+            _button(
                 label="New",
-                style="primary",
-                url=new_url,
-                intent_value=None if new_url is not None else {
+                intent_value={
                     "intent_key": "project.new",
                     "surface": "dm",
                 },
+                style="primary",
                 name="new_project_button",
             ),
             _button(
@@ -135,41 +125,75 @@ def _render_project_home(
 
 def _render_project_create(
     data: dict[str, Any],
-    *,
-    app_base_url: str | None,
 ) -> dict[str, Any]:
-    actor_id = data.get("actor_id")
-    create_url = project_new_url(app_base_url, actor_id=actor_id if isinstance(actor_id, str) else None)
-    elements: list[dict[str, Any]] = [
-        _markdown("项目创建已经改成浏览器页，避免飞书卡片输入框的双提交流程。"),
-    ]
-    if create_url is not None:
-        elements.append(
-            _action_button(
-                label="Open Create Page",
-                style="primary",
-                url=create_url,
-                name="open_create_project_page_button",
-            )
-        )
-    else:
-        elements.append(
-            _markdown("当前没有配置 `POCO_APP_BASE_URL`，所以还不能打开浏览器创建页。")
-        )
-    elements.append(
-        _button(
-            label="Back",
-            intent_value={
-                "intent_key": "project.home",
-                "surface": "dm",
-            },
-            name="back_to_project_home_button",
-        )
-    )
+    default_backend = data.get("default_backend") or "codex"
     return _card_shell(
         title="New Project",
         template="blue",
-        elements=elements,
+        elements=[
+            {
+                "tag": "form",
+                "name": "project_create_form",
+                "elements": [
+                    _markdown("**Project Name**"),
+                    {
+                        "tag": "input",
+                        "name": "name",
+                        "required": True,
+                        "placeholder": {
+                            "tag": "plain_text",
+                            "content": "Project name",
+                        },
+                        "margin": "0px 0px 12px 0px",
+                    },
+                    _markdown(f"**Agent**\n`{default_backend}`"),
+                    {
+                        "tag": "button",
+                        "text": {
+                            "tag": "plain_text",
+                            "content": "Create Project + Group",
+                        },
+                        "type": "primary",
+                        "width": "default",
+                        "size": "medium",
+                        "name": "submit_project_create_button",
+                        "form_action_type": "submit",
+                        "behaviors": [
+                            {
+                                "type": "callback",
+                                "value": {
+                                    "intent_key": "project.create",
+                                    "surface": "dm",
+                                    "backend": default_backend,
+                                },
+                            }
+                        ],
+                        "margin": "0px 0px 12px 0px",
+                    },
+                    {
+                        "tag": "button",
+                        "text": {
+                            "tag": "plain_text",
+                            "content": "Cancel",
+                        },
+                        "type": "default",
+                        "width": "default",
+                        "size": "medium",
+                        "name": "cancel_project_create_button",
+                        "behaviors": [
+                            {
+                                "type": "callback",
+                                "value": {
+                                    "intent_key": "project.home",
+                                    "surface": "dm",
+                                },
+                            }
+                        ],
+                        "margin": "0px 0px 12px 0px",
+                    },
+                ],
+            }
+        ],
     )
 
 
