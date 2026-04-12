@@ -37,6 +37,7 @@ class FeishuTaskNotifier:
         task_controller: TaskController | None = None,
         workspace_controller: WorkspaceContextController | None = None,
         debug_recorder: FeishuDebugRecorder | None = None,
+        running_update_interval_seconds: float = 0.35,
     ) -> None:
         self._message_client = message_client
         self._renderer = renderer or FeishuCardRenderer()
@@ -45,6 +46,7 @@ class FeishuTaskNotifier:
         self._task_controller = task_controller
         self._workspace_controller = workspace_controller
         self._debug_recorder = debug_recorder
+        self._running_update_interval_seconds = running_update_interval_seconds
         self._last_running_update_at: dict[str, float] = {}
 
     def notify_task(self, task: Task) -> None:
@@ -164,12 +166,10 @@ class FeishuTaskNotifier:
     def _should_send_running_update(
         self,
         task: Task,
-        *,
-        interval_seconds: float = 1.5,
     ) -> bool:
         now = monotonic()
         last = self._last_running_update_at.get(task.id)
-        if last is not None and now - last < interval_seconds:
+        if last is not None and now - last < self._running_update_interval_seconds:
             return False
         self._last_running_update_at[task.id] = now
         return True
