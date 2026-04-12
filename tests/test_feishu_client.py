@@ -377,7 +377,7 @@ class FeishuClientTest(unittest.TestCase):
             )
         )
 
-        self.assertEqual(card["header"]["title"]["content"], "Choose Agent: PoCo")
+        self.assertEqual(card["header"]["title"]["content"], "Config Agent: PoCo")
         form = card["body"]["elements"][1]
         self.assertEqual(form["tag"], "form")
         self.assertEqual(form["elements"][0]["tag"], "select_static")

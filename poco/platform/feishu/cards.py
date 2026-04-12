@@ -893,7 +893,7 @@ def _render_workspace_choose_model(
         },
     ]
     return _card_shell(
-        title=f"Choose Agent: {project['name']}",
+        title=f"Config Agent: {project['name']}",
         template="blue",
         elements=elements,
     )
