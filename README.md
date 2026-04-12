@@ -88,6 +88,8 @@ export POCO_CODEX_APPROVAL_POLICY="never"
 export POCO_CODEX_TIMEOUT_SECONDS="900"
 ```
 
+PoCo now runs the `codex` backend through `codex app-server` over stdio, so task cards can consume true `agentMessage/delta` events instead of waiting for a final `exec --json` message block.
+
 Use `POCO_AGENT_BACKEND=stub` if you want to exercise the flow without calling Codex.
 
 `claude_code` and `cursor_agent` are recognized as planned backends, but they are not implemented yet. If selected, PoCo will start and report the backend as not ready.
@@ -268,7 +270,7 @@ Current interaction model:
 - Group text `/run` now resolves the bound project and current workspace workdir, then stamps that into task execution context
 - Bound group workspaces now also treat ordinary plain-text messages as task prompts by default
 - Bound group workspaces now run tasks in a single-project queue: if one task is still active, the next message is queued instead of starting a parallel Codex run
-- codex-backed groups now persist the upstream Codex thread id and reuse it with `exec resume`, so follow-up messages continue the same Codex conversation instead of starting from a blank context
+- codex-backed groups now persist the upstream Codex thread id and resume it through `codex app-server`, so follow-up messages continue the same Codex conversation instead of starting from a blank context
 - Group text-created tasks now reply with a single initial `task_status` card, and later live/terminal updates stay on that same card
 - Codex execution now prefers the task's `effective_workdir` over the global fallback directory
 - group card `task.submit` now reuses the same task-execution path and inherits the current workspace workdir

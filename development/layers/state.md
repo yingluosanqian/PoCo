@@ -97,7 +97,7 @@
 - 已存在最小结果保真链，当前 `Task` 已保存 `raw_result`，task status card 会优先展示原始结果，超长结果可分页查看
 - 已存在最小 task 卡信息收敛，当前 task id、status、agent、effective workdir 已进入标题，卡片正文默认只承载模型输出或确认说明
 - 已存在 task/workspace 卡动作收敛，当前 task 卡已去掉 `Back To Workspace`，workspace 卡已去掉 `Open Latest Task`、`Refresh`、`Back To Project`，改为更直接的动作按钮
-- 已存在最小运行期透明链，当前 running task 可携带 `live_output`，并驱动节流后的 task card 原位更新
+- 已存在最小运行期透明链，当前 codex 已切到 `codex app-server` 路径，running task 可消费真实 `agentMessage/delta`、携带 `live_output`，并驱动节流后的 task card 原位更新
 - 已存在 group 文本直达单卡链，当前群文本创建 task 时会先收到一张初始 task card，后续状态与 live output 都会更新这张卡
 - 已存在默认 sqlite 状态后端，当前 `project`、`workspace context` 和 `task` 已可跨服务重启恢复
 - 已存在最小启动恢复逻辑，当前重启后仍可识别既有 `group_chat_id -> project` 绑定、workspace 卡绑定和当前 workdir 状态
@@ -111,7 +111,7 @@
 
 - 当前飞书接入已具备第一层真实协议支持，但仍未覆盖加密事件体和真实端到端联调
 - 当前长连接接入已覆盖消息事件和卡片回调，但真实飞书环境下的复杂卡片工作流仍未完成持续验证
-- 当前 agent 执行已优先接入 Codex CLI，但仍未具备长任务编排、后台队列和真实执行器事件回传
+- 当前 agent 执行已优先接入 Codex app-server 真流式链路，但仍未具备更丰富的 tool event 映射、长任务编排和跨进程 worker
 - 当前后台调度仍基于进程内线程，不适合跨进程或重启后的任务追踪
 - 当前系统仅维护 task state，尚未维护 session continuity 或产品级 handoff context
 - 当前虽已具备最小 sqlite 持久化和最小 active session，但尚未实现完整 session continuity 或 backend execution context 恢复
