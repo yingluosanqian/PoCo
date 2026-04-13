@@ -61,6 +61,15 @@ class _TraePromptTurnState:
             self.ignored_message_ids.add(message_id)
 
 
+@dataclass(slots=True)
+class _TraeAcpTransport:
+    workdir: str
+    process: subprocess.Popen[str]
+    client: "_TraeAcpClient"
+    lock: RLock = field(default_factory=RLock)
+    last_used_at: float = field(default_factory=monotonic)
+
+
 class AgentRunner(Protocol):
     name: str
 
@@ -927,15 +936,18 @@ class CocoRunner:
         model: str | None = None,
         approval_mode: str = "default",
         timeout_seconds: int = 900,
+        transport_idle_seconds: float = 30.0,
     ) -> None:
         self._command = command
         self._workdir = workdir
         self._model = model
         self._approval_mode = approval_mode
         self._timeout_seconds = timeout_seconds
+        self._transport_idle_seconds = transport_idle_seconds
         self._lock = RLock()
         self._active_processes: dict[str, subprocess.Popen[str]] = {}
         self._cancelled_tasks: set[str] = set()
+        self._transports: dict[str, _TraeAcpTransport] = {}
 
     def is_ready(self) -> tuple[bool, str]:
         executable = shutil.which(self._command)
@@ -996,24 +1008,15 @@ class CocoRunner:
         mode_id = "bypass_permissions" if resolved_approval_mode == "yolo" else "default"
 
         process: subprocess.Popen[str] | None = None
+        transport: _TraeAcpTransport | None = None
         backend_session_id = task.backend_session_id
+        transport_broken = False
         try:
-            process = subprocess.Popen(
-                [self._command, "acp", "serve"],
-                cwd=workdir,
-                env=os.environ.copy(),
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1,
-            )
+            transport = self._acquire_transport(workdir)
+            process = transport.process
             with self._lock:
                 self._active_processes[task.id] = process
-            session = _TraeAcpClient(
-                process=process,
-            )
-            session.initialize()
+            session = transport.client
             session_result = session.open_session(
                 session_id=task.backend_session_id,
                 cwd=workdir,
@@ -1091,7 +1094,15 @@ class CocoRunner:
                     backend_session_id=backend_session_id,
                 )
                 return
+        except RuntimeError as exc:
+            transport_broken = True
+            yield AgentRunUpdate(
+                kind="failed",
+                message=str(exc) or "Trae CLI ACP request failed.",
+                backend_session_id=backend_session_id,
+            )
         except OSError as exc:
+            transport_broken = True
             yield AgentRunUpdate(
                 kind="failed",
                 message=f"Failed to start Trae CLI: {exc}",
@@ -1101,7 +1112,7 @@ class CocoRunner:
             with self._lock:
                 self._active_processes.pop(task.id, None)
                 self._cancelled_tasks.discard(task.id)
-            _cleanup_subprocess(process)
+            self._release_transport(transport, broken=transport_broken)
 
     def _consume_cancelled(self, task_id: str) -> bool:
         with self._lock:
@@ -1109,6 +1120,85 @@ class CocoRunner:
                 return False
             self._cancelled_tasks.discard(task_id)
             return True
+
+    def _acquire_transport(self, workdir: str) -> _TraeAcpTransport:
+        with self._lock:
+            cleanup_candidates = self._collect_idle_transports_locked(exclude_workdir=workdir)
+            transport = self._transports.get(workdir)
+            if transport is not None and transport.process.poll() is not None:
+                self._transports.pop(workdir, None)
+                cleanup_candidates.append(transport.process)
+                transport = None
+            if transport is None:
+                transport = self._start_transport(workdir)
+                self._transports[workdir] = transport
+        for candidate in cleanup_candidates:
+            _cleanup_subprocess(candidate)
+        transport.lock.acquire()
+        with self._lock:
+            transport.last_used_at = monotonic()
+        return transport
+
+    def _release_transport(self, transport: _TraeAcpTransport | None, *, broken: bool) -> None:
+        if transport is None:
+            return
+        cleanup: subprocess.Popen[str] | None = None
+        with self._lock:
+            transport.last_used_at = monotonic()
+            if broken or transport.process.poll() is not None:
+                if self._transports.get(transport.workdir) is transport:
+                    self._transports.pop(transport.workdir, None)
+                cleanup = transport.process
+            transport.lock.release()
+        if cleanup is not None:
+            _cleanup_subprocess(cleanup)
+
+    def _start_transport(self, workdir: str) -> _TraeAcpTransport:
+        process = subprocess.Popen(
+            [self._command, "acp", "serve"],
+            cwd=workdir,
+            env=os.environ.copy(),
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
+        try:
+            client = _TraeAcpClient(process=process)
+            client.initialize()
+            return _TraeAcpTransport(
+                workdir=workdir,
+                process=process,
+                client=client,
+            )
+        except Exception:
+            _cleanup_subprocess(process)
+            raise
+
+    def _collect_idle_transports_locked(self, *, exclude_workdir: str | None = None) -> list[subprocess.Popen[str]]:
+        if self._transport_idle_seconds <= 0:
+            return []
+        now = monotonic()
+        stale_workdirs: list[str] = []
+        cleanup: list[subprocess.Popen[str]] = []
+        for workdir, transport in self._transports.items():
+            if exclude_workdir is not None and workdir == exclude_workdir:
+                continue
+            if transport.process.poll() is not None:
+                stale_workdirs.append(workdir)
+                cleanup.append(transport.process)
+                continue
+            if now - transport.last_used_at < self._transport_idle_seconds:
+                continue
+            if not transport.lock.acquire(blocking=False):
+                continue
+            transport.lock.release()
+            stale_workdirs.append(workdir)
+            cleanup.append(transport.process)
+        for workdir in stale_workdirs:
+            self._transports.pop(workdir, None)
+        return cleanup
 
 
 class CodexCliRunner:
