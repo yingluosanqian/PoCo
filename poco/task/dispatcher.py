@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from threading import Condition
 from threading import RLock
 from threading import Thread
 
@@ -19,6 +20,7 @@ class AsyncTaskDispatcher:
         self._controller = controller
         self._notifier = notifier or NullTaskNotifier()
         self._running_notify_lock = RLock()
+        self._running_notify_changed = Condition(self._running_notify_lock)
         self._running_notify_latest: dict[str, Task] = {}
         self._running_notify_active: set[str] = set()
 
@@ -72,6 +74,7 @@ class AsyncTaskDispatcher:
         if task.status == TaskStatus.RUNNING:
             self._enqueue_running_notification(task)
             return
+        self._flush_running_notification(task.id)
         self._clear_running_notification(task.id)
         if task.status in {
             TaskStatus.QUEUED,
@@ -98,8 +101,10 @@ class AsyncTaskDispatcher:
         with self._running_notify_lock:
             self._running_notify_latest[task.id] = snapshot
             if task.id in self._running_notify_active:
+                self._running_notify_changed.notify_all()
                 return
             self._running_notify_active.add(task.id)
+            self._running_notify_changed.notify_all()
         self._launch(lambda: self._drain_running_notifications(task.id))
 
     def _drain_running_notifications(self, task_id: str) -> None:
@@ -109,6 +114,7 @@ class AsyncTaskDispatcher:
             if snapshot is None:
                 with self._running_notify_lock:
                     self._running_notify_active.discard(task_id)
+                    self._running_notify_changed.notify_all()
                 return
             self._notifier.notify_task(snapshot)
             with self._running_notify_lock:
@@ -116,8 +122,39 @@ class AsyncTaskDispatcher:
                 if latest is snapshot:
                     self._running_notify_latest.pop(task_id, None)
                     self._running_notify_active.discard(task_id)
+                    self._running_notify_changed.notify_all()
+                    return
+                self._running_notify_changed.notify_all()
+
+    def _flush_running_notification(self, task_id: str) -> None:
+        while True:
+            snapshot: Task | None = None
+            with self._running_notify_lock:
+                pending = self._running_notify_latest.get(task_id)
+                active = task_id in self._running_notify_active
+                if pending is None:
+                    if not active:
+                        return
+                    self._running_notify_changed.wait(timeout=0.05)
+                    continue
+                if active:
+                    self._running_notify_changed.wait(timeout=0.05)
+                    continue
+                snapshot = pending
+                self._running_notify_active.add(task_id)
+
+            self._notifier.notify_task(snapshot)
+
+            with self._running_notify_lock:
+                latest = self._running_notify_latest.get(task_id)
+                if latest is snapshot:
+                    self._running_notify_latest.pop(task_id, None)
+                self._running_notify_active.discard(task_id)
+                self._running_notify_changed.notify_all()
+                if task_id not in self._running_notify_latest:
                     return
 
     def _clear_running_notification(self, task_id: str) -> None:
         with self._running_notify_lock:
             self._running_notify_latest.pop(task_id, None)
+            self._running_notify_changed.notify_all()

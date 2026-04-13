@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from threading import Event
+from threading import Thread
+from time import sleep
 import unittest
 
 from poco.agent.runner import AgentRunUpdate, StubAgentRunner
@@ -21,6 +24,16 @@ class FakeNotifier:
 class InlineDispatcher(AsyncTaskDispatcher):
     def _launch(self, target) -> None:  # type: ignore[no-untyped-def]
         target()
+
+
+class GatedRunningDispatcher(AsyncTaskDispatcher):
+    def __init__(self, controller: TaskController, *, notifier: FakeNotifier, gate: Event) -> None:
+        super().__init__(controller, notifier=notifier)
+        self._gate = gate
+
+    def _drain_running_notifications(self, task_id: str) -> None:
+        self._gate.wait(timeout=1)
+        super()._drain_running_notifications(task_id)
 
 
 class StreamingRunner:
@@ -128,6 +141,40 @@ class TaskDispatcherTest(unittest.TestCase):
         running_with_output = [task for task in notifier.tasks if task.status.value == "running" and task.live_output]
         self.assertTrue(running_with_output)
         self.assertIn("line 1", running_with_output[-1].live_output or "")
+
+    def test_terminal_update_flushes_pending_running_stream_before_completion(self) -> None:
+        controller = TaskController(
+            store=InMemoryTaskStore(),
+            runner=StreamingRunner(),
+        )
+        notifier = FakeNotifier()
+        gate = Event()
+        dispatcher = GatedRunningDispatcher(controller, notifier=notifier, gate=gate)
+        task = controller.create_task(
+            requester_id="ou_demo",
+            prompt="stream output",
+            source="feishu",
+            reply_receive_id="oc_demo_chat",
+            reply_receive_id_type="chat_id",
+        )
+
+        def release_gate() -> None:
+            sleep(0.05)
+            gate.set()
+
+        releaser = Thread(target=release_gate, daemon=True)
+        releaser.start()
+        updated = controller.start_task_execution_with_callback(
+            task.id,
+            on_update=dispatcher._notify_if_needed,
+        )
+        releaser.join(timeout=1)
+
+        self.assertEqual(updated.status.value, "completed")
+        self.assertGreaterEqual(len(notifier.tasks), 2)
+        self.assertEqual(notifier.tasks[-2].status.value, "running")
+        self.assertIn("line 1", notifier.tasks[-2].live_output or "")
+        self.assertEqual(notifier.tasks[-1].status.value, "completed")
 
     def test_dispatch_start_starts_next_queued_task_after_completion(self) -> None:
         first = self.controller.create_task(
