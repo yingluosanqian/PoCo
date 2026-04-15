@@ -204,6 +204,34 @@ class FeishuTaskNotifierTest(unittest.TestCase):
         snapshot = recorder.snapshot()
         self.assertEqual(snapshot["outbound_attempts"][0]["source"], "task_notifier_update")
 
+    def test_running_updates_are_forwarded_without_time_throttling(self) -> None:
+        client = FakeMessageClient()
+        notifier = FeishuTaskNotifier(client)  # type: ignore[arg-type]
+        task = Task(
+            id="task_running_updates",
+            requester_id="ou_demo",
+            prompt="build",
+            source="feishu_card",
+            agent_backend="codex",
+            project_id="proj_1",
+            effective_workdir="/srv/poco/api",
+            notification_message_id="om_task_status_1",
+            reply_receive_id="oc_group_1",
+            reply_receive_id_type="chat_id",
+            status=TaskStatus.RUNNING,
+            live_output="line 1",
+        )
+
+        notifier.notify_task(task)
+        task.append_live_output("\nline 2")
+        notifier.notify_task(task)
+
+        self.assertEqual(len(client.sent_cards), 0)
+        self.assertEqual(len(client.updated_cards), 2)
+        self.assertEqual(client.updated_cards[0]["message_id"], "om_task_status_1")
+        self.assertEqual(client.updated_cards[1]["message_id"], "om_task_status_1")
+        self.assertIn("line 2", client.updated_cards[1]["card"]["body"]["elements"][0]["content"])
+
     def test_task_notification_also_updates_bound_workspace_card(self) -> None:
         client = FakeMessageClient()
         recorder = FeishuDebugRecorder()
@@ -248,6 +276,46 @@ class FeishuTaskNotifierTest(unittest.TestCase):
         self.assertEqual(client.updated_cards[0]["message_id"], "om_workspace_1")
         snapshot = recorder.snapshot()
         self.assertEqual(snapshot["outbound_attempts"][0]["source"], "workspace_notifier_update")
+
+    def test_running_stream_updates_do_not_resync_workspace_card_every_chunk(self) -> None:
+        client = FakeMessageClient()
+        project_controller = ProjectController(InMemoryProjectStore())
+        workspace_controller = WorkspaceContextController(InMemoryWorkspaceContextStore())
+        project = project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+            group_chat_id="oc_group_1",
+        )
+        project_controller.bind_workspace_message(project.id, "om_workspace_1")
+        notifier = FeishuTaskNotifier(
+            client,  # type: ignore[arg-type]
+            project_controller=project_controller,
+            workspace_controller=workspace_controller,
+        )
+        task = Task(
+            id="task_running_workspace",
+            requester_id="ou_demo",
+            prompt="build",
+            source="feishu_group_message",
+            agent_backend="codex",
+            project_id=project.id,
+            effective_workdir="/srv/poco/api",
+            notification_message_id="om_existing_card",
+            reply_receive_id="oc_group_1",
+            reply_receive_id_type="chat_id",
+            status=TaskStatus.RUNNING,
+            live_output="line 1",
+        )
+
+        notifier.notify_task(task)
+        task.append_live_output("\nline 2")
+        notifier.notify_task(task)
+
+        self.assertEqual(
+            [item["message_id"] for item in client.updated_cards],
+            ["om_existing_card", "om_workspace_1", "om_existing_card"],
+        )
 
     def test_running_update_failure_does_not_fallback_to_new_card(self) -> None:
         client = FailingUpdateMessageClient()

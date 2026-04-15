@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from time import monotonic
 from typing import Protocol
 
 from poco.interaction.card_dispatcher import build_render_instruction
@@ -46,14 +45,11 @@ class FeishuTaskNotifier:
         self._task_controller = task_controller
         self._workspace_controller = workspace_controller
         self._debug_recorder = debug_recorder
-        self._running_update_interval_seconds = running_update_interval_seconds
-        self._last_running_update_at: dict[str, float] = {}
+        self._workspace_sync_signatures: dict[str, tuple[str | None, str, str | None, str | None, str | None]] = {}
 
     def notify_task(self, task: Task) -> None:
         task = self._freshest_task(task)
         if not task.reply_receive_id or not task.reply_receive_id_type:
-            return
-        if task.status == TaskStatus.RUNNING and not self._should_send_running_update(task):
             return
 
         is_card_target = task.reply_receive_id_type in {"chat_id", "open_id"}
@@ -179,17 +175,6 @@ class FeishuTaskNotifier:
             return latest
         return task
 
-    def _should_send_running_update(
-        self,
-        task: Task,
-    ) -> bool:
-        now = monotonic()
-        last = self._last_running_update_at.get(task.id)
-        if last is not None and now - last < self._running_update_interval_seconds:
-            return False
-        self._last_running_update_at[task.id] = now
-        return True
-
     def _sync_workspace_card(self, task: Task) -> None:
         if (
             self._project_controller is None
@@ -206,6 +191,15 @@ class FeishuTaskNotifier:
             self._bootstrap_workspace_card(project, task)
             return
         if workspace_message_id == task.notification_message_id:
+            return
+        signature = (
+            task.id,
+            task.status.value,
+            task.effective_workdir,
+            task.agent_backend,
+            task.effective_model,
+        )
+        if self._workspace_sync_signatures.get(project.id) == signature:
             return
 
         from poco.interaction.card_handlers import build_workspace_overview_result
@@ -240,6 +234,7 @@ class FeishuTaskNotifier:
                 message_id=workspace_message_id,
                 card=card,
             )
+            self._workspace_sync_signatures[project.id] = signature
         except Exception as exc:
             if self._debug_recorder is not None:
                 self._debug_recorder.record_error(
