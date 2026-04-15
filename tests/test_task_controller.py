@@ -310,6 +310,74 @@ class TaskControllerTest(unittest.TestCase):
 
         self.assertTrue(runner.closed)
 
+    def test_progress_without_output_still_triggers_callback(self) -> None:
+        class ProgressRunner:
+            name = "progress"
+
+            def is_ready(self):
+                return True, "ok"
+
+            def steer(self, task: Task, prompt: str):
+                return False, "unsupported"
+
+            def resolve_execution_context(self, task: Task):
+                return None, task.effective_workdir, task.effective_sandbox
+
+            def cancel(self, task_id: str) -> bool:
+                return False
+
+            def start(self, task: Task):
+                yield type(
+                    "Update",
+                    (),
+                    {
+                        "kind": "progress",
+                        "message": "Codex is thinking.",
+                        "output_chunk": None,
+                        "backend_session_id": "thread_123",
+                    },
+                )()
+                yield type(
+                    "Update",
+                    (),
+                    {
+                        "kind": "completed",
+                        "message": "done",
+                        "raw_result": "final answer",
+                        "backend_session_id": "thread_123",
+                    },
+                )()
+
+            def resume_after_confirmation(self, task: Task):
+                return self.start(task)
+
+        controller = TaskController(
+            store=InMemoryTaskStore(),
+            runner=ProgressRunner(),
+            session_controller=self.session_controller,
+        )
+        task = controller.create_task(
+            requester_id="ou_demo",
+            prompt="stream output",
+            source="feishu",
+        )
+        seen: list[tuple[TaskStatus, str, str | None]] = []
+
+        completed = controller.start_task_execution_with_callback(
+            task.id,
+            on_update=lambda current: seen.append(
+                (
+                    current.status,
+                    current.events[-1].message,
+                    current.backend_session_id,
+                )
+            ),
+        )
+
+        self.assertEqual(completed.status, TaskStatus.COMPLETED)
+        self.assertGreaterEqual(len(seen), 2)
+        self.assertIn((TaskStatus.RUNNING, "Codex is thinking.", "thread_123"), seen)
+
 
 if __name__ == "__main__":
     unittest.main()

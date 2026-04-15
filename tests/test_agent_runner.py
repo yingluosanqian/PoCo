@@ -285,6 +285,79 @@ class CodexAppServerRunnerTest(unittest.TestCase):
             self.assertEqual(updates[-1].kind, "completed")
             self.assertEqual(updates[-1].raw_result, "line1\nline2")
 
+    def test_app_server_runner_surfaces_reasoning_progress_updates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = CodexAppServerRunner(command="codex", workdir=tmpdir)
+            task = Task(
+                id="task_reasoning",
+                requester_id="ou_demo",
+                prompt="stream reasoning",
+                source="feishu",
+                status=TaskStatus.RUNNING,
+                agent_backend="codex",
+            )
+
+            class FakePopen:
+                def __init__(self) -> None:
+                    self.killed = False
+
+                def poll(self):  # type: ignore[no-untyped-def]
+                    return 0 if self.killed else None
+
+                def kill(self) -> None:
+                    self.killed = True
+
+            fake_session = MagicMock()
+            fake_session.request.side_effect = [
+                {"thread": {"id": "thread_123"}},
+                {"turn": {"id": "turn_123"}},
+            ]
+            fake_session.read_next_message.side_effect = [
+                {
+                    "method": "item/started",
+                    "params": {
+                        "threadId": "thread_123",
+                        "turnId": "turn_123",
+                        "item": {"type": "reasoning", "id": "rs_1"},
+                    },
+                },
+                {
+                    "method": "thread/tokenUsage/updated",
+                    "params": {
+                        "threadId": "thread_123",
+                        "turnId": "turn_123",
+                        "tokenUsage": {
+                            "last": {"reasoningOutputTokens": 17},
+                        },
+                    },
+                },
+                {
+                    "method": "item/completed",
+                    "params": {
+                        "threadId": "thread_123",
+                        "turnId": "turn_123",
+                        "item": {"type": "agentMessage", "text": "done"},
+                    },
+                },
+                {
+                    "method": "thread/status/changed",
+                    "params": {
+                        "threadId": "thread_123",
+                        "status": {"type": "idle"},
+                    },
+                },
+            ]
+
+            with patch("poco.agent.runner.shutil.which", return_value="/opt/homebrew/bin/codex"):
+                with patch("poco.agent.runner.subprocess.Popen", return_value=FakePopen()):
+                    with patch("poco.agent.runner._CodexAppServerSession", return_value=fake_session):
+                        updates = list(runner.start(task))
+
+            progress_messages = [update.message for update in updates if update.kind == "progress"]
+            self.assertIn("Codex is thinking.", progress_messages)
+            self.assertIn("Codex is thinking. reasoning tokens: 17.", progress_messages)
+            self.assertEqual(updates[-1].raw_result, "done")
+
     def test_app_server_runner_resumes_existing_thread(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             runner = CodexAppServerRunner(command="codex", workdir=tmpdir)
@@ -338,6 +411,188 @@ class CodexAppServerRunnerTest(unittest.TestCase):
             first_call = fake_session.request.call_args_list[0]
             self.assertEqual(first_call.args[0], "thread/resume")
             self.assertEqual(first_call.args[1]["threadId"], "thread_existing")
+
+    def test_app_server_runner_reuses_transport_for_same_workdir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = CodexAppServerRunner(command="codex", workdir=tmpdir)
+            first_task = Task(
+                id="task_first",
+                requester_id="ou_demo",
+                prompt="first prompt",
+                source="feishu",
+                status=TaskStatus.RUNNING,
+                agent_backend="codex",
+            )
+            second_task = Task(
+                id="task_second",
+                requester_id="ou_demo",
+                prompt="second prompt",
+                source="feishu",
+                status=TaskStatus.RUNNING,
+                agent_backend="codex",
+            )
+
+            class FakePopen:
+                def __init__(self) -> None:
+                    self.killed = False
+
+                def poll(self):  # type: ignore[no-untyped-def]
+                    return 0 if self.killed else None
+
+                def kill(self) -> None:
+                    self.killed = True
+
+            fake_session = MagicMock()
+            fake_session.request.side_effect = [
+                {"thread": {"id": "thread_first"}},
+                {"turn": {"id": "turn_first"}},
+                {"thread": {"id": "thread_second"}},
+                {"turn": {"id": "turn_second"}},
+            ]
+            fake_session.read_next_message.side_effect = [
+                {
+                    "method": "item/completed",
+                    "params": {
+                        "threadId": "thread_first",
+                        "turnId": "turn_first",
+                        "item": {"type": "agentMessage", "text": "first answer"},
+                    },
+                },
+                {
+                    "method": "thread/status/changed",
+                    "params": {
+                        "threadId": "thread_first",
+                        "status": {"type": "idle"},
+                    },
+                },
+                {
+                    "method": "item/completed",
+                    "params": {
+                        "threadId": "thread_second",
+                        "turnId": "turn_second",
+                        "item": {"type": "agentMessage", "text": "second answer"},
+                    },
+                },
+                {
+                    "method": "thread/status/changed",
+                    "params": {
+                        "threadId": "thread_second",
+                        "status": {"type": "idle"},
+                    },
+                },
+            ]
+
+            with patch("poco.agent.runner.shutil.which", return_value="/opt/homebrew/bin/codex"):
+                with patch(
+                    "poco.agent.runner.subprocess.Popen",
+                    side_effect=[FakePopen()],
+                ) as popen:
+                    with patch("poco.agent.runner._CodexAppServerSession", return_value=fake_session):
+                        first_updates = list(runner.start(first_task))
+                        second_updates = list(runner.start(second_task))
+
+            self.assertEqual(popen.call_count, 1)
+            fake_session.initialize.assert_called_once_with()
+            self.assertEqual(first_updates[-1].raw_result, "first answer")
+            self.assertEqual(second_updates[-1].raw_result, "second answer")
+
+    def test_app_server_runner_uses_distinct_transport_for_reasoning_effort(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = CodexAppServerRunner(command="codex", workdir=tmpdir)
+            first_task = Task(
+                id="task_low",
+                requester_id="ou_demo",
+                prompt="first prompt",
+                source="feishu",
+                status=TaskStatus.RUNNING,
+                agent_backend="codex",
+                effective_backend_config={"reasoning_effort": "low"},
+            )
+            second_task = Task(
+                id="task_medium",
+                requester_id="ou_demo",
+                prompt="second prompt",
+                source="feishu",
+                status=TaskStatus.RUNNING,
+                agent_backend="codex",
+                effective_backend_config={"reasoning_effort": "medium"},
+            )
+
+            class FakePopen:
+                def __init__(self) -> None:
+                    self.killed = False
+
+                def poll(self):  # type: ignore[no-untyped-def]
+                    return 0 if self.killed else None
+
+                def kill(self) -> None:
+                    self.killed = True
+
+            low_session = MagicMock()
+            low_session.request.side_effect = [
+                {"thread": {"id": "thread_low"}},
+                {"turn": {"id": "turn_low"}},
+            ]
+            low_session.read_next_message.side_effect = [
+                {
+                    "method": "item/completed",
+                    "params": {
+                        "threadId": "thread_low",
+                        "turnId": "turn_low",
+                        "item": {"type": "agentMessage", "text": "low answer"},
+                    },
+                },
+                {
+                    "method": "thread/status/changed",
+                    "params": {
+                        "threadId": "thread_low",
+                        "status": {"type": "idle"},
+                    },
+                },
+            ]
+
+            medium_session = MagicMock()
+            medium_session.request.side_effect = [
+                {"thread": {"id": "thread_medium"}},
+                {"turn": {"id": "turn_medium"}},
+            ]
+            medium_session.read_next_message.side_effect = [
+                {
+                    "method": "item/completed",
+                    "params": {
+                        "threadId": "thread_medium",
+                        "turnId": "turn_medium",
+                        "item": {"type": "agentMessage", "text": "medium answer"},
+                    },
+                },
+                {
+                    "method": "thread/status/changed",
+                    "params": {
+                        "threadId": "thread_medium",
+                        "status": {"type": "idle"},
+                    },
+                },
+            ]
+
+            with patch("poco.agent.runner.shutil.which", return_value="/opt/homebrew/bin/codex"):
+                with patch(
+                    "poco.agent.runner.subprocess.Popen",
+                    side_effect=[FakePopen(), FakePopen()],
+                ) as popen:
+                    with patch(
+                        "poco.agent.runner._CodexAppServerSession",
+                        side_effect=[low_session, medium_session],
+                    ):
+                        low_updates = list(runner.start(first_task))
+                        medium_updates = list(runner.start(second_task))
+
+            self.assertEqual(popen.call_count, 2)
+            first_command = popen.call_args_list[0].args[0]
+            second_command = popen.call_args_list[1].args[0]
+            self.assertIn('model_reasoning_effort="low"', first_command)
+            self.assertIn('model_reasoning_effort="medium"', second_command)
+            self.assertEqual(low_updates[-1].raw_result, "low answer")
+            self.assertEqual(medium_updates[-1].raw_result, "medium answer")
 
     def test_app_server_runner_steers_active_turn(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

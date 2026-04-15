@@ -29,12 +29,6 @@ _BACKEND_DESCRIPTORS: dict[str, BackendDescriptor] = {
     "codex": BackendDescriptor(
         key="codex",
         label="Codex",
-        model_options=(
-            "gpt-5.4",
-            "gpt-5.4-mini",
-            "gpt-5.3-codex",
-            "gpt-5.3-codex-spark",
-        ),
         config_fields=(
             BackendConfigField(
                 key="sandbox",
@@ -45,8 +39,17 @@ _BACKEND_DESCRIPTORS: dict[str, BackendDescriptor] = {
                     ("Full Access", "danger-full-access"),
                 ),
             ),
+            BackendConfigField(
+                key="reasoning_effort",
+                label="Reasoning",
+                options=(
+                    ("Low", "low"),
+                    ("Medium", "medium"),
+                    ("High", "high"),
+                ),
+            ),
         ),
-        default_config={"sandbox": "workspace-write"},
+        default_config={"sandbox": "workspace-write", "reasoning_effort": "medium"},
     ),
     "claude_code": BackendDescriptor(
         key="claude_code",
@@ -125,12 +128,6 @@ _CURSOR_MODEL_FALLBACK: tuple[tuple[str, str], ...] = (
     ("GPT-5.4 1M", "gpt-5.4-medium"),
     ("Sonnet 4.5 1M", "claude-4.5-sonnet"),
 )
-_CODEX_MODEL_FALLBACK: tuple[tuple[str, str], ...] = (
-    ("gpt-5.4", "gpt-5.4"),
-    ("GPT-5.4-Mini", "gpt-5.4-mini"),
-    ("gpt-5.3-codex", "gpt-5.3-codex"),
-    ("GPT-5.3-Codex-Spark", "gpt-5.3-codex-spark"),
-)
 _COCO_MODEL_FALLBACK: tuple[tuple[str, str], ...] = (
     ("GPT-5.2", "GPT-5.2"),
 )
@@ -193,10 +190,12 @@ def _coco_command() -> str:
 def _discover_codex_model_options(command: str) -> tuple[tuple[str, str], ...]:
     executable = shutil.which(command)
     if not executable:
-        return _CODEX_MODEL_FALLBACK
-    result = _request_codex_model_list(command)
-    parsed = _parse_codex_model_response(result)
-    return parsed or _CODEX_MODEL_FALLBACK
+        return ()
+    try:
+        result = _request_codex_model_list(command)
+    except (OSError, subprocess.SubprocessError, RuntimeError):
+        return ()
+    return _parse_codex_model_response(result)
 
 
 @lru_cache(maxsize=4)

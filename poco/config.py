@@ -54,6 +54,7 @@ class Settings:
     codex_workdir: str = field(default_factory=lambda: _setting("POCO_CODEX_WORKDIR", DEFAULT_REPO_ROOT) or DEFAULT_REPO_ROOT)
     codex_model: str | None = field(default_factory=lambda: _setting("POCO_CODEX_MODEL"))
     codex_sandbox: str = field(default_factory=lambda: _setting("POCO_CODEX_SANDBOX", "workspace-write") or "workspace-write")
+    codex_reasoning_effort: str = field(default_factory=lambda: _setting("POCO_CODEX_REASONING_EFFORT", "medium") or "medium")
     codex_approval_policy: str = field(default_factory=lambda: _setting("POCO_CODEX_APPROVAL_POLICY", "never") or "never")
     codex_timeout_seconds: int = field(default_factory=lambda: _setting_int("POCO_CODEX_TIMEOUT_SECONDS", 900))
     claude_command: str = field(default_factory=lambda: _setting("POCO_CLAUDE_COMMAND", "claude") or "claude")

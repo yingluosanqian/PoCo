@@ -152,6 +152,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
                     "task.stop": self.task_handler,
                     "task.continue": self.task_handler,
                     "task.steer": self.task_handler,
+                    "task.steer_queue": self.task_handler,
                     "task.approve": self.task_handler,
                     "task.reject": self.task_handler,
                 }
@@ -1013,6 +1014,71 @@ class FeishuCardGatewayTest(unittest.TestCase):
         self.assertEqual(updated.status.value, "running")
         self.assertEqual(updated.events[-1].kind, "task_steered")
 
+    def test_task_steer_queue_sends_prompt_to_running_task_and_cancels_queue(self) -> None:
+        class SteerRunner(StubAgentRunner):
+            def steer(self, task, prompt):
+                self.last = (task.id, prompt)
+                return True, "Steer sent to Codex."
+
+        runner = SteerRunner()
+        self.task_controller._runner = runner  # type: ignore[attr-defined]
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+            group_chat_id="oc_group_proj_1",
+        )
+        running = self.task_controller.create_task(
+            requester_id="ou_demo_user",
+            prompt="run the patch",
+            source="feishu_card",
+            agent_backend="codex",
+            project_id=project.id,
+            effective_workdir="/srv/poco/api",
+            backend_session_id="thread_123",
+            reply_receive_id="oc_group_proj_1",
+            reply_receive_id_type="chat_id",
+        )
+        running.set_status(running.status.RUNNING)
+        self.task_controller._store.save(running)  # type: ignore[attr-defined]
+        queued = self.task_controller.create_task(
+            requester_id="ou_demo_user",
+            prompt="Focus on the test failure first.",
+            source="feishu",
+            agent_backend="codex",
+            project_id=project.id,
+            effective_workdir="/srv/poco/api",
+            backend_session_id="thread_123",
+            reply_receive_id="oc_group_proj_1",
+            reply_receive_id_type="chat_id",
+        )
+        queued = self.task_controller.queue_task(queued.id)
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_task_steer_queue_1"},
+                "action": {
+                    "value": {
+                        "intent_key": "task.steer_queue",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "task_id": queued.id,
+                        "request_id": "req_task_steer_queue_1",
+                    },
+                },
+            }
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        self.assertEqual(response["instruction"]["template_key"], "task_status")
+        refreshed_running = self.task_controller.get_task(running.id)
+        refreshed_queued = self.task_controller.get_task(queued.id)
+        self.assertEqual(runner.last, (running.id, "Focus on the test failure first."))
+        self.assertEqual(refreshed_running.status.value, "running")
+        self.assertEqual(refreshed_queued.status.value, "cancelled")
+        self.assertIn("Queued prompt was sent as steer", refreshed_queued.events[-1].message)
+
     def test_workspace_enter_path_card_opens_from_group(self) -> None:
         project = self.project_controller.create_project(
             name="PoCo",
@@ -1368,6 +1434,12 @@ class FeishuCardGatewayTest(unittest.TestCase):
         self.assertEqual(opened["instruction"]["template_key"], "workspace_choose_agent")
         form = opened["card"]["data"]["body"]["elements"][1]
         self.assertEqual(form["tag"], "form")
+        self.assertEqual(form["elements"][0]["name"], "model")
+        self.assertEqual(form["elements"][0]["value"], "gpt-5.4")
+        self.assertEqual(form["elements"][1]["name"], "sandbox")
+        self.assertEqual(form["elements"][1]["value"], "workspace-write")
+        self.assertEqual(form["elements"][2]["name"], "reasoning_effort")
+        self.assertEqual(form["elements"][2]["value"], "medium")
         apply_payload = {
             "event": {
                 "operator": {"open_id": "ou_demo_user"},
@@ -1382,6 +1454,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
                     "form_value": {
                         "model": "gpt-5.4",
                         "sandbox": "danger-full-access",
+                        "reasoning_effort": "low",
                     },
                 },
             }
@@ -1393,6 +1466,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
         updated = self.project_controller.get_project(project.id)
         self.assertEqual(updated.model, "gpt-5.4")
         self.assertEqual(updated.sandbox, "danger-full-access")
+        self.assertEqual(updated.backend_config["reasoning_effort"], "low")
 
     def test_workspace_apply_preset_rejects_unknown_preset(self) -> None:
         project = self.project_controller.create_project(

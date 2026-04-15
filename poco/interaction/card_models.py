@@ -42,6 +42,7 @@ WRITE_INTENT_KEYS = {
     "task.stop",
     "task.continue",
     "task.steer",
+    "task.steer_queue",
     "task.approve",
     "task.reject",
 }

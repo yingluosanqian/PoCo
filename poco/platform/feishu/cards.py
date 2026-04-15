@@ -969,21 +969,24 @@ def _render_task_status(
     agent_backend = task.get("agent_backend") or ""
     queue_position = data.get("queue_position")
     blocking_task_id = data.get("blocking_task_id")
+    blocking_task_status = data.get("blocking_task_status")
     status = task.get("status") or "unknown"
     workdir = task.get("effective_workdir") or "no working dir"
     live_output = task.get("live_output") or ""
     raw_result = task.get("raw_result") or task.get("result_summary") or "No result yet."
-    can_steer = bool(
-        task.get("project_id")
-        and task.get("backend_session_id")
-        and status == "running"
-        and agent_backend in {"codex", "claude_code"}
-    )
     can_continue = bool(
         task.get("project_id")
         and task.get("backend_session_id")
         and status in {"failed", "cancelled"}
         and raw_result
+    )
+    can_steer_from_queue = bool(
+        task.get("project_id")
+        and status == "queued"
+        and blocking_task_id
+        and blocking_task_status == "running"
+        and agent_backend in {"codex", "claude_code"}
+        and str(task.get("prompt") or "").strip()
     )
     elements: list[dict[str, Any]] = []
 
@@ -1019,53 +1022,11 @@ def _render_task_status(
         if live_output:
             elements.append(_markdown(_format_task_output_for_backend(live_output, backend=agent_backend)))
         else:
-            elements.append(_markdown("Waiting for agent output..."))
-        if can_steer:
-            elements.append(
-                {
-                    "tag": "form",
-                    "name": f"task_steer_form_{task['id']}",
-                    "elements": [
-                        _input(
-                            name="steer_prompt",
-                            placeholder="Steer the running agent without restarting the task",
-                        ),
-                        _two_up(
-                            {
-                                "tag": "button",
-                                "text": {"tag": "plain_text", "content": "Steer"},
-                                "type": "primary",
-                                "width": "default",
-                                "size": "medium",
-                                "name": f"steer_task_{task['id']}",
-                                "form_action_type": "submit",
-                                "behaviors": [
-                                    {
-                                        "type": "callback",
-                                        "value": {
-                                            "intent_key": "task.steer",
-                                            "surface": surface,
-                                            "project_id": task["project_id"],
-                                            "task_id": task["id"],
-                                        },
-                                    }
-                                ],
-                                "margin": "0px 0px 12px 0px",
-                            },
-                            _button(
-                                label="Stop",
-                                intent_value={
-                                    "intent_key": "task.stop",
-                                    "surface": surface,
-                                    "project_id": task["project_id"],
-                                    "task_id": task["id"],
-                                },
-                                name=f"stop_task_{task['id']}",
-                            ),
-                        ),
-                    ],
-                }
-            )
+            progress_text = _running_task_progress_text(task)
+            if progress_text:
+                elements.append(_markdown(progress_text))
+            else:
+                elements.append(_markdown("Waiting for agent output..."))
     elif status == "queued":
         details: list[str] = []
         if queue_position:
@@ -1075,12 +1036,26 @@ def _render_task_status(
         if not details:
             details.append("Queued. Waiting for the current task to finish.")
         elements.append(_markdown("\n".join(details)))
+        if can_steer_from_queue:
+            elements.append(
+                _button(
+                    label="Steer Current Task",
+                    intent_value={
+                        "intent_key": "task.steer_queue",
+                        "surface": surface,
+                        "project_id": task["project_id"],
+                        "task_id": task["id"],
+                    },
+                    style="primary",
+                    name=f"steer_queued_task_{task['id']}",
+                )
+            )
     else:
         elements.append(_markdown(_format_task_output_for_backend(raw_result, backend=agent_backend)))
 
     if task.get("project_id"):
         config_locked = status in {"created", "queued", "running", "waiting_for_confirmation"}
-        if status in {"created", "running"} and not can_steer:
+        if status in {"created", "running"}:
             elements.append(
                 _button(
                     label="Stop",
@@ -1152,6 +1127,22 @@ def _render_fallback(template_key: str | None, data: dict[str, Any]) -> dict[str
             _markdown(f"```json\n{data}\n```"),
         ],
     )
+
+
+def _running_task_progress_text(task: dict[str, Any]) -> str | None:
+    events = task.get("events")
+    if not isinstance(events, list):
+        return None
+    for event in reversed(events):
+        if not isinstance(event, dict):
+            continue
+        kind = str(event.get("kind") or "")
+        message = str(event.get("message") or "").strip()
+        if not message:
+            continue
+        if kind in {"runner_progress", "task_started"}:
+            return message
+    return None
 
 
 def _config_subcard(
@@ -1553,6 +1544,8 @@ def _config_option_display(key: object, value: object) -> str:
         if text in {"enabled", "disabled"}:
             return text.capitalize()
         return _sandbox_label(text)
+    if key == "reasoning_effort":
+        return text.capitalize()
     if key == "permission_mode":
         if text == "acceptEdits":
             return "Accept Edits"

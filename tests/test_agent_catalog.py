@@ -3,27 +3,36 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from poco.agent.catalog import _discover_coco_model_options, get_backend_descriptor, get_backend_model_options
+from poco.agent.catalog import (
+    _discover_coco_model_options,
+    _discover_codex_model_options,
+    get_backend_descriptor,
+    get_backend_model_options,
+)
 
 
 class AgentCatalogTest(unittest.TestCase):
     def setUp(self) -> None:
         _discover_coco_model_options.cache_clear()
+        _discover_codex_model_options.cache_clear()
 
     def test_cursor_descriptor_defaults_to_auto_model(self) -> None:
         descriptor = get_backend_descriptor("cursor_agent")
         self.assertEqual(descriptor.default_config["model"], "auto")
 
     def test_codex_model_options_are_discovered_from_app_server(self) -> None:
-        with patch(
-            "poco.agent.catalog._request_codex_model_list",
-            return_value={
-                "data": [
-                    {"id": "gpt-5.4", "displayName": "gpt-5.4"},
-                    {"id": "gpt-5.4-mini", "displayName": "GPT-5.4-Mini"},
-                    {"id": "gpt-5.3-codex", "displayName": "gpt-5.3-codex"},
-                ]
-            },
+        with (
+            patch("poco.agent.catalog.shutil.which", return_value="/opt/homebrew/bin/codex"),
+            patch(
+                "poco.agent.catalog._request_codex_model_list",
+                return_value={
+                    "data": [
+                        {"id": "gpt-5.4", "displayName": "gpt-5.4"},
+                        {"id": "gpt-5.4-mini", "displayName": "GPT-5.4-Mini"},
+                        {"id": "gpt-5.3-codex", "displayName": "gpt-5.3-codex"},
+                    ]
+                },
+            ),
         ):
             options = get_backend_model_options("codex")
 
@@ -35,6 +44,24 @@ class AgentCatalogTest(unittest.TestCase):
                 ("gpt-5.3-codex", "gpt-5.3-codex"),
             ),
         )
+
+    def test_codex_model_options_do_not_fallback_when_codex_is_missing(self) -> None:
+        with patch("poco.agent.catalog.shutil.which", return_value=None):
+            options = get_backend_model_options("codex")
+
+        self.assertEqual(options, ())
+
+    def test_codex_model_options_do_not_fallback_when_discovery_fails(self) -> None:
+        with (
+            patch("poco.agent.catalog.shutil.which", return_value="/opt/homebrew/bin/codex"),
+            patch(
+                "poco.agent.catalog._request_codex_model_list",
+                side_effect=RuntimeError("boom"),
+            ),
+        ):
+            options = get_backend_model_options("codex")
+
+        self.assertEqual(options, ())
 
     def test_cursor_model_options_are_discovered_from_cli(self) -> None:
         sample_output = """

@@ -62,6 +62,7 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
         codex_workdir=settings.codex_workdir,
         codex_model=settings.codex_model,
         codex_sandbox=settings.codex_sandbox,
+        codex_reasoning_effort=settings.codex_reasoning_effort,
         codex_approval_policy=settings.codex_approval_policy,
         codex_timeout_seconds=settings.codex_timeout_seconds,
         claude_command=settings.claude_command,
@@ -179,6 +180,7 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
             "task.stop": task_intent_handler,
             "task.continue": task_intent_handler,
             "task.steer": task_intent_handler,
+            "task.steer_queue": task_intent_handler,
             "task.approve": task_intent_handler,
             "task.reject": task_intent_handler,
         }

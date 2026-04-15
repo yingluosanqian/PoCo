@@ -413,7 +413,17 @@ class FeishuClientTest(unittest.TestCase):
                                         {"label": "Project Only", "value": "workspace-write"},
                                         {"label": "Full Access", "value": "danger-full-access"},
                                     ],
-                                }
+                                },
+                                {
+                                    "key": "reasoning_effort",
+                                    "label": "Reasoning",
+                                    "current_value": "medium",
+                                    "options": [
+                                        {"label": "Low", "value": "low"},
+                                        {"label": "Medium", "value": "medium"},
+                                        {"label": "High", "value": "high"},
+                                    ],
+                                },
                             ],
                         },
                     ),
@@ -432,7 +442,10 @@ class FeishuClientTest(unittest.TestCase):
         self.assertEqual(form["elements"][1]["tag"], "select_static")
         self.assertEqual(form["elements"][1]["name"], "sandbox")
         self.assertEqual(form["elements"][1]["value"], "workspace-write")
-        action_row = form["elements"][2]
+        self.assertEqual(form["elements"][2]["tag"], "select_static")
+        self.assertEqual(form["elements"][2]["name"], "reasoning_effort")
+        self.assertEqual(form["elements"][2]["value"], "medium")
+        action_row = form["elements"][3]
         self.assertEqual(action_row["tag"], "column_set")
         self.assertEqual(
             action_row["columns"][0]["elements"][0]["behaviors"][0]["value"]["intent_key"],
@@ -775,7 +788,7 @@ class FeishuClientTest(unittest.TestCase):
         self.assertEqual(card["body"]["elements"][1]["behaviors"][0]["value"]["intent_key"], "task.stop")
         self.assertEqual(len(card["body"]["elements"]), 2)
 
-    def test_task_status_card_shows_inline_steer_form_for_running_codex_task(self) -> None:
+    def test_task_status_card_running_codex_keeps_live_card_simple(self) -> None:
         task = {
             "id": "task_run_steer",
             "project_id": "proj_1",
@@ -805,15 +818,50 @@ class FeishuClientTest(unittest.TestCase):
             )
         )
 
-        steer_form = card["body"]["elements"][1]
-        steer_button = steer_form["elements"][1]["columns"][0]["elements"][0]
-        stop_button = steer_form["elements"][1]["columns"][1]["elements"][0]
-        self.assertEqual(steer_form["tag"], "form")
-        self.assertEqual(steer_form["elements"][0]["name"], "steer_prompt")
-        self.assertEqual(steer_button["behaviors"][0]["value"]["intent_key"], "task.steer")
-        self.assertEqual(stop_button["behaviors"][0]["value"]["intent_key"], "task.stop")
+        self.assertEqual(card["body"]["elements"][0]["tag"], "markdown")
+        self.assertEqual(card["body"]["elements"][1]["behaviors"][0]["value"]["intent_key"], "task.stop")
+        self.assertEqual(len(card["body"]["elements"]), 2)
 
-    def test_task_status_card_shows_inline_steer_form_for_running_claude_task(self) -> None:
+    def test_task_status_card_running_codex_shows_latest_progress_before_output(self) -> None:
+        task = {
+            "id": "task_run_progress",
+            "project_id": "proj_1",
+            "agent_backend": "codex",
+            "backend_session_id": "thread_123",
+            "effective_workdir": "/srv/poco/api",
+            "prompt": "build project",
+            "status": "running",
+            "awaiting_confirmation_reason": None,
+            "live_output": None,
+            "events": [
+                {"kind": "task_started", "message": "Task dispatched to the server-side runner."},
+                {"kind": "runner_progress", "message": "Codex is thinking."},
+            ],
+        }
+        card = FeishuCardRenderer().render(
+            build_render_instruction(
+                IntentDispatchResult(
+                    status=DispatchStatus.OK,
+                    intent_key="task.status",
+                    resource_refs=ResourceRefs(project_id="proj_1", task_id="task_run_progress"),
+                    view_model=ViewModel(
+                        "task_status",
+                        {
+                            "task": task,
+                        },
+                    ),
+                    refresh_mode=RefreshMode.REPLACE_CURRENT,
+                ),
+                surface=Surface.GROUP,
+            )
+        )
+
+        self.assertEqual(card["body"]["elements"][0]["tag"], "markdown")
+        self.assertIn("Codex is thinking.", card["body"]["elements"][0]["content"])
+        self.assertEqual(card["body"]["elements"][1]["behaviors"][0]["value"]["intent_key"], "task.stop")
+        self.assertEqual(len(card["body"]["elements"]), 2)
+
+    def test_task_status_card_running_claude_keeps_live_card_simple(self) -> None:
         task = {
             "id": "task_run_steer_claude",
             "project_id": "proj_1",
@@ -843,10 +891,46 @@ class FeishuClientTest(unittest.TestCase):
             )
         )
 
-        steer_form = card["body"]["elements"][1]
-        steer_button = steer_form["elements"][1]["columns"][0]["elements"][0]
-        self.assertEqual(steer_form["tag"], "form")
-        self.assertEqual(steer_button["behaviors"][0]["value"]["intent_key"], "task.steer")
+        self.assertEqual(card["body"]["elements"][0]["tag"], "markdown")
+        self.assertEqual(card["body"]["elements"][1]["behaviors"][0]["value"]["intent_key"], "task.stop")
+        self.assertEqual(len(card["body"]["elements"]), 2)
+
+    def test_task_status_card_shows_steer_button_for_queued_codex_task(self) -> None:
+        task = {
+            "id": "task_queue_steer",
+            "project_id": "proj_1",
+            "agent_backend": "codex",
+            "backend_session_id": "thread_123",
+            "effective_workdir": "/srv/poco/api",
+            "prompt": "Focus on the test failure first.",
+            "status": "queued",
+            "awaiting_confirmation_reason": None,
+        }
+        card = FeishuCardRenderer().render(
+            build_render_instruction(
+                IntentDispatchResult(
+                    status=DispatchStatus.OK,
+                    intent_key="task.status",
+                    resource_refs=ResourceRefs(project_id="proj_1", task_id="task_queue_steer"),
+                    view_model=ViewModel(
+                        "task_status",
+                        {
+                            "task": task,
+                            "queue_position": 1,
+                            "blocking_task_id": "task_run_1",
+                            "blocking_task_status": "running",
+                        },
+                    ),
+                    refresh_mode=RefreshMode.REPLACE_CURRENT,
+                ),
+                surface=Surface.GROUP,
+            )
+        )
+
+        steer_button = card["body"]["elements"][1]
+        self.assertEqual(steer_button["tag"], "button")
+        self.assertEqual(steer_button["text"]["content"], "Steer Current Task")
+        self.assertEqual(steer_button["behaviors"][0]["value"]["intent_key"], "task.steer_queue")
 
     def test_task_status_card_preserves_multiline_result_formatting_for_coco_code(self) -> None:
         task = {

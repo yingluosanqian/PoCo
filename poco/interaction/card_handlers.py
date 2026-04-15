@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from poco.agent.catalog import get_backend_descriptor, get_backend_model_options
+from poco.agent.catalog import backend_option, get_backend_descriptor, get_backend_model_options
 from poco.interaction.card_models import (
     ActionIntent,
     DispatchStatus,
@@ -538,6 +538,8 @@ class TaskIntentHandler:
             return self._continue_task(intent)
         if intent.intent_key == "task.steer":
             return self._steer_task(intent)
+        if intent.intent_key == "task.steer_queue":
+            return self._steer_queued_task(intent)
         if intent.intent_key == "task.approve":
             return self._approve_task(intent)
         if intent.intent_key == "task.reject":
@@ -714,6 +716,38 @@ class TaskIntentHandler:
             message="Steer sent.",
         )
 
+    def _steer_queued_task(self, intent: ActionIntent) -> IntentDispatchResult:
+        task_id = _required_id(intent.task_id, "task_id")
+        try:
+            queued_task = self.task_controller.get_task(task_id)
+        except TaskNotFoundError as exc:
+            return _rejected(intent, str(exc))
+        if queued_task.status.value != "queued":
+            return _rejected(intent, f"Task {task_id} is not in a steerable queued state.")
+        if not queued_task.project_id:
+            return _rejected(intent, "Queued steer is only available for project-bound tasks.")
+
+        target = _find_running_project_task(
+            self.task_controller,
+            project_id=queued_task.project_id,
+            exclude_task_id=queued_task.id,
+        )
+        if target is None:
+            return _rejected(intent, "No running task is available to receive this steer.")
+        try:
+            self.task_controller.steer_task(target.id, queued_task.prompt)
+            queued_task = self.task_controller.cancel_task(
+                queued_task.id,
+                reason=f"Queued prompt was sent as steer to task {target.id}.",
+            )
+        except (TaskNotFoundError, TaskStateError, ValueError) as exc:
+            return _rejected(intent, str(exc))
+        return build_task_status_result(
+            queued_task,
+            task_controller=self.task_controller,
+            message=f"Queued prompt sent as steer to task {target.id}.",
+        )
+
     def _reject_task(self, intent: ActionIntent) -> IntentDispatchResult:
         task_id = _required_id(intent.task_id, "task_id")
         try:
@@ -826,12 +860,14 @@ def build_task_status_result(
 ) -> IntentDispatchResult:
     queue_position = None
     blocking_task_id = None
+    blocking_task_status = None
     if task_controller is not None:
         queue_position = task_controller.get_queue_position(task.id)
         if task.project_id and task.status.value == "queued":
             for candidate in task_controller.list_tasks_for_project(task.project_id):
                 if candidate.status.value in {"created", "running", "waiting_for_confirmation"}:
                     blocking_task_id = candidate.id
+                    blocking_task_status = candidate.status.value
                     break
     return IntentDispatchResult(
         status=DispatchStatus.OK,
@@ -847,6 +883,7 @@ def build_task_status_result(
                 "task": task.to_dict(),
                 "queue_position": queue_position,
                 "blocking_task_id": blocking_task_id,
+                "blocking_task_status": blocking_task_status,
             },
         ),
         refresh_mode=RefreshMode.REPLACE_CURRENT,
@@ -1028,14 +1065,12 @@ def _workspace_enter_path_view_model(project, *, context, browse_path: str | Non
 def _workspace_choose_agent_view_model(project) -> ViewModel:
     descriptor = get_backend_descriptor(project.backend)
     model_options = get_backend_model_options(project.backend)
+    current_model = project.model
+    if current_model is None and model_options:
+        current_model = str(model_options[0][1])
     config_fields: list[dict[str, object]] = []
     for field in descriptor.config_fields:
-        if field.key == "sandbox":
-            current_value = _optional_string(project.backend_config.get(field.key))
-            if current_value is None:
-                current_value = getattr(project, "sandbox", None)
-        else:
-            current_value = _optional_string(project.backend_config.get(field.key))
+        current_value = backend_option(project.backend, project.backend_config, field.key)
         config_fields.append(
             {
                 "key": field.key,
@@ -1052,7 +1087,7 @@ def _workspace_choose_agent_view_model(project) -> ViewModel:
         {
             "project": project.to_dict(),
             "agent_label": descriptor.label,
-            "current_model": project.model,
+            "current_model": current_model,
             "model_options": [
                 {"label": label, "value": value}
                 for label, value in model_options
@@ -1298,6 +1333,20 @@ def _active_project_session(session_controller: SessionController | None, projec
     if session_controller is None:
         return None
     return session_controller.get_active_session(project_id)
+
+
+def _find_running_project_task(
+    task_controller: TaskController,
+    *,
+    project_id: str,
+    exclude_task_id: str | None = None,
+):
+    for task in task_controller.list_tasks_for_project(project_id):
+        if exclude_task_id and task.id == exclude_task_id:
+            continue
+        if task.status.value == "running":
+            return task
+    return None
 
 
 def _resolve_active_session_id(

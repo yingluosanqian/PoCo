@@ -137,11 +137,23 @@ class FeishuGateway:
         if group_project is not None:
             self._ensure_workspace_card(group_project)
 
+        start_dispatched = False
+        if (
+            self._dispatcher is not None
+            and response.task_id
+            and response.dispatch_action == "start"
+        ):
+            self._dispatcher.dispatch_start(response.task_id)
+            start_dispatched = True
+
         delivered = False
         reply_preview = response.text
         if self._message_client is not None:
             try:
-                if (
+                if start_dispatched:
+                    delivered = True
+                    reply_preview = "[async] task_status:running"
+                elif (
                     response.task_id
                     and self._task_controller is not None
                     and target["receive_id_type"] in {"chat_id", "open_id"}
@@ -192,7 +204,7 @@ class FeishuGateway:
                         receive_id_type=target["receive_id_type"],
                         text=response.text,
                     )
-                delivered = True
+                    delivered = True
             except Exception as exc:
                 self._record_error(
                     stage="gateway_reply",
@@ -206,7 +218,7 @@ class FeishuGateway:
                 raise
 
         if self._dispatcher is not None and response.task_id:
-            if response.dispatch_action == "start":
+            if response.dispatch_action == "start" and not start_dispatched:
                 self._dispatcher.dispatch_start(response.task_id)
             elif response.dispatch_action == "resume":
                 self._dispatcher.dispatch_resume(response.task_id)

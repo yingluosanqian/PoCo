@@ -71,6 +71,17 @@ class _TraeAcpTransport:
 
 
 @dataclass(slots=True)
+class _CodexAppServerTransport:
+    cache_key: tuple[str, str]
+    workdir: str
+    reasoning_effort: str
+    process: subprocess.Popen[str]
+    session: "_CodexAppServerSession"
+    lock: RLock = field(default_factory=RLock)
+    last_used_at: float = field(default_factory=monotonic)
+
+
+@dataclass(slots=True)
 class _CodexActiveTurn:
     session: "_CodexAppServerSession"
     thread_id: str
@@ -269,19 +280,24 @@ class CodexAppServerRunner:
         workdir: str,
         model: str | None = None,
         sandbox: str = "workspace-write",
+        reasoning_effort: str = "medium",
         approval_policy: str = "never",
         timeout_seconds: int = 900,
+        transport_idle_seconds: float = 300.0,
     ) -> None:
         self._command = command
         self._workdir = workdir
         self._model = model
         self._sandbox = sandbox
+        self._reasoning_effort = reasoning_effort
         self._approval_policy = approval_policy
         self._timeout_seconds = timeout_seconds
+        self._transport_idle_seconds = transport_idle_seconds
         self._lock = RLock()
         self._active_processes: dict[str, subprocess.Popen[str]] = {}
         self._active_turns: dict[str, _CodexActiveTurn] = {}
         self._cancelled_tasks: set[str] = set()
+        self._transports: dict[tuple[str, str], _CodexAppServerTransport] = {}
 
     def is_ready(self) -> tuple[bool, str]:
         executable = shutil.which(self._command)
@@ -368,24 +384,22 @@ class CodexAppServerRunner:
             return
 
         process: subprocess.Popen[str] | None = None
+        transport: _CodexAppServerTransport | None = None
+        transport_broken = False
+        backend_session_id = task.backend_session_id
         try:
-            process = subprocess.Popen(
-                [self._command, "app-server", "--listen", "stdio://"],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1,
-                cwd=workdir,
-                env=os.environ.copy(),
+            resolved_reasoning_effort = (
+                _string_or_none(task.effective_backend_config.get("reasoning_effort"))
+                or self._reasoning_effort
             )
+            transport = self._acquire_transport(
+                workdir,
+                reasoning_effort=resolved_reasoning_effort,
+            )
+            process = transport.process
             with self._lock:
                 self._active_processes[task.id] = process
-            session = _CodexAppServerSession(
-                process=process,
-                timeout_seconds=self._timeout_seconds,
-            )
-            session.initialize()
+            session = transport.session
 
             resolved_model = task.effective_model or self._model
             thread_result: dict[str, object]
@@ -437,6 +451,7 @@ class CodexAppServerRunner:
                     )
 
             final_text: str | None = None
+            last_reasoning_token_count: int | None = None
             while True:
                 if self._consume_cancelled(task.id):
                     return
@@ -458,12 +473,27 @@ class CodexAppServerRunner:
                 params = message.get("params")
                 if not isinstance(params, dict):
                     continue
+                message_thread_id = _optional_string(params.get("threadId"))
+                message_turn_id = _optional_string(params.get("turnId"))
+                if method != "error" and message_thread_id and message_thread_id != backend_session_id:
+                    continue
 
                 if method == "turn/started":
                     turn = params.get("turn")
                     thread_id = _optional_string(params.get("threadId")) or backend_session_id
+                    started_turn_id = active_turn_id
                     if isinstance(turn, dict):
-                        active_turn_id = _optional_string(turn.get("id")) or active_turn_id
+                        started_turn_id = _optional_string(turn.get("id")) or started_turn_id
+                    if (
+                        thread_id != backend_session_id
+                        or (
+                            started_turn_id is not None
+                            and active_turn_id is not None
+                            and started_turn_id != active_turn_id
+                        )
+                    ):
+                        continue
+                    active_turn_id = started_turn_id
                     if thread_id and active_turn_id:
                         with self._lock:
                             self._active_turns[task.id] = _CodexActiveTurn(
@@ -471,9 +501,16 @@ class CodexAppServerRunner:
                                 thread_id=thread_id,
                                 turn_id=active_turn_id,
                             )
+                    yield AgentRunUpdate(
+                        kind="progress",
+                        message="Codex turn started.",
+                        backend_session_id=backend_session_id,
+                    )
                     continue
 
                 if method == "item/agentMessage/delta":
+                    if message_turn_id and active_turn_id and message_turn_id != active_turn_id:
+                        continue
                     delta = _string_or_none(params.get("delta"))
                     if delta:
                         yield AgentRunUpdate(
@@ -485,13 +522,30 @@ class CodexAppServerRunner:
                     continue
 
                 if method == "item/completed":
+                    if message_turn_id and active_turn_id and message_turn_id != active_turn_id:
+                        continue
                     item = params.get("item")
-                    if isinstance(item, dict) and item.get("type") == "agentMessage":
-                        final_text = _string_or_none(item.get("text")) or final_text
+                    if isinstance(item, dict):
+                        item_type = _optional_string(item.get("type"))
+                        if item_type == "agentMessage":
+                            final_text = _string_or_none(item.get("text")) or final_text
+                        elif item_type == "reasoning":
+                            summary = _codex_reasoning_summary(item)
+                            if summary:
+                                yield AgentRunUpdate(
+                                    kind="progress",
+                                    message=f"Codex reasoning: {summary}",
+                                    backend_session_id=backend_session_id,
+                                )
                     continue
 
                 if method == "turn/completed":
                     turn = params.get("turn")
+                    completed_turn_id = message_turn_id
+                    if isinstance(turn, dict):
+                        completed_turn_id = _optional_string(turn.get("id")) or completed_turn_id
+                    if completed_turn_id and active_turn_id and completed_turn_id != active_turn_id:
+                        continue
                     if isinstance(turn, dict) and turn.get("error"):
                         yield AgentRunUpdate(
                             kind="failed",
@@ -508,7 +562,16 @@ class CodexAppServerRunner:
                     return
 
                 if method == "thread/status/changed":
+                    if message_thread_id and backend_session_id and message_thread_id != backend_session_id:
+                        continue
                     status = params.get("status")
+                    if isinstance(status, dict) and status.get("type") == "active":
+                        yield AgentRunUpdate(
+                            kind="progress",
+                            message="Codex is processing your prompt.",
+                            backend_session_id=backend_session_id,
+                        )
+                        continue
                     if (
                         isinstance(status, dict)
                         and status.get("type") == "idle"
@@ -523,6 +586,60 @@ class CodexAppServerRunner:
                         return
                     continue
 
+                if method == "mcpServer/startupStatus/updated":
+                    server_name = _optional_string(params.get("name")) or "Codex tools"
+                    startup_status = _optional_string(params.get("status")) or "unknown"
+                    if startup_status == "starting":
+                        message = f"{server_name} are starting."
+                    elif startup_status == "ready":
+                        message = f"{server_name} are ready."
+                    else:
+                        message = f"{server_name} status: {startup_status}."
+                    yield AgentRunUpdate(
+                        kind="progress",
+                        message=message,
+                        backend_session_id=backend_session_id,
+                    )
+                    continue
+
+                if method == "thread/tokenUsage/updated":
+                    if message_turn_id and active_turn_id and message_turn_id != active_turn_id:
+                        continue
+                    reasoning_token_count = _codex_reasoning_token_count(params)
+                    if (
+                        reasoning_token_count is None
+                        or reasoning_token_count <= 0
+                        or reasoning_token_count == last_reasoning_token_count
+                    ):
+                        continue
+                    last_reasoning_token_count = reasoning_token_count
+                    yield AgentRunUpdate(
+                        kind="progress",
+                        message=f"Codex is thinking. reasoning tokens: {reasoning_token_count}.",
+                        backend_session_id=backend_session_id,
+                    )
+                    continue
+
+                if method == "item/started":
+                    item = params.get("item")
+                    if not isinstance(item, dict):
+                        continue
+                    item_type = _optional_string(item.get("type"))
+                    if item_type == "userMessage":
+                        message = "Prompt accepted by Codex."
+                    elif item_type == "reasoning":
+                        message = "Codex is thinking."
+                    elif item_type == "agentMessage":
+                        message = "Codex is drafting a reply."
+                    else:
+                        continue
+                    yield AgentRunUpdate(
+                        kind="progress",
+                        message=message,
+                        backend_session_id=backend_session_id,
+                    )
+                    continue
+
                 if method == "error":
                     yield AgentRunUpdate(
                         kind="failed",
@@ -531,6 +648,7 @@ class CodexAppServerRunner:
                     )
                     return
 
+            transport_broken = True
             if self._consume_cancelled(task.id):
                 return
             yield AgentRunUpdate(
@@ -538,18 +656,26 @@ class CodexAppServerRunner:
                 message=session.failure_detail("Codex app-server closed before task completion."),
                 backend_session_id=backend_session_id,
             )
+        except RuntimeError as exc:
+            transport_broken = True
+            yield AgentRunUpdate(
+                kind="failed",
+                message=str(exc) or "Codex app-server request failed.",
+                backend_session_id=backend_session_id,
+            )
         except OSError as exc:
+            transport_broken = True
             yield AgentRunUpdate(
                 kind="failed",
                 message=f"Failed to start codex app-server: {exc}",
-                backend_session_id=task.backend_session_id,
+                backend_session_id=backend_session_id,
             )
         finally:
             with self._lock:
                 self._active_processes.pop(task.id, None)
                 self._active_turns.pop(task.id, None)
                 self._cancelled_tasks.discard(task.id)
-            _cleanup_subprocess(process)
+            self._release_transport(transport, broken=transport_broken)
 
     def _consume_cancelled(self, task_id: str) -> bool:
         with self._lock:
@@ -557,6 +683,102 @@ class CodexAppServerRunner:
                 return False
             self._cancelled_tasks.discard(task_id)
             return True
+
+    def _acquire_transport(self, workdir: str, *, reasoning_effort: str) -> _CodexAppServerTransport:
+        cache_key = (workdir, reasoning_effort)
+        with self._lock:
+            cleanup_candidates = self._collect_idle_transports_locked(exclude_key=cache_key)
+            transport = self._transports.get(cache_key)
+            if transport is not None and transport.process.poll() is not None:
+                self._transports.pop(cache_key, None)
+                cleanup_candidates.append(transport.process)
+                transport = None
+            if transport is None:
+                transport = self._start_transport(workdir, reasoning_effort=reasoning_effort)
+                self._transports[cache_key] = transport
+        for candidate in cleanup_candidates:
+            _cleanup_subprocess(candidate)
+        transport.lock.acquire()
+        with self._lock:
+            transport.last_used_at = monotonic()
+        return transport
+
+    def _release_transport(self, transport: _CodexAppServerTransport | None, *, broken: bool) -> None:
+        if transport is None:
+            return
+        cleanup: subprocess.Popen[str] | None = None
+        with self._lock:
+            transport.last_used_at = monotonic()
+            if broken or transport.process.poll() is not None:
+                if self._transports.get(transport.cache_key) is transport:
+                    self._transports.pop(transport.cache_key, None)
+                cleanup = transport.process
+            transport.lock.release()
+        if cleanup is not None:
+            _cleanup_subprocess(cleanup)
+
+    def _start_transport(self, workdir: str, *, reasoning_effort: str) -> _CodexAppServerTransport:
+        process = subprocess.Popen(
+            [
+                self._command,
+                "app-server",
+                "-c",
+                f'model_reasoning_effort="{reasoning_effort}"',
+                "--listen",
+                "stdio://",
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+            cwd=workdir,
+            env=os.environ.copy(),
+        )
+        try:
+            session = _CodexAppServerSession(
+                process=process,
+                timeout_seconds=self._timeout_seconds,
+            )
+            session.initialize()
+            return _CodexAppServerTransport(
+                cache_key=(workdir, reasoning_effort),
+                workdir=workdir,
+                reasoning_effort=reasoning_effort,
+                process=process,
+                session=session,
+            )
+        except Exception:
+            _cleanup_subprocess(process)
+            raise
+
+    def _collect_idle_transports_locked(
+        self,
+        *,
+        exclude_key: tuple[str, str] | None = None,
+    ) -> list[subprocess.Popen[str]]:
+        if self._transport_idle_seconds <= 0:
+            return []
+        now = monotonic()
+        stale_keys: list[tuple[str, str]] = []
+        cleanup: list[subprocess.Popen[str]] = []
+        for cache_key, transport in self._transports.items():
+            if exclude_key is not None and cache_key == exclude_key:
+                continue
+            if transport.process.poll() is not None:
+                stale_keys.append(cache_key)
+                cleanup.append(transport.process)
+                continue
+            if now - transport.last_used_at < self._transport_idle_seconds:
+                continue
+            if not transport.lock.acquire(blocking=False):
+                continue
+            transport.lock.release()
+            stale_keys.append(cache_key)
+            cleanup.append(transport.process)
+        for cache_key in stale_keys:
+            self._transports.pop(cache_key, None)
+        return cleanup
 
 
 class ClaudeCodeRunner:
@@ -1796,6 +2018,7 @@ def create_agent_runner(
     codex_workdir: str,
     codex_model: str | None,
     codex_sandbox: str,
+    codex_reasoning_effort: str,
     codex_approval_policy: str,
     codex_timeout_seconds: int,
     claude_command: str,
@@ -1822,6 +2045,7 @@ def create_agent_runner(
             workdir=codex_workdir,
             model=codex_model,
             sandbox=codex_sandbox,
+            reasoning_effort=codex_reasoning_effort,
             approval_policy=codex_approval_policy,
             timeout_seconds=codex_timeout_seconds,
         ),
@@ -2455,6 +2679,39 @@ def _extract_turn_id(result: dict[str, object]) -> str | None:
     if isinstance(turn, dict):
         return _optional_string(turn.get("id"))
     return _optional_string(result.get("turnId"))
+
+
+def _codex_reasoning_token_count(params: dict[str, object]) -> int | None:
+    token_usage = params.get("tokenUsage")
+    if not isinstance(token_usage, dict):
+        return None
+    for bucket_name in ("last", "total"):
+        bucket = token_usage.get(bucket_name)
+        if not isinstance(bucket, dict):
+            continue
+        count = bucket.get("reasoningOutputTokens")
+        if isinstance(count, bool):
+            continue
+        if isinstance(count, int):
+            return count
+        if isinstance(count, float):
+            return int(count)
+    return None
+
+
+def _codex_reasoning_summary(item: dict[str, object]) -> str | None:
+    parts: list[str] = []
+    for value in item.get("summary", []), item.get("content", []):
+        if isinstance(value, list):
+            for entry in value:
+                if not isinstance(entry, dict):
+                    continue
+                text = _optional_string(entry.get("text"))
+                if text:
+                    parts.append(text)
+    if not parts:
+        return None
+    return " ".join(parts).strip() or None
 
 
 def _turn_error_message(turn: dict[str, object]) -> str | None:
