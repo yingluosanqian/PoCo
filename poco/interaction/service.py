@@ -52,6 +52,21 @@ class InteractionService:
                 )
             )
 
+        if message_surface == "group" and project_id:
+            return self._create_task_response(
+                requester_id=user_id,
+                prompt=command,
+                source=source,
+                project_id=project_id,
+                agent_backend=agent_backend,
+                effective_backend_config=effective_backend_config,
+                effective_model=effective_model,
+                effective_sandbox=effective_sandbox,
+                effective_workdir=effective_workdir,
+                reply_receive_id=reply_receive_id,
+                reply_receive_id_type=reply_receive_id_type,
+            )
+
         if command == "/help":
             return InteractionResponse(
                 text=self._help_text(
@@ -96,21 +111,6 @@ class InteractionService:
                     message_surface=message_surface,
                     project_id=project_id,
                 )
-            )
-
-        if message_surface == "group" and project_id:
-            return self._create_task_response(
-                requester_id=user_id,
-                prompt=command,
-                source=source,
-                project_id=project_id,
-                agent_backend=agent_backend,
-                effective_backend_config=effective_backend_config,
-                effective_model=effective_model,
-                effective_sandbox=effective_sandbox,
-                effective_workdir=effective_workdir,
-                reply_receive_id=reply_receive_id,
-                reply_receive_id_type=reply_receive_id_type,
             )
 
         return InteractionResponse(
@@ -192,7 +192,7 @@ class InteractionService:
     ) -> str:
         lines: list[str] = []
         if message_surface == "group" and project_id:
-            lines.append("Send any plain text message to create a task in this project.")
+            lines.append("Send any text message, including slash-prefixed text, to create a task in this project.")
         elif message_surface == "group":
             lines.append("This group is not bound to a project yet.")
         elif message_surface == "dm":

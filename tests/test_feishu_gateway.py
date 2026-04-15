@@ -525,7 +525,7 @@ class FeishuGatewayTest(unittest.TestCase):
             task = controller.get_task(response["task_id"])
             self.assertIsNone(task.notification_message_id)
 
-    def test_unknown_slash_command_in_group_returns_help_instead_of_task(self) -> None:
+    def test_unknown_slash_command_in_group_dispatches_task(self) -> None:
         self.project_controller.create_project(
             name="PoCo",
             created_by="ou_demo_user",
@@ -551,9 +551,12 @@ class FeishuGatewayTest(unittest.TestCase):
         )
 
         self.assertTrue(response["ok"])
-        self.assertEqual(len(self.dispatcher.actions), 0)
-        self.assertIsNone(response["task_id"])
-        self.assertIn("Send any plain text message to create a task in this project.", response["reply_preview"])
+        self.assertEqual(len(self.dispatcher.actions), 1)
+        self.assertEqual(self.dispatcher.actions[0][0], "start")
+        self.assertIsNotNone(response["task_id"])
+        self.assertEqual(response["reply_preview"], "[async] task_status:running")
+        task = self.controller.get_task(response["task_id"])
+        self.assertEqual(task.prompt, "/unknown do something")
 
 
 class FeishuRequestVerifierTest(unittest.TestCase):
