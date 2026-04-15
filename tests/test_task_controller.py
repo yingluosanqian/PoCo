@@ -226,6 +226,62 @@ class TaskControllerTest(unittest.TestCase):
         self.assertEqual(updated.events[-1].kind, "task_steered")
         self.assertEqual(updated.events[-1].message, "Steer sent to Codex.")
 
+    def test_reconcile_task_execution_marks_orphan_running_task_failed(self) -> None:
+        class InactiveRunner(StubAgentRunner):
+            name = "cursor_agent"
+
+            def is_task_active(self, task: Task) -> bool | None:
+                return False
+
+        controller = TaskController(
+            store=InMemoryTaskStore(),
+            runner=InactiveRunner(),
+            session_controller=self.session_controller,
+            running_reconcile_grace_seconds=0.0,
+        )
+        task = controller.create_task(
+            requester_id="ou_demo",
+            prompt="stream output",
+            source="feishu",
+            agent_backend="cursor_agent",
+        )
+        task.set_status(TaskStatus.RUNNING)
+        controller._store.save(task)  # type: ignore[attr-defined]
+
+        reconciled = controller.reconcile_task_execution(task.id)
+
+        self.assertEqual(reconciled.status, TaskStatus.FAILED)
+        self.assertEqual(
+            reconciled.events[-1].message,
+            "Task execution ended unexpectedly because the runner process is no longer active.",
+        )
+
+    def test_reconcile_task_execution_keeps_recent_running_task_during_grace_period(self) -> None:
+        class InactiveRunner(StubAgentRunner):
+            name = "cursor_agent"
+
+            def is_task_active(self, task: Task) -> bool | None:
+                return False
+
+        controller = TaskController(
+            store=InMemoryTaskStore(),
+            runner=InactiveRunner(),
+            session_controller=self.session_controller,
+            running_reconcile_grace_seconds=60.0,
+        )
+        task = controller.create_task(
+            requester_id="ou_demo",
+            prompt="stream output",
+            source="feishu",
+            agent_backend="cursor_agent",
+        )
+        task.set_status(TaskStatus.RUNNING)
+        controller._store.save(task)  # type: ignore[attr-defined]
+
+        reconciled = controller.reconcile_task_execution(task.id)
+
+        self.assertEqual(reconciled.status, TaskStatus.RUNNING)
+
     def test_codex_task_creation_resolves_default_execution_context(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             controller = TaskController(
@@ -377,6 +433,66 @@ class TaskControllerTest(unittest.TestCase):
         self.assertEqual(completed.status, TaskStatus.COMPLETED)
         self.assertGreaterEqual(len(seen), 2)
         self.assertIn((TaskStatus.RUNNING, "Codex is thinking.", "thread_123"), seen)
+
+    def test_callback_exception_does_not_abort_task_completion(self) -> None:
+        class ProgressRunner:
+            name = "progress"
+
+            def is_ready(self):
+                return True, "ok"
+
+            def steer(self, task: Task, prompt: str):
+                return False, "unsupported"
+
+            def resolve_execution_context(self, task: Task):
+                return None, task.effective_workdir, task.effective_sandbox
+
+            def cancel(self, task_id: str) -> bool:
+                return False
+
+            def start(self, task: Task):
+                yield type(
+                    "Update",
+                    (),
+                    {
+                        "kind": "progress",
+                        "message": "still running",
+                        "output_chunk": "hi",
+                        "backend_session_id": None,
+                    },
+                )()
+                yield type(
+                    "Update",
+                    (),
+                    {
+                        "kind": "completed",
+                        "message": "done",
+                        "raw_result": "done",
+                        "backend_session_id": None,
+                    },
+                )()
+
+            def resume_after_confirmation(self, task: Task):
+                return self.start(task)
+
+        controller = TaskController(
+            store=InMemoryTaskStore(),
+            runner=ProgressRunner(),
+            session_controller=self.session_controller,
+        )
+        task = controller.create_task(
+            requester_id="ou_demo",
+            prompt="stream output",
+            source="feishu",
+        )
+
+        completed = controller.start_task_execution_with_callback(
+            task.id,
+            on_update=lambda current: (_ for _ in ()).throw(RuntimeError("notify failed")),
+        )
+
+        self.assertEqual(completed.status, TaskStatus.COMPLETED)
+        self.assertEqual(completed.raw_result, "done")
 
 
 if __name__ == "__main__":

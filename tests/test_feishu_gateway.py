@@ -558,6 +558,40 @@ class FeishuGatewayTest(unittest.TestCase):
         task = self.controller.get_task(response["task_id"])
         self.assertEqual(task.prompt, "/unknown do something")
 
+    def test_unknown_slash_command_in_cursor_group_dispatches_task(self) -> None:
+        self.project_controller.create_project(
+            name="PoCo Cursor",
+            created_by="ou_demo_user",
+            backend="cursor_agent",
+            group_chat_id="oc_demo_chat",
+        )
+        payload = {
+            "token": "verify-token",
+            "event": {
+                "sender": {"sender_id": {"open_id": "ou_demo_user"}},
+                "message": {
+                    "chat_type": "group",
+                    "chat_id": "oc_demo_chat",
+                    "content": json.dumps({"text": "/review this branch"}),
+                },
+            },
+        }
+
+        response = self.gateway.handle_event(
+            payload,
+            headers={},
+            raw_body=json.dumps(payload).encode("utf-8"),
+        )
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(len(self.dispatcher.actions), 1)
+        self.assertEqual(self.dispatcher.actions[0][0], "start")
+        self.assertIsNotNone(response["task_id"])
+        self.assertEqual(response["reply_preview"], "[async] task_status:running")
+        task = self.controller.get_task(response["task_id"])
+        self.assertEqual(task.agent_backend, "cursor_agent")
+        self.assertEqual(task.prompt, "/review this branch")
+
 
 class FeishuRequestVerifierTest(unittest.TestCase):
     def test_signature_validation(self) -> None:

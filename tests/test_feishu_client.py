@@ -932,6 +932,42 @@ class FeishuClientTest(unittest.TestCase):
         self.assertEqual(steer_button["text"]["content"], "Steer Current Task")
         self.assertEqual(steer_button["behaviors"][0]["value"]["intent_key"], "task.steer_queue")
 
+    def test_task_status_card_shows_steer_button_for_queued_cursor_task(self) -> None:
+        task = {
+            "id": "task_queue_steer_cursor",
+            "project_id": "proj_1",
+            "agent_backend": "cursor_agent",
+            "effective_workdir": "/srv/poco/api",
+            "prompt": "Focus on the test failure first.",
+            "status": "queued",
+            "awaiting_confirmation_reason": None,
+        }
+        card = FeishuCardRenderer().render(
+            build_render_instruction(
+                IntentDispatchResult(
+                    status=DispatchStatus.OK,
+                    intent_key="task.status",
+                    resource_refs=ResourceRefs(project_id="proj_1", task_id="task_queue_steer_cursor"),
+                    view_model=ViewModel(
+                        "task_status",
+                        {
+                            "task": task,
+                            "queue_position": 1,
+                            "blocking_task_id": "task_run_1",
+                            "blocking_task_status": "running",
+                        },
+                    ),
+                    refresh_mode=RefreshMode.REPLACE_CURRENT,
+                ),
+                surface=Surface.GROUP,
+            )
+        )
+
+        steer_button = card["body"]["elements"][1]
+        self.assertEqual(steer_button["tag"], "button")
+        self.assertEqual(steer_button["text"]["content"], "Steer Current Task")
+        self.assertEqual(steer_button["behaviors"][0]["value"]["intent_key"], "task.steer_queue")
+
     def test_task_status_card_preserves_multiline_result_formatting_for_coco_code(self) -> None:
         task = {
             "id": "task_multiline_1",

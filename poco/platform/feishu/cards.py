@@ -985,7 +985,7 @@ def _render_task_status(
         and status == "queued"
         and blocking_task_id
         and blocking_task_status == "running"
-        and agent_backend in {"codex", "claude_code"}
+        and agent_backend in {"codex", "claude_code", "cursor_agent"}
         and str(task.get("prompt") or "").strip()
     )
     elements: list[dict[str, Any]] = []

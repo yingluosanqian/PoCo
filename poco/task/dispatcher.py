@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import logging
 from threading import Condition
 from threading import RLock
 from threading import Thread
@@ -23,6 +24,7 @@ class AsyncTaskDispatcher:
         self._running_notify_changed = Condition(self._running_notify_lock)
         self._running_notify_latest: dict[str, Task] = {}
         self._running_notify_active: set[str] = set()
+        self._logger = logging.getLogger(__name__)
 
     def dispatch_start(self, task_id: str) -> None:
         self._launch(lambda: self._run_start(task_id))
@@ -83,7 +85,7 @@ class AsyncTaskDispatcher:
             TaskStatus.FAILED,
             TaskStatus.CANCELLED,
         }:
-            self._notifier.notify_task(task)
+            self._safe_notify_task(task)
 
     def _dispatch_next_if_possible(self, task: Task) -> None:
         if task.status not in {
@@ -116,7 +118,7 @@ class AsyncTaskDispatcher:
                     self._running_notify_active.discard(task_id)
                     self._running_notify_changed.notify_all()
                 return
-            self._notifier.notify_task(snapshot)
+            self._safe_notify_task(snapshot)
             with self._running_notify_lock:
                 latest = self._running_notify_latest.get(task_id)
                 if latest is snapshot:
@@ -143,7 +145,7 @@ class AsyncTaskDispatcher:
                 snapshot = pending
                 self._running_notify_active.add(task_id)
 
-            self._notifier.notify_task(snapshot)
+            self._safe_notify_task(snapshot)
 
             with self._running_notify_lock:
                 latest = self._running_notify_latest.get(task_id)
@@ -158,3 +160,9 @@ class AsyncTaskDispatcher:
         with self._running_notify_lock:
             self._running_notify_latest.pop(task_id, None)
             self._running_notify_changed.notify_all()
+
+    def _safe_notify_task(self, task: Task) -> None:
+        try:
+            self._notifier.notify_task(task)
+        except Exception as exc:
+            self._logger.warning("Task notification failed for %s: %s", task.id, exc)

@@ -9,6 +9,7 @@ import time
 from datetime import UTC, datetime
 from threading import RLock, Thread
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 from poco.platform.feishu.debug import FeishuDebugRecorder
 from poco.platform.feishu.card_gateway import FeishuCardActionGateway
@@ -19,9 +20,11 @@ try:
     from lark_oapi.core.const import UTF_8
     from lark_oapi.ws import Client as LarkWsClient
     from lark_oapi.ws.const import (
+        DEVICE_ID,
         HEADER_BIZ_RT,
         HEADER_MESSAGE_ID,
         HEADER_SEQ,
+        SERVICE_ID,
         HEADER_SUM,
         HEADER_TRACE_ID,
         HEADER_TYPE,
@@ -33,15 +36,20 @@ except ImportError:  # pragma: no cover
     JSON = None
     LogLevel = None
     LarkWsClient = None
+    DEVICE_ID = None
     HEADER_BIZ_RT = None
     HEADER_MESSAGE_ID = None
     HEADER_SEQ = None
+    SERVICE_ID = None
     HEADER_SUM = None
     HEADER_TRACE_ID = None
     HEADER_TYPE = None
     UTF_8 = "utf-8"
     MessageType = None
     Response = None
+    websockets = None
+else:
+    import websockets
 
 
 def _utc_now_iso() -> str:
@@ -256,6 +264,31 @@ class FeishuLongconnListener:
 
 if LarkWsClient is not None:
     class PoCoLarkWsClient(LarkWsClient):
+        async def _connect(self) -> None:
+            await self._lock.acquire()
+            if self._conn is not None:
+                self._lock.release()
+                return
+            try:
+                conn_url = self._get_conn_url()
+                parsed = urlparse(conn_url)
+                query = parse_qs(parsed.query)
+                self._conn_id = query[DEVICE_ID][0]
+                self._service_id = query[SERVICE_ID][0]
+                self._conn = await websockets.connect(
+                    conn_url,
+                    max_size=None,
+                )
+                self._conn_url = conn_url
+                loop = asyncio.get_event_loop()
+                loop.create_task(self._receive_message_loop())
+            except websockets.InvalidStatusCode as exc:
+                from lark_oapi.ws.client import _parse_ws_conn_exception
+
+                _parse_ws_conn_exception(exc)
+            finally:
+                self._lock.release()
+
         async def _handle_data_frame(self, frame: Any) -> None:
             hs = frame.headers
             msg_id = _get_by_key(hs, HEADER_MESSAGE_ID)

@@ -128,6 +128,9 @@ class AgentRunner(Protocol):
     def resolve_execution_context(self, task: Task) -> tuple[str | None, str | None, str | None]:
         ...
 
+    def is_task_active(self, task: Task) -> bool | None:
+        ...
+
 
 class StubAgentRunner:
     """A minimal stand-in for a real server-side agent executor."""
@@ -175,6 +178,9 @@ class StubAgentRunner:
     def resolve_execution_context(self, task: Task) -> tuple[str | None, str | None, str | None]:
         return self.name, task.effective_workdir, task.effective_sandbox
 
+    def is_task_active(self, task: Task) -> bool | None:
+        return None
+
 
 class UnavailableAgentRunner:
     def __init__(self, *, name: str, reason: str) -> None:
@@ -198,6 +204,9 @@ class UnavailableAgentRunner:
 
     def resolve_execution_context(self, task: Task) -> tuple[str | None, str | None, str | None]:
         return self.name, task.effective_workdir, task.effective_sandbox
+
+    def is_task_active(self, task: Task) -> bool | None:
+        return False
 
 
 def _cleanup_subprocess(process: subprocess.Popen[str] | None) -> None:
@@ -259,6 +268,13 @@ class MultiAgentRunner:
 
     def resolve_execution_context(self, task: Task) -> tuple[str | None, str | None, str | None]:
         return self._delegate(task).resolve_execution_context(task)
+
+    def is_task_active(self, task: Task) -> bool | None:
+        delegate = self._delegate(task)
+        probe = getattr(delegate, "is_task_active", None)
+        if not callable(probe):
+            return None
+        return probe(task)
 
     def _delegate(self, task: Task) -> AgentRunner:
         runner = self._runners.get(task.agent_backend)
@@ -371,6 +387,16 @@ class CodexAppServerRunner:
             task.effective_workdir or self._workdir,
             task.effective_sandbox or self._sandbox,
         )
+
+    def is_task_active(self, task: Task) -> bool | None:
+        with self._lock:
+            process = self._active_processes.get(task.id)
+            active_turn = self._active_turns.get(task.id)
+        if process is None and active_turn is None:
+            return False
+        if process is not None and process.poll() is None:
+            return True
+        return active_turn is not None
 
     def _execute_prompt(self, task: Task, prompt: str) -> Iterator[AgentRunUpdate]:
         executable = shutil.which(self._command)
@@ -869,6 +895,16 @@ class ClaudeCodeRunner:
             permission_mode or self._permission_mode,
         )
 
+    def is_task_active(self, task: Task) -> bool | None:
+        with self._lock:
+            process = self._active_processes.get(task.id)
+            active = self._active_sessions.get(task.id)
+        if process is None and active is None:
+            return False
+        if process is not None and process.poll() is None:
+            return True
+        return active is not None
+
     def _execute_prompt(self, task: Task, prompt: str) -> Iterator[AgentRunUpdate]:
         executable = shutil.which(self._command)
         if not executable:
@@ -1313,6 +1349,13 @@ class CursorAgentRunner:
             _string_or_none(task.effective_backend_config.get("sandbox")) or self._sandbox,
         )
 
+    def is_task_active(self, task: Task) -> bool | None:
+        with self._lock:
+            process = self._active_processes.get(task.id)
+        if process is None:
+            return False
+        return process.poll() is None
+
     def _execute_prompt(self, task: Task, prompt: str) -> Iterator[AgentRunUpdate]:
         executable = shutil.which(self._command)
         if not executable:
@@ -1549,6 +1592,13 @@ class CocoRunner:
             task.effective_workdir or self._workdir,
             task.effective_sandbox,
         )
+
+    def is_task_active(self, task: Task) -> bool | None:
+        with self._lock:
+            process = self._active_processes.get(task.id)
+        if process is None:
+            return False
+        return process.poll() is None
 
     def _execute_prompt(self, task: Task, prompt: str) -> Iterator[AgentRunUpdate]:
         executable = shutil.which(self._command)

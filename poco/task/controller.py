@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
+import logging
+from datetime import UTC, datetime, timedelta
 from threading import RLock
 from uuid import uuid4
 
@@ -24,11 +26,14 @@ class TaskController:
         store: TaskStore,
         runner: AgentRunner,
         session_controller: SessionController | None = None,
+        running_reconcile_grace_seconds: float = 3.0,
     ) -> None:
         self._store = store
         self._runner = runner
         self._session_controller = session_controller
         self._lock = RLock()
+        self._logger = logging.getLogger(__name__)
+        self._running_reconcile_grace = timedelta(seconds=max(0.0, running_reconcile_grace_seconds))
 
     def create_task(
         self,
@@ -265,6 +270,57 @@ class TaskController:
             self._sync_session(task)
             return task
 
+    def bind_backend_session(self, task_id: str, backend_session_id: str) -> Task:
+        session_id = backend_session_id.strip()
+        if not session_id:
+            raise ValueError("Backend session id cannot be empty.")
+        with self._lock:
+            task = self.get_task(task_id)
+            task.set_execution_context(
+                effective_backend_config=dict(task.effective_backend_config),
+                effective_model=task.effective_model,
+                effective_sandbox=task.effective_sandbox,
+                effective_workdir=task.effective_workdir,
+                backend_session_id=session_id,
+            )
+            self._store.save(task)
+            self._sync_session(task)
+            return task
+
+    def add_task_event(self, task_id: str, kind: str, message: str) -> Task:
+        with self._lock:
+            task = self.get_task(task_id)
+            task.add_event(kind, message)
+            self._store.save(task)
+            self._sync_session(task)
+            return task
+
+    def reconcile_task_execution(self, task_id: str) -> Task:
+        with self._lock:
+            task = self.get_task(task_id)
+            if task.status != TaskStatus.RUNNING:
+                return task
+            age = datetime.now(UTC) - task.updated_at
+            if age < self._running_reconcile_grace:
+                return task
+            active_probe = getattr(self._runner, "is_task_active", None)
+            if not callable(active_probe):
+                return task
+            is_active = active_probe(task)
+            if is_active is not False:
+                return task
+            if task.live_output and not task.raw_result:
+                task.set_result(task.live_output)
+            task.clear_live_output()
+            task.set_status(TaskStatus.FAILED)
+            task.add_event(
+                "task_failed",
+                "Task execution ended unexpectedly because the runner process is no longer active.",
+            )
+            self._store.save(task)
+            self._sync_session(task)
+            return task
+
     def start_task_execution(self, task_id: str) -> Task:
         return self._start_or_resume(task_id, mode="start")
 
@@ -353,7 +409,10 @@ class TaskController:
                 started_task = None
 
         if started_task is not None and on_update is not None:
-            on_update(started_task)
+            try:
+                on_update(started_task)
+            except Exception as exc:
+                self._logger.warning("Task start callback failed for %s: %s", started_task.id, exc)
 
         updates = self._runner.start(task) if mode == "start" else self._runner.resume_after_confirmation(task)
         return self._apply_runner_updates(task_id, updates, on_update=on_update)
@@ -420,7 +479,10 @@ class TaskController:
                     self._store.save(task)
                     self._sync_session(task)
                 if on_update is not None:
-                    on_update(task)
+                    try:
+                        on_update(task)
+                    except Exception as exc:
+                        self._logger.warning("Task update callback failed for %s: %s", task.id, exc)
 
             with self._lock:
                 return self.get_task(task_id)

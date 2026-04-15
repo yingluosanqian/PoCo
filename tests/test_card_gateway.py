@@ -1079,6 +1079,64 @@ class FeishuCardGatewayTest(unittest.TestCase):
         self.assertEqual(refreshed_queued.status.value, "cancelled")
         self.assertIn("Queued prompt was sent as steer", refreshed_queued.events[-1].message)
 
+    def test_task_steer_queue_redirects_cursor_task_to_current_session(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo Cursor",
+            created_by="ou_demo_user",
+            backend="cursor_agent",
+            group_chat_id="oc_group_proj_1",
+        )
+        running = self.task_controller.create_task(
+            requester_id="ou_demo_user",
+            prompt="run the patch",
+            source="feishu_card",
+            agent_backend="cursor_agent",
+            project_id=project.id,
+            effective_workdir="/srv/poco/api",
+            backend_session_id="chat_123",
+            reply_receive_id="oc_group_proj_1",
+            reply_receive_id_type="chat_id",
+        )
+        running.set_status(running.status.RUNNING)
+        self.task_controller._store.save(running)  # type: ignore[attr-defined]
+        queued = self.task_controller.create_task(
+            requester_id="ou_demo_user",
+            prompt="Focus on the test failure first.",
+            source="feishu",
+            agent_backend="cursor_agent",
+            project_id=project.id,
+            effective_workdir="/srv/poco/api",
+            reply_receive_id="oc_group_proj_1",
+            reply_receive_id_type="chat_id",
+        )
+        queued = self.task_controller.queue_task(queued.id)
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_task_steer_queue_cursor_1"},
+                "action": {
+                    "value": {
+                        "intent_key": "task.steer_queue",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "task_id": queued.id,
+                        "request_id": "req_task_steer_queue_cursor_1",
+                    },
+                },
+            }
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        self.assertEqual(response["instruction"]["template_key"], "task_status")
+        refreshed_running = self.task_controller.get_task(running.id)
+        refreshed_queued = self.task_controller.get_task(queued.id)
+        self.assertEqual(refreshed_running.status.value, "cancelled")
+        self.assertEqual(refreshed_queued.status.value, "queued")
+        self.assertEqual(refreshed_queued.backend_session_id, "chat_123")
+        self.assertEqual(self.task_dispatcher.actions[-1], ("next", project.id))
+        self.assertIn("Queued prompt will resume Cursor session", refreshed_queued.events[-1].message)
+
     def test_workspace_enter_path_card_opens_from_group(self) -> None:
         project = self.project_controller.create_project(
             name="PoCo",

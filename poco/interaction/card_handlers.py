@@ -734,6 +734,16 @@ class TaskIntentHandler:
         )
         if target is None:
             return _rejected(intent, "No running task is available to receive this steer.")
+        if target.agent_backend == "cursor_agent":
+            try:
+                queued_task = self._redirect_queued_cursor_task(target=target, queued_task=queued_task)
+            except (TaskNotFoundError, TaskStateError, ValueError) as exc:
+                return _rejected(intent, str(exc))
+            return build_task_status_result(
+                queued_task,
+                task_controller=self.task_controller,
+                message=f"Queued prompt will continue in Cursor session after stopping task {target.id}.",
+            )
         try:
             self.task_controller.steer_task(target.id, queued_task.prompt)
             queued_task = self.task_controller.cancel_task(
@@ -747,6 +757,28 @@ class TaskIntentHandler:
             task_controller=self.task_controller,
             message=f"Queued prompt sent as steer to task {target.id}.",
         )
+
+    def _redirect_queued_cursor_task(self, *, target, queued_task):
+        if not target.backend_session_id:
+            raise TaskStateError(
+                f"Cursor queued steer is only available after task {target.id} has an active session."
+            )
+        queued_task = self.task_controller.bind_backend_session(
+            queued_task.id,
+            target.backend_session_id,
+        )
+        queued_task = self.task_controller.add_task_event(
+            queued_task.id,
+            "task_steered",
+            f"Queued prompt will resume Cursor session from task {target.id}.",
+        )
+        self.task_controller.cancel_task(
+            target.id,
+            reason=f"Stopped so queued task {queued_task.id} can continue the current Cursor session.",
+        )
+        if self.dispatcher is not None and queued_task.project_id:
+            self.dispatcher.dispatch_next_queued(queued_task.project_id)
+        return self.task_controller.get_task(queued_task.id)
 
     def _reject_task(self, intent: ActionIntent) -> IntentDispatchResult:
         task_id = _required_id(intent.task_id, "task_id")
@@ -862,6 +894,7 @@ def build_task_status_result(
     blocking_task_id = None
     blocking_task_status = None
     if task_controller is not None:
+        task = task_controller.reconcile_task_execution(task.id)
         queue_position = task_controller.get_queue_position(task.id)
         if task.project_id and task.status.value == "queued":
             for candidate in task_controller.list_tasks_for_project(task.project_id):
