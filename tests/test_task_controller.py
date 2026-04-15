@@ -182,6 +182,50 @@ class TaskControllerTest(unittest.TestCase):
         self.assertEqual(cancelled.raw_result, "partial streamed output")
         self.assertEqual(cancelled.live_output, "partial streamed output")
 
+    def test_mark_task_failed_preserves_existing_output(self) -> None:
+        task = self.controller.create_task(
+            requester_id="ou_demo",
+            prompt="write the next section",
+            source="feishu",
+        )
+        task.set_status(TaskStatus.RUNNING)
+        task.append_live_output("partial streamed output")
+        self.controller._store.save(task)  # type: ignore[attr-defined]
+
+        failed = self.controller.mark_task_failed(task.id, "network dropped")
+
+        self.assertEqual(failed.status, TaskStatus.FAILED)
+        self.assertEqual(failed.raw_result, "partial streamed output")
+        self.assertIsNone(failed.live_output)
+
+    def test_steer_task_records_event(self) -> None:
+        class SteerRunner(StubAgentRunner):
+            def steer(self, task: Task, prompt: str) -> tuple[bool, str]:
+                self.last = (task.id, prompt)
+                return True, "Steer sent to Codex."
+
+        runner = SteerRunner()
+        controller = TaskController(
+            store=InMemoryTaskStore(),
+            runner=runner,
+            session_controller=self.session_controller,
+        )
+        task = controller.create_task(
+            requester_id="ou_demo",
+            prompt="stream output",
+            source="feishu",
+            agent_backend="codex",
+            backend_session_id="thread_123",
+        )
+        task.set_status(TaskStatus.RUNNING)
+        controller._store.save(task)  # type: ignore[attr-defined]
+
+        updated = controller.steer_task(task.id, "Focus on the failing test first.")
+
+        self.assertEqual(runner.last, (task.id, "Focus on the failing test first."))
+        self.assertEqual(updated.events[-1].kind, "task_steered")
+        self.assertEqual(updated.events[-1].message, "Steer sent to Codex.")
+
     def test_codex_task_creation_resolves_default_execution_context(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             controller = TaskController(

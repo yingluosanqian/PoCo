@@ -43,17 +43,18 @@ class TaskController:
         effective_model: str | None = None,
         effective_sandbox: str | None = None,
         effective_workdir: str | None = None,
+        backend_session_id: str | None = None,
         notification_message_id: str | None = None,
         reply_receive_id: str | None = None,
         reply_receive_id_type: str | None = None,
     ) -> Task:
         with self._lock:
-            backend_session_id = None
-            if session_id and self._session_controller is not None:
+            resolved_backend_session_id = backend_session_id
+            if resolved_backend_session_id is None and session_id and self._session_controller is not None:
                 try:
-                    backend_session_id = self._session_controller.get_session(session_id).backend_session_id
+                    resolved_backend_session_id = self._session_controller.get_session(session_id).backend_session_id
                 except ValueError:
-                    backend_session_id = None
+                    resolved_backend_session_id = None
             effective_model, resolved_workdir, resolved_sandbox = self._runner.resolve_execution_context(
                 Task(
                     id="preview",
@@ -64,7 +65,7 @@ class TaskController:
                     effective_backend_config=effective_backend_config or {},
                     effective_model=effective_model,
                     effective_sandbox=effective_sandbox,
-                    backend_session_id=backend_session_id,
+                    backend_session_id=resolved_backend_session_id,
                     project_id=project_id,
                     session_id=session_id,
                     effective_workdir=effective_workdir,
@@ -82,7 +83,7 @@ class TaskController:
                 effective_backend_config=effective_backend_config or {},
                 effective_model=effective_model,
                 effective_sandbox=resolved_sandbox,
-                backend_session_id=backend_session_id,
+                backend_session_id=resolved_backend_session_id,
                 project_id=project_id,
                 session_id=session_id,
                 effective_workdir=resolved_workdir,
@@ -243,6 +244,27 @@ class TaskController:
             self._sync_session(task)
             return task
 
+    def steer_task(self, task_id: str, prompt: str) -> Task:
+        instruction = prompt.strip()
+        if not instruction:
+            raise TaskStateError("Steer prompt cannot be empty.")
+        with self._lock:
+            task = self.get_task(task_id)
+            if task.status != TaskStatus.RUNNING:
+                raise TaskStateError(f"Task {task_id} is not in a steerable state.")
+            steer_runner = getattr(self._runner, "steer", None)
+            if not callable(steer_runner):
+                raise TaskStateError(f"Steer is not supported by backend: {task.agent_backend}")
+        success, detail = steer_runner(task, instruction)
+        if not success:
+            raise TaskStateError(detail)
+        with self._lock:
+            task = self.get_task(task_id)
+            task.add_event("task_steered", detail)
+            self._store.save(task)
+            self._sync_session(task)
+            return task
+
     def start_task_execution(self, task_id: str) -> Task:
         return self._start_or_resume(task_id, mode="start")
 
@@ -268,6 +290,9 @@ class TaskController:
     def mark_task_failed(self, task_id: str, message: str) -> Task:
         with self._lock:
             task = self.get_task(task_id)
+            if task.live_output and not task.raw_result:
+                task.set_result(task.live_output)
+                task.clear_live_output()
             task.set_status(TaskStatus.FAILED)
             task.add_event("task_failed", message)
             self._store.save(task)
@@ -385,6 +410,8 @@ class TaskController:
                                 effective_workdir=task.effective_workdir,
                                 backend_session_id=update.backend_session_id,
                             )
+                        if task.live_output and not task.raw_result:
+                            task.set_result(task.live_output)
                         task.clear_live_output()
                         task.set_status(TaskStatus.FAILED)
                         task.add_event("task_failed", update.message)

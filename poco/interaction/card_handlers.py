@@ -534,6 +534,10 @@ class TaskIntentHandler:
             return self._open_task(intent)
         if intent.intent_key == "task.stop":
             return self._stop_task(intent)
+        if intent.intent_key == "task.continue":
+            return self._continue_task(intent)
+        if intent.intent_key == "task.steer":
+            return self._steer_task(intent)
         if intent.intent_key == "task.approve":
             return self._approve_task(intent)
         if intent.intent_key == "task.reject":
@@ -641,6 +645,73 @@ class TaskIntentHandler:
             task,
             task_controller=self.task_controller,
             message="Task stopped.",
+        )
+
+    def _continue_task(self, intent: ActionIntent) -> IntentDispatchResult:
+        task_id = _required_id(intent.task_id, "task_id")
+        try:
+            original = self.task_controller.get_task(task_id)
+        except TaskNotFoundError as exc:
+            return _rejected(intent, str(exc))
+        if original.status.value not in {"failed", "cancelled"}:
+            return _rejected(intent, f"Task {task_id} is not in a continuable state.")
+        if not original.project_id:
+            return _rejected(intent, "Continue is only available for project-bound tasks.")
+        if not original.backend_session_id:
+            return _rejected(intent, "Task cannot be continued because no backend session is available.")
+
+        project = _get_project_or_reject(self.project_controller, intent)
+        if isinstance(project, IntentDispatchResult):
+            return project
+        reply_receive_id, reply_receive_id_type = _resolve_task_reply_target(
+            project,
+            actor_id=intent.actor_id,
+            surface=intent.surface.value,
+        )
+        task = self.task_controller.create_task(
+            requester_id=intent.actor_id,
+            prompt=_continuation_prompt(original),
+            source="feishu_card",
+            agent_backend=original.agent_backend,
+            project_id=original.project_id,
+            session_id=original.session_id,
+            effective_backend_config=dict(original.effective_backend_config),
+            effective_model=original.effective_model,
+            effective_sandbox=original.effective_sandbox,
+            effective_workdir=original.effective_workdir,
+            backend_session_id=original.backend_session_id,
+            notification_message_id=_optional_string(intent.source_message_id),
+            reply_receive_id=reply_receive_id,
+            reply_receive_id_type=reply_receive_id_type,
+        )
+        message = "Continuation task created."
+        if self.task_controller.has_active_task_for_project(
+            project.id,
+            exclude_task_id=task.id,
+        ):
+            task = self.task_controller.queue_task(task.id)
+            message = "Continuation task queued."
+        elif self.dispatcher is not None:
+            self.dispatcher.dispatch_start(task.id)
+        return build_task_status_result(
+            task,
+            task_controller=self.task_controller,
+            message=message,
+        )
+
+    def _steer_task(self, intent: ActionIntent) -> IntentDispatchResult:
+        task_id = _required_id(intent.task_id, "task_id")
+        prompt = _extract_steer_prompt(intent.payload)
+        if not prompt:
+            return _rejected(intent, "Steer prompt cannot be empty.")
+        try:
+            task = self.task_controller.steer_task(task_id, prompt)
+        except (TaskNotFoundError, TaskStateError, ValueError) as exc:
+            return _rejected(intent, str(exc))
+        return build_task_status_result(
+            task,
+            task_controller=self.task_controller,
+            message="Steer sent.",
         )
 
     def _reject_task(self, intent: ActionIntent) -> IntentDispatchResult:
@@ -781,6 +852,29 @@ def build_task_status_result(
         refresh_mode=RefreshMode.REPLACE_CURRENT,
         message=message or f"Task updated: {task.id}",
     )
+
+
+def _continuation_prompt(task) -> str:
+    tail = (task.raw_result or task.live_output or "").strip()
+    if len(tail) > 1200:
+        tail = tail[-1200:]
+    lines = [
+        "Your previous response was interrupted before it finished.",
+        "Continue from exactly where you stopped.",
+        "Do not repeat content that was already sent.",
+        "If the answer was actually complete, say so briefly instead of restating it.",
+    ]
+    if tail:
+        lines.extend(
+            [
+                "",
+                "Already delivered tail:",
+                "```text",
+                tail,
+                "```",
+            ]
+        )
+    return "\n".join(lines)
 
 
 def _project_home_view_model(projects, *, actor_id: str | None) -> ViewModel:
@@ -1156,6 +1250,20 @@ def _extract_prompt(payload: dict[str, object]) -> str:
         return input_value.strip()
     if isinstance(input_value, dict):
         nested = _optional_string(input_value.get("prompt"))
+        if nested is not None:
+            return nested
+    return ""
+
+
+def _extract_steer_prompt(payload: dict[str, object]) -> str:
+    direct = _optional_string(payload.get("steer_prompt"))
+    if direct is not None:
+        return direct
+    input_value = payload.get("input_value")
+    if isinstance(input_value, str) and input_value.strip():
+        return input_value.strip()
+    if isinstance(input_value, dict):
+        nested = _optional_string(input_value.get("steer_prompt"))
         if nested is not None:
             return nested
     return ""

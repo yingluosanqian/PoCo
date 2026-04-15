@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from threading import RLock
+from threading import Event, RLock
 from time import monotonic
 from typing import Literal, Protocol
 
@@ -70,6 +70,32 @@ class _TraeAcpTransport:
     last_used_at: float = field(default_factory=monotonic)
 
 
+@dataclass(slots=True)
+class _CodexActiveTurn:
+    session: "_CodexAppServerSession"
+    thread_id: str
+    turn_id: str
+    io_lock: RLock = field(default_factory=RLock)
+
+
+@dataclass(slots=True)
+class _ClaudePendingControl:
+    event: Event = field(default_factory=Event)
+    response: dict[str, object] | None = None
+    error: str | None = None
+
+
+@dataclass(slots=True)
+class _ClaudeActiveSession:
+    process: subprocess.Popen[str]
+    stdin: object
+    session_id: str | None = None
+    io_lock: RLock = field(default_factory=RLock)
+    pending_controls: dict[str, _ClaudePendingControl] = field(default_factory=dict)
+    next_request_id: int = 0
+    ignored_result_count: int = 0
+
+
 class AgentRunner(Protocol):
     name: str
 
@@ -83,6 +109,9 @@ class AgentRunner(Protocol):
         ...
 
     def cancel(self, task_id: str) -> bool:
+        ...
+
+    def steer(self, task: Task, prompt: str) -> tuple[bool, str]:
         ...
 
     def resolve_execution_context(self, task: Task) -> tuple[str | None, str | None, str | None]:
@@ -129,6 +158,9 @@ class StubAgentRunner:
     def cancel(self, task_id: str) -> bool:
         return False
 
+    def steer(self, task: Task, prompt: str) -> tuple[bool, str]:
+        return False, f"Steer is not supported by the {self.name} runner."
+
     def resolve_execution_context(self, task: Task) -> tuple[str | None, str | None, str | None]:
         return self.name, task.effective_workdir, task.effective_sandbox
 
@@ -149,6 +181,9 @@ class UnavailableAgentRunner:
 
     def cancel(self, task_id: str) -> bool:
         return False
+
+    def steer(self, task: Task, prompt: str) -> tuple[bool, str]:
+        return False, self._reason
 
     def resolve_execution_context(self, task: Task) -> tuple[str | None, str | None, str | None]:
         return self.name, task.effective_workdir, task.effective_sandbox
@@ -208,6 +243,9 @@ class MultiAgentRunner:
             cancelled = runner.cancel(task_id) or cancelled
         return cancelled
 
+    def steer(self, task: Task, prompt: str) -> tuple[bool, str]:
+        return self._delegate(task).steer(task, prompt)
+
     def resolve_execution_context(self, task: Task) -> tuple[str | None, str | None, str | None]:
         return self._delegate(task).resolve_execution_context(task)
 
@@ -242,6 +280,7 @@ class CodexAppServerRunner:
         self._timeout_seconds = timeout_seconds
         self._lock = RLock()
         self._active_processes: dict[str, subprocess.Popen[str]] = {}
+        self._active_turns: dict[str, _CodexActiveTurn] = {}
         self._cancelled_tasks: set[str] = set()
 
     def is_ready(self) -> tuple[bool, str]:
@@ -281,6 +320,34 @@ class CodexAppServerRunner:
             self._cancelled_tasks.add(task_id)
         process.kill()
         return True
+
+    def steer(self, task: Task, prompt: str) -> tuple[bool, str]:
+        instruction = prompt.strip()
+        if not instruction:
+            return False, "Steer prompt cannot be empty."
+        with self._lock:
+            active_turn = self._active_turns.get(task.id)
+        if active_turn is None:
+            return False, "Codex steer is only available while the task is actively running."
+        with active_turn.io_lock:
+            try:
+                result = active_turn.session.request(
+                    "turn/steer",
+                    {
+                        "threadId": active_turn.thread_id,
+                        "expectedTurnId": active_turn.turn_id,
+                        "input": [{"type": "text", "text": instruction}],
+                    },
+                )
+            except RuntimeError as exc:
+                return False, str(exc) or "Codex steer failed."
+        turn_id = _extract_turn_id(result)
+        if turn_id:
+            with self._lock:
+                latest = self._active_turns.get(task.id)
+                if latest is active_turn:
+                    latest.turn_id = turn_id
+        return True, "Steer sent to Codex."
 
     def resolve_execution_context(self, task: Task) -> tuple[str | None, str | None, str | None]:
         return (
@@ -351,7 +418,7 @@ class CodexAppServerRunner:
                     backend_session_id=backend_session_id,
                 )
 
-            session.request(
+            turn_result = session.request(
                 "turn/start",
                 {
                     "threadId": backend_session_id,
@@ -360,12 +427,29 @@ class CodexAppServerRunner:
                     "input": [{"type": "text", "text": prompt}],
                 },
             )
+            active_turn_id = _extract_turn_id(turn_result)
+            if backend_session_id and active_turn_id:
+                with self._lock:
+                    self._active_turns[task.id] = _CodexActiveTurn(
+                        session=session,
+                        thread_id=backend_session_id,
+                        turn_id=active_turn_id,
+                    )
 
             final_text: str | None = None
             while True:
                 if self._consume_cancelled(task.id):
                     return
-                message = session.read_next_message()
+                with self._lock:
+                    active_state = self._active_turns.get(task.id)
+                read_lock = active_state.io_lock if active_state is not None else None
+                if read_lock is not None:
+                    read_lock.acquire()
+                try:
+                    message = session.read_next_message()
+                finally:
+                    if read_lock is not None:
+                        read_lock.release()
                 if message is None:
                     break
                 if "method" not in message:
@@ -373,6 +457,20 @@ class CodexAppServerRunner:
                 method = str(message["method"])
                 params = message.get("params")
                 if not isinstance(params, dict):
+                    continue
+
+                if method == "turn/started":
+                    turn = params.get("turn")
+                    thread_id = _optional_string(params.get("threadId")) or backend_session_id
+                    if isinstance(turn, dict):
+                        active_turn_id = _optional_string(turn.get("id")) or active_turn_id
+                    if thread_id and active_turn_id:
+                        with self._lock:
+                            self._active_turns[task.id] = _CodexActiveTurn(
+                                session=session,
+                                thread_id=thread_id,
+                                turn_id=active_turn_id,
+                            )
                     continue
 
                 if method == "item/agentMessage/delta":
@@ -449,6 +547,7 @@ class CodexAppServerRunner:
         finally:
             with self._lock:
                 self._active_processes.pop(task.id, None)
+                self._active_turns.pop(task.id, None)
                 self._cancelled_tasks.discard(task.id)
             _cleanup_subprocess(process)
 
@@ -479,6 +578,7 @@ class ClaudeCodeRunner:
         self._timeout_seconds = timeout_seconds
         self._lock = RLock()
         self._active_processes: dict[str, subprocess.Popen[str]] = {}
+        self._active_sessions: dict[str, _ClaudeActiveSession] = {}
         self._cancelled_tasks: set[str] = set()
 
     def is_ready(self) -> tuple[bool, str]:
@@ -518,6 +618,27 @@ class ClaudeCodeRunner:
         process.kill()
         return True
 
+    def steer(self, task: Task, prompt: str) -> tuple[bool, str]:
+        instruction = prompt.strip()
+        if not instruction:
+            return False, "Steer prompt cannot be empty."
+        with self._lock:
+            active = self._active_sessions.get(task.id)
+        if active is None:
+            return False, "Claude Code steer is only available while the task is actively running."
+        try:
+            self._send_claude_control_request(active, {"subtype": "interrupt"})
+            with active.io_lock:
+                active.ignored_result_count += 1
+            self._send_claude_user_message(
+                active,
+                instruction,
+                session_id=active.session_id or task.backend_session_id or "default",
+            )
+        except RuntimeError as exc:
+            return False, str(exc) or "Claude Code steer failed."
+        return True, "Steer sent to Claude Code."
+
     def resolve_execution_context(self, task: Task) -> tuple[str | None, str | None, str | None]:
         permission_mode = _string_or_none(task.effective_backend_config.get("permission_mode"))
         return (
@@ -541,10 +662,11 @@ class ClaudeCodeRunner:
         resolved_permission_mode = _string_or_none(task.effective_backend_config.get("permission_mode")) or self._permission_mode
         command = [
             self._command,
-            "-p",
             "--verbose",
             "--output-format=stream-json",
             "--include-partial-messages",
+            "--input-format",
+            "stream-json",
         ]
         if resolved_model:
             command.extend(["--model", resolved_model])
@@ -552,7 +674,6 @@ class ClaudeCodeRunner:
             command.extend(["--permission-mode", resolved_permission_mode])
         if task.backend_session_id:
             command.extend(["--resume", task.backend_session_id])
-        command.append(prompt)
         env = os.environ.copy()
         if resolved_permission_mode == "bypassPermissions":
             env["IS_SANDBOX"] = "1"
@@ -561,6 +682,8 @@ class ClaudeCodeRunner:
         backend_session_id = task.backend_session_id
         stderr_lines: list[str] = []
         final_text: str | None = None
+        streamed_text = ""
+        active_session: _ClaudeActiveSession | None = None
         try:
             process = subprocess.Popen(
                 command,
@@ -577,9 +700,30 @@ class ClaudeCodeRunner:
             deadline = monotonic() + self._timeout_seconds
             stdout = process.stdout
             stderr = process.stderr
-            if stdout is None or stderr is None:
+            stdin = process.stdin
+            if stdout is None or stderr is None or stdin is None:
                 yield AgentRunUpdate(kind="failed", message="Claude Code pipes are not available.")
                 return
+            active_session = _ClaudeActiveSession(
+                process=process,
+                stdin=stdin,
+                session_id=backend_session_id,
+            )
+            self._initialize_claude_session(
+                active_session,
+                stdout,
+                stderr,
+                stderr_lines,
+                {"subtype": "initialize", "hooks": None},
+                timeout=min(max(self._timeout_seconds, 60), 120),
+            )
+            self._send_claude_user_message(
+                active_session,
+                prompt,
+                session_id=backend_session_id or "default",
+            )
+            with self._lock:
+                self._active_sessions[task.id] = active_session
 
             while True:
                 if self._consume_cancelled(task.id):
@@ -609,8 +753,15 @@ class ClaudeCodeRunner:
                     if event is None:
                         continue
                     event_type = _optional_string(event.get("type")) or ""
+                    if event_type == "control_response":
+                        self._handle_claude_control_response(active_session, event)
+                        continue
+                    if event_type == "control_request":
+                        self._reject_claude_control_request(active_session, event)
+                        continue
                     if event_type == "system" and event.get("subtype") == "init":
                         backend_session_id = _optional_string(event.get("session_id")) or backend_session_id
+                        active_session.session_id = backend_session_id
                         if backend_session_id:
                             yield AgentRunUpdate(
                                 kind="progress",
@@ -620,11 +771,14 @@ class ClaudeCodeRunner:
                         continue
                     if event_type == "stream_event":
                         stream_event = event.get("event")
+                        backend_session_id = _optional_string(event.get("session_id")) or backend_session_id
+                        active_session.session_id = backend_session_id
                         if isinstance(stream_event, dict) and stream_event.get("type") == "content_block_delta":
                             delta = stream_event.get("delta")
                             if isinstance(delta, dict) and delta.get("type") == "text_delta":
                                 text = _string_or_none(delta.get("text"))
                                 if text:
+                                    streamed_text += text
                                     yield AgentRunUpdate(
                                         kind="progress",
                                         message="Claude Code output updated.",
@@ -637,11 +791,24 @@ class ClaudeCodeRunner:
                         if isinstance(message, dict):
                             final_text = _extract_claude_message_text(message) or final_text
                         backend_session_id = _optional_string(event.get("session_id")) or backend_session_id
+                        active_session.session_id = backend_session_id
                         continue
                     if event_type == "result":
                         backend_session_id = _optional_string(event.get("session_id")) or backend_session_id
+                        active_session.session_id = backend_session_id
+                        with active_session.io_lock:
+                            ignored_result = active_session.ignored_result_count > 0
+                            if ignored_result:
+                                active_session.ignored_result_count -= 1
+                        if ignored_result:
+                            continue
                         if event.get("subtype") == "success":
-                            raw_result = _optional_string(event.get("result")) or final_text or "Claude Code completed without a final response body."
+                            raw_result = (
+                                streamed_text
+                                or _optional_string(event.get("result"))
+                                or final_text
+                                or "Claude Code completed without a final response body."
+                            )
                             yield AgentRunUpdate(
                                 kind="completed",
                                 message="Task completed by the claude_code runner.",
@@ -669,7 +836,7 @@ class ClaudeCodeRunner:
             yield AgentRunUpdate(
                 kind="completed",
                 message="Task completed by the claude_code runner.",
-                raw_result=final_text or "Claude Code completed without a final response body.",
+                raw_result=streamed_text or final_text or "Claude Code completed without a final response body.",
                 backend_session_id=backend_session_id,
             )
         except OSError as exc:
@@ -681,6 +848,7 @@ class ClaudeCodeRunner:
         finally:
             with self._lock:
                 self._active_processes.pop(task.id, None)
+                self._active_sessions.pop(task.id, None)
                 self._cancelled_tasks.discard(task.id)
             _cleanup_subprocess(process)
 
@@ -690,6 +858,167 @@ class ClaudeCodeRunner:
                 return False
             self._cancelled_tasks.discard(task_id)
             return True
+
+    def _send_claude_control_request(
+        self,
+        active: _ClaudeActiveSession,
+        request: dict[str, object],
+        *,
+        timeout: float = 10.0,
+    ) -> dict[str, object]:
+        with active.io_lock:
+            active.next_request_id += 1
+            request_id = f"req_{active.next_request_id}_{os.urandom(4).hex()}"
+            pending = _ClaudePendingControl()
+            active.pending_controls[request_id] = pending
+            self._write_claude_json_line(
+                active,
+                {
+                    "type": "control_request",
+                    "request_id": request_id,
+                    "request": request,
+                },
+            )
+        if not pending.event.wait(timeout):
+            with active.io_lock:
+                active.pending_controls.pop(request_id, None)
+            raise RuntimeError(f"Claude Code control request timed out: {request.get('subtype')}")
+        with active.io_lock:
+            active.pending_controls.pop(request_id, None)
+        if pending.error:
+            raise RuntimeError(pending.error)
+        return pending.response or {}
+
+    def _initialize_claude_session(
+        self,
+        active: _ClaudeActiveSession,
+        stdout,
+        stderr,
+        stderr_lines: list[str],
+        request: dict[str, object],
+        *,
+        timeout: float,
+    ) -> dict[str, object]:
+        with active.io_lock:
+            active.next_request_id += 1
+            request_id = f"req_{active.next_request_id}_{os.urandom(4).hex()}"
+            pending = _ClaudePendingControl()
+            active.pending_controls[request_id] = pending
+            self._write_claude_json_line(
+                active,
+                {
+                    "type": "control_request",
+                    "request_id": request_id,
+                    "request": request,
+                },
+            )
+        deadline = monotonic() + timeout
+        while True:
+            if pending.event.is_set():
+                break
+            remaining = max(0.0, deadline - monotonic())
+            if remaining == 0.0:
+                with active.io_lock:
+                    active.pending_controls.pop(request_id, None)
+                raise RuntimeError(f"Claude Code control request timed out: {request.get('subtype')}")
+            ready, _, _ = select.select([stdout, stderr], [], [], min(0.25, remaining))
+            if not ready:
+                continue
+            for stream in ready:
+                line = stream.readline()
+                if not line:
+                    continue
+                if stream is stderr:
+                    stderr_lines.append(line)
+                    continue
+                event = _parse_json_event(line)
+                if event is None:
+                    continue
+                event_type = _optional_string(event.get("type")) or ""
+                if event_type == "control_response":
+                    self._handle_claude_control_response(active, event)
+                elif event_type == "control_request":
+                    self._reject_claude_control_request(active, event)
+        with active.io_lock:
+            active.pending_controls.pop(request_id, None)
+        if pending.error:
+            raise RuntimeError(pending.error)
+        return pending.response or {}
+
+    def _send_claude_user_message(
+        self,
+        active: _ClaudeActiveSession,
+        prompt: str,
+        *,
+        session_id: str,
+    ) -> None:
+        self._write_claude_json_line(
+            active,
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": prompt,
+                },
+                "parent_tool_use_id": None,
+                "session_id": session_id,
+            },
+        )
+
+    def _write_claude_json_line(self, active: _ClaudeActiveSession, payload: dict[str, object]) -> None:
+        with active.io_lock:
+            stdin = active.stdin
+            if not hasattr(stdin, "write"):
+                raise RuntimeError("Claude Code stdin is not writable.")
+            try:
+                stdin.write(json.dumps(payload) + "\n")
+                flush = getattr(stdin, "flush", None)
+                if callable(flush):
+                    flush()
+            except Exception as exc:  # pragma: no cover - defensive for pipe edge cases
+                raise RuntimeError(f"Failed to write to Claude Code CLI: {exc}") from exc
+
+    def _handle_claude_control_response(
+        self,
+        active: _ClaudeActiveSession,
+        event: dict[str, object],
+    ) -> None:
+        response = event.get("response")
+        if not isinstance(response, dict):
+            return
+        request_id = _optional_string(response.get("request_id"))
+        if not request_id:
+            return
+        with active.io_lock:
+            pending = active.pending_controls.get(request_id)
+        if pending is None:
+            return
+        if response.get("subtype") == "error":
+            pending.error = _optional_string(response.get("error")) or "Claude Code control request failed."
+        else:
+            payload = response.get("response")
+            pending.response = payload if isinstance(payload, dict) else {}
+        pending.event.set()
+
+    def _reject_claude_control_request(
+        self,
+        active: _ClaudeActiveSession,
+        event: dict[str, object],
+    ) -> None:
+        request_id = _optional_string(event.get("request_id"))
+        if not request_id:
+            return
+        self._write_claude_json_line(
+            active,
+            {
+                "type": "control_response",
+                "response": {
+                    "subtype": "error",
+                    "request_id": request_id,
+                    "error": "PoCo does not support Claude Code control callbacks in streaming mode.",
+                },
+            },
+        )
 
 
 class CursorAgentRunner:
@@ -751,6 +1080,9 @@ class CursorAgentRunner:
             self._cancelled_tasks.add(task_id)
         process.kill()
         return True
+
+    def steer(self, task: Task, prompt: str) -> tuple[bool, str]:
+        return False, f"Steer is not supported by the {self.name} runner."
 
     def resolve_execution_context(self, task: Task) -> tuple[str | None, str | None, str | None]:
         return (
@@ -985,6 +1317,9 @@ class CocoRunner:
             self._cancelled_tasks.add(task_id)
         process.kill()
         return True
+
+    def steer(self, task: Task, prompt: str) -> tuple[bool, str]:
+        return False, f"Steer is not supported by the {self.name} runner."
 
     def resolve_execution_context(self, task: Task) -> tuple[str | None, str | None, str | None]:
         return (
@@ -1261,6 +1596,9 @@ class CodexCliRunner:
             self._cancelled_tasks.add(task_id)
         process.kill()
         return True
+
+    def steer(self, task: Task, prompt: str) -> tuple[bool, str]:
+        return False, f"Steer is not supported by the {self.name} runner."
 
     def resolve_execution_context(self, task: Task) -> tuple[str | None, str | None, str | None]:
         return (
@@ -2110,6 +2448,13 @@ def _extract_thread_id(result: dict[str, object]) -> str | None:
     if not isinstance(thread, dict):
         return None
     return _optional_string(thread.get("id"))
+
+
+def _extract_turn_id(result: dict[str, object]) -> str | None:
+    turn = result.get("turn")
+    if isinstance(turn, dict):
+        return _optional_string(turn.get("id"))
+    return _optional_string(result.get("turnId"))
 
 
 def _turn_error_message(turn: dict[str, object]) -> str | None:

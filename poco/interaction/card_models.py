@@ -40,6 +40,8 @@ WRITE_INTENT_KEYS = {
     "workspace.apply_agent",
     "task.submit",
     "task.stop",
+    "task.continue",
+    "task.steer",
     "task.approve",
     "task.reject",
 }

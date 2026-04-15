@@ -775,6 +775,79 @@ class FeishuClientTest(unittest.TestCase):
         self.assertEqual(card["body"]["elements"][1]["behaviors"][0]["value"]["intent_key"], "task.stop")
         self.assertEqual(len(card["body"]["elements"]), 2)
 
+    def test_task_status_card_shows_inline_steer_form_for_running_codex_task(self) -> None:
+        task = {
+            "id": "task_run_steer",
+            "project_id": "proj_1",
+            "agent_backend": "codex",
+            "backend_session_id": "thread_123",
+            "effective_workdir": "/srv/poco/api",
+            "prompt": "build project",
+            "status": "running",
+            "awaiting_confirmation_reason": None,
+            "live_output": "Step 1\nStep 2",
+        }
+        card = FeishuCardRenderer().render(
+            build_render_instruction(
+                IntentDispatchResult(
+                    status=DispatchStatus.OK,
+                    intent_key="task.status",
+                    resource_refs=ResourceRefs(project_id="proj_1", task_id="task_run_steer"),
+                    view_model=ViewModel(
+                        "task_status",
+                        {
+                            "task": task,
+                        },
+                    ),
+                    refresh_mode=RefreshMode.REPLACE_CURRENT,
+                ),
+                surface=Surface.GROUP,
+            )
+        )
+
+        steer_form = card["body"]["elements"][1]
+        steer_button = steer_form["elements"][1]["columns"][0]["elements"][0]
+        stop_button = steer_form["elements"][1]["columns"][1]["elements"][0]
+        self.assertEqual(steer_form["tag"], "form")
+        self.assertEqual(steer_form["elements"][0]["name"], "steer_prompt")
+        self.assertEqual(steer_button["behaviors"][0]["value"]["intent_key"], "task.steer")
+        self.assertEqual(stop_button["behaviors"][0]["value"]["intent_key"], "task.stop")
+
+    def test_task_status_card_shows_inline_steer_form_for_running_claude_task(self) -> None:
+        task = {
+            "id": "task_run_steer_claude",
+            "project_id": "proj_1",
+            "agent_backend": "claude_code",
+            "backend_session_id": "session_123",
+            "effective_workdir": "/srv/poco/api",
+            "prompt": "build project",
+            "status": "running",
+            "awaiting_confirmation_reason": None,
+            "live_output": "Step 1\nStep 2",
+        }
+        card = FeishuCardRenderer().render(
+            build_render_instruction(
+                IntentDispatchResult(
+                    status=DispatchStatus.OK,
+                    intent_key="task.status",
+                    resource_refs=ResourceRefs(project_id="proj_1", task_id="task_run_steer_claude"),
+                    view_model=ViewModel(
+                        "task_status",
+                        {
+                            "task": task,
+                        },
+                    ),
+                    refresh_mode=RefreshMode.REPLACE_CURRENT,
+                ),
+                surface=Surface.GROUP,
+            )
+        )
+
+        steer_form = card["body"]["elements"][1]
+        steer_button = steer_form["elements"][1]["columns"][0]["elements"][0]
+        self.assertEqual(steer_form["tag"], "form")
+        self.assertEqual(steer_button["behaviors"][0]["value"]["intent_key"], "task.steer")
+
     def test_task_status_card_preserves_multiline_result_formatting_for_coco_code(self) -> None:
         task = {
             "id": "task_multiline_1",
@@ -948,6 +1021,40 @@ class FeishuClientTest(unittest.TestCase):
         self.assertEqual(card["header"]["template"], "grey")
         self.assertEqual(card["body"]["elements"][0]["tag"], "markdown")
         self.assertEqual(card["body"]["elements"][1]["tag"], "column_set")
+
+    def test_task_status_card_shows_continue_for_failed_task_with_backend_session(self) -> None:
+        task = {
+            "id": "task_fail_1",
+            "project_id": "proj_1",
+            "agent_backend": "codex",
+            "effective_workdir": "/srv/poco/api",
+            "backend_session_id": "thread_123",
+            "prompt": "write a long report",
+            "status": "failed",
+            "awaiting_confirmation_reason": None,
+            "raw_result": "partial answer",
+        }
+        card = FeishuCardRenderer().render(
+            build_render_instruction(
+                IntentDispatchResult(
+                    status=DispatchStatus.OK,
+                    intent_key="task.status",
+                    resource_refs=ResourceRefs(project_id="proj_1", task_id="task_fail_1"),
+                    view_model=ViewModel(
+                        "task_status",
+                        {
+                            "task": task,
+                        },
+                    ),
+                    refresh_mode=RefreshMode.REPLACE_CURRENT,
+                ),
+                surface=Surface.GROUP,
+            )
+        )
+
+        continue_button = card["body"]["elements"][1]
+        self.assertEqual(continue_button["tag"], "button")
+        self.assertEqual(continue_button["behaviors"][0]["value"]["intent_key"], "task.continue")
 
     def test_task_status_card_shows_queue_position_and_blocking_task(self) -> None:
         task = {

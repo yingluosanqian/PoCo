@@ -177,6 +177,8 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
             "task.open": task_intent_handler,
             "task.submit": task_intent_handler,
             "task.stop": task_intent_handler,
+            "task.continue": task_intent_handler,
+            "task.steer": task_intent_handler,
             "task.approve": task_intent_handler,
             "task.reject": task_intent_handler,
         }

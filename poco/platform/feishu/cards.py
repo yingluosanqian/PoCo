@@ -973,6 +973,18 @@ def _render_task_status(
     workdir = task.get("effective_workdir") or "no working dir"
     live_output = task.get("live_output") or ""
     raw_result = task.get("raw_result") or task.get("result_summary") or "No result yet."
+    can_steer = bool(
+        task.get("project_id")
+        and task.get("backend_session_id")
+        and status == "running"
+        and agent_backend in {"codex", "claude_code"}
+    )
+    can_continue = bool(
+        task.get("project_id")
+        and task.get("backend_session_id")
+        and status in {"failed", "cancelled"}
+        and raw_result
+    )
     elements: list[dict[str, Any]] = []
 
     awaiting = task.get("awaiting_confirmation_reason")
@@ -1008,6 +1020,52 @@ def _render_task_status(
             elements.append(_markdown(_format_task_output_for_backend(live_output, backend=agent_backend)))
         else:
             elements.append(_markdown("Waiting for agent output..."))
+        if can_steer:
+            elements.append(
+                {
+                    "tag": "form",
+                    "name": f"task_steer_form_{task['id']}",
+                    "elements": [
+                        _input(
+                            name="steer_prompt",
+                            placeholder="Steer the running agent without restarting the task",
+                        ),
+                        _two_up(
+                            {
+                                "tag": "button",
+                                "text": {"tag": "plain_text", "content": "Steer"},
+                                "type": "primary",
+                                "width": "default",
+                                "size": "medium",
+                                "name": f"steer_task_{task['id']}",
+                                "form_action_type": "submit",
+                                "behaviors": [
+                                    {
+                                        "type": "callback",
+                                        "value": {
+                                            "intent_key": "task.steer",
+                                            "surface": surface,
+                                            "project_id": task["project_id"],
+                                            "task_id": task["id"],
+                                        },
+                                    }
+                                ],
+                                "margin": "0px 0px 12px 0px",
+                            },
+                            _button(
+                                label="Stop",
+                                intent_value={
+                                    "intent_key": "task.stop",
+                                    "surface": surface,
+                                    "project_id": task["project_id"],
+                                    "task_id": task["id"],
+                                },
+                                name=f"stop_task_{task['id']}",
+                            ),
+                        ),
+                    ],
+                }
+            )
     elif status == "queued":
         details: list[str] = []
         if queue_position:
@@ -1022,7 +1080,7 @@ def _render_task_status(
 
     if task.get("project_id"):
         config_locked = status in {"created", "queued", "running", "waiting_for_confirmation"}
-        if status in {"created", "running"}:
+        if status in {"created", "running"} and not can_steer:
             elements.append(
                 _button(
                     label="Stop",
@@ -1033,6 +1091,20 @@ def _render_task_status(
                         "task_id": task["id"],
                     },
                     name=f"stop_task_{task['id']}",
+                )
+            )
+        if can_continue:
+            elements.append(
+                _button(
+                    label="Continue",
+                    intent_value={
+                        "intent_key": "task.continue",
+                        "surface": surface,
+                        "project_id": task["project_id"],
+                        "task_id": task["id"],
+                    },
+                    style="primary",
+                    name=f"continue_task_{task['id']}",
                 )
             )
         if not config_locked:
@@ -1559,4 +1631,3 @@ def _task_status_label(status: str) -> str:
     if status == "created":
         return "Created"
     return "Unknown"
-

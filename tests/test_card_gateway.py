@@ -150,6 +150,8 @@ class FeishuCardGatewayTest(unittest.TestCase):
                     "task.open": self.task_handler,
                     "task.submit": self.task_handler,
                     "task.stop": self.task_handler,
+                    "task.continue": self.task_handler,
+                    "task.steer": self.task_handler,
                     "task.approve": self.task_handler,
                     "task.reject": self.task_handler,
                 }
@@ -904,6 +906,112 @@ class FeishuCardGatewayTest(unittest.TestCase):
         self.assertEqual(response["instruction"]["template_key"], "task_status")
         updated = self.task_controller.get_task(task.id)
         self.assertEqual(updated.status.value, "cancelled")
+
+    def test_task_continue_creates_followup_task_and_dispatches_start(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+            group_chat_id="oc_group_proj_1",
+        )
+        session = self.session_controller.create_session(
+            project_id=project.id,
+            created_by="ou_demo_user",
+        )
+        session.backend_session_id = "thread_123"
+        self.session_controller._store.save(session)  # type: ignore[attr-defined]
+        task = self.task_controller.create_task(
+            requester_id="ou_demo_user",
+            prompt="write a long report",
+            source="feishu_card",
+            project_id=project.id,
+            session_id=session.id,
+            effective_workdir="/srv/poco/api",
+            reply_receive_id="oc_group_proj_1",
+            reply_receive_id_type="chat_id",
+        )
+        task.set_result("partial answer")
+        task.set_status(task.status.FAILED)
+        self.task_controller._store.save(task)  # type: ignore[attr-defined]
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_task_continue_1"},
+                "action": {
+                    "value": {
+                        "intent_key": "task.continue",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "task_id": task.id,
+                        "request_id": "req_task_continue_1",
+                    },
+                },
+            }
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        self.assertEqual(response["instruction"]["template_key"], "task_status")
+        tasks = self.task_controller.list_tasks_for_project(project.id)
+        self.assertEqual(len(tasks), 2)
+        followup = next(candidate for candidate in tasks if candidate.id != task.id)
+        self.assertEqual(followup.session_id, session.id)
+        self.assertEqual(followup.backend_session_id, "thread_123")
+        self.assertEqual(followup.notification_message_id, "om_task_continue_1")
+        self.assertIn("Continue from exactly where you stopped.", followup.prompt)
+        self.assertEqual(self.task_dispatcher.actions[-1], ("start", followup.id))
+
+    def test_task_steer_updates_running_task(self) -> None:
+        class SteerRunner(StubAgentRunner):
+            def steer(self, task, prompt):
+                self.last = (task.id, prompt)
+                return True, "Steer sent to Codex."
+
+        self.task_controller._runner = SteerRunner()  # type: ignore[attr-defined]
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+            group_chat_id="oc_group_proj_1",
+        )
+        task = self.task_controller.create_task(
+            requester_id="ou_demo_user",
+            prompt="run the patch",
+            source="feishu_card",
+            agent_backend="codex",
+            project_id=project.id,
+            effective_workdir="/srv/poco/api",
+            backend_session_id="thread_123",
+            reply_receive_id="oc_group_proj_1",
+            reply_receive_id_type="chat_id",
+        )
+        task.set_status(task.status.RUNNING)
+        self.task_controller._store.save(task)  # type: ignore[attr-defined]
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_task_steer_1"},
+                "action": {
+                    "value": {
+                        "intent_key": "task.steer",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "task_id": task.id,
+                        "request_id": "req_task_steer_1",
+                    },
+                    "form_value": {
+                        "steer_prompt": "Focus on the test failure first.",
+                    },
+                },
+            }
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        self.assertEqual(response["instruction"]["template_key"], "task_status")
+        updated = self.task_controller.get_task(task.id)
+        self.assertEqual(updated.status.value, "running")
+        self.assertEqual(updated.events[-1].kind, "task_steered")
 
     def test_workspace_enter_path_card_opens_from_group(self) -> None:
         project = self.project_controller.create_project(

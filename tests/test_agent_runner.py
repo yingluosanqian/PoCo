@@ -339,6 +339,40 @@ class CodexAppServerRunnerTest(unittest.TestCase):
             self.assertEqual(first_call.args[0], "thread/resume")
             self.assertEqual(first_call.args[1]["threadId"], "thread_existing")
 
+    def test_app_server_runner_steers_active_turn(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = CodexAppServerRunner(command="codex", workdir=tmpdir)
+            task = Task(
+                id="task_steer",
+                requester_id="ou_demo",
+                prompt="stream output",
+                source="feishu",
+                status=TaskStatus.RUNNING,
+                agent_backend="codex",
+                backend_session_id="thread_123",
+            )
+            fake_session = MagicMock()
+            fake_session.request.return_value = {"turnId": "turn_456"}
+            runner._active_turns[task.id] = type("ActiveTurn", (), {  # type: ignore[attr-defined]
+                "session": fake_session,
+                "thread_id": "thread_123",
+                "turn_id": "turn_123",
+                "io_lock": __import__("threading").RLock(),
+            })()
+
+            success, detail = runner.steer(task, "Please focus on the failing test.")
+
+            self.assertTrue(success)
+            self.assertEqual(detail, "Steer sent to Codex.")
+            fake_session.request.assert_called_once_with(
+                "turn/steer",
+                {
+                    "threadId": "thread_123",
+                    "expectedTurnId": "turn_123",
+                    "input": [{"type": "text", "text": "Please focus on the failing test."}],
+                },
+            )
+
 
 class ClaudeCodeRunnerTest(unittest.TestCase):
     def test_claude_runner_streams_deltas_and_completes(self) -> None:
@@ -358,9 +392,10 @@ class ClaudeCodeRunnerTest(unittest.TestCase):
                     self.exhausted = False
                     self._lines = iter(
                         [
+                            '{"type":"control_response","response":{"subtype":"success","request_id":"req_1_deadbeef","response":{"ok":true}}}\n',
                             '{"type":"system","subtype":"init","session_id":"session_123"}\n',
-                            '{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Hello"}}}\n',
-                            '{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":" world"}}}\n',
+                            '{"type":"stream_event","session_id":"session_123","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Hello"}}}\n',
+                            '{"type":"stream_event","session_id":"session_123","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":" world"}}}\n',
                             '{"type":"result","subtype":"success","result":"Hello world","session_id":"session_123"}\n',
                         ]
                     )
@@ -377,8 +412,23 @@ class ClaudeCodeRunnerTest(unittest.TestCase):
                 def readline(self) -> str:
                     return ""
 
+            class FakeStdin:
+                def __init__(self) -> None:
+                    self.writes: list[str] = []
+
+                def write(self, text: str) -> int:
+                    self.writes.append(text)
+                    return len(text)
+
+                def flush(self) -> None:
+                    return None
+
+                def close(self) -> None:
+                    return None
+
             class FakePopen:
                 def __init__(self) -> None:
+                    self.stdin = FakeStdin()
                     self.stdout = FakeStdout()
                     self.stderr = FakeStderr()
                     self.returncode = 0
@@ -399,6 +449,7 @@ class ClaudeCodeRunnerTest(unittest.TestCase):
                     "poco.agent.runner.select.select",
                     side_effect=lambda readers, *_args: ([reader for reader in readers if not getattr(reader, "exhausted", True)], [], []),
                 ),
+                patch("poco.agent.runner.os.urandom", return_value=b"\xde\xad\xbe\xef"),
             ):
                 updates = list(runner.start(task))
 
@@ -428,6 +479,7 @@ class ClaudeCodeRunnerTest(unittest.TestCase):
                     self.exhausted = False
                     self._lines = iter(
                         [
+                            '{"type":"control_response","response":{"subtype":"success","request_id":"req_1_deadbeef","response":{"ok":true}}}\n',
                             '{"type":"result","subtype":"success","result":"continued","session_id":"session_existing"}\n',
                         ]
                     )
@@ -444,10 +496,21 @@ class ClaudeCodeRunnerTest(unittest.TestCase):
                 def readline(self) -> str:
                     return ""
 
+            class FakeStdin:
+                def write(self, _text: str) -> int:
+                    return 0
+
+                def flush(self) -> None:
+                    return None
+
+                def close(self) -> None:
+                    return None
+
             class FakePopen:
                 def __init__(self, command, **kwargs):  # type: ignore[no-untyped-def]
                     captured["command"] = command
                     captured["cwd"] = kwargs.get("cwd")
+                    self.stdin = FakeStdin()
                     self.stdout = FakeStdout()
                     self.stderr = FakeStderr()
                     self.returncode = 0
@@ -465,12 +528,14 @@ class ClaudeCodeRunnerTest(unittest.TestCase):
                     "poco.agent.runner.select.select",
                     side_effect=lambda readers, *_args: ([reader for reader in readers if not getattr(reader, "exhausted", True)], [], []),
                 ),
+                patch("poco.agent.runner.os.urandom", return_value=b"\xde\xad\xbe\xef"),
             ):
                 updates = list(runner.start(task))
 
             self.assertEqual(updates[-1].backend_session_id, "session_existing")
             self.assertIn("--resume", captured["command"])
             self.assertIn("session_existing", captured["command"])
+            self.assertIn("--input-format", captured["command"])
 
     def test_claude_runner_sets_is_sandbox_for_bypass_permissions(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -489,12 +554,18 @@ class ClaudeCodeRunnerTest(unittest.TestCase):
             class FakeStdout:
                 def __init__(self) -> None:
                     self.exhausted = False
+                    self._lines = iter(
+                        [
+                            '{"type":"control_response","response":{"subtype":"success","request_id":"req_1_deadbeef","response":{"ok":true}}}\n',
+                            '{"type":"result","subtype":"success","result":"done","session_id":"session_bypass"}\n',
+                        ]
+                    )
 
                 def readline(self) -> str:
-                    if self.exhausted:
-                        return ""
-                    self.exhausted = True
-                    return '{"type":"result","subtype":"success","result":"done","session_id":"session_bypass"}\n'
+                    line = next(self._lines, "")
+                    if not line:
+                        self.exhausted = True
+                    return line
 
             class FakeStderr:
                 exhausted = True
@@ -502,10 +573,21 @@ class ClaudeCodeRunnerTest(unittest.TestCase):
                 def readline(self) -> str:
                     return ""
 
+            class FakeStdin:
+                def write(self, _text: str) -> int:
+                    return 0
+
+                def flush(self) -> None:
+                    return None
+
+                def close(self) -> None:
+                    return None
+
             class FakePopen:
                 def __init__(self, command, **kwargs):  # type: ignore[no-untyped-def]
                     captured["command"] = command
                     captured["env"] = kwargs.get("env")
+                    self.stdin = FakeStdin()
                     self.stdout = FakeStdout()
                     self.stderr = FakeStderr()
                     self.returncode = 0
@@ -523,6 +605,7 @@ class ClaudeCodeRunnerTest(unittest.TestCase):
                     "poco.agent.runner.select.select",
                     side_effect=lambda readers, *_args: ([reader for reader in readers if not getattr(reader, "exhausted", True)], [], []),
                 ),
+                patch("poco.agent.runner.os.urandom", return_value=b"\xde\xad\xbe\xef"),
             ):
                 updates = list(runner.start(task))
 
@@ -532,6 +615,51 @@ class ClaudeCodeRunnerTest(unittest.TestCase):
             env = captured["env"]
             self.assertIsInstance(env, dict)
             self.assertEqual(env["IS_SANDBOX"], "1")
+
+    def test_claude_runner_steers_active_session(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = ClaudeCodeRunner(command="claude", workdir=tmpdir, model="sonnet")
+            task = Task(
+                id="claude_task_steer",
+                requester_id="ou_demo",
+                prompt="stream output",
+                source="feishu",
+                status=TaskStatus.RUNNING,
+                agent_backend="claude_code",
+                backend_session_id="session_123",
+            )
+
+            class FakeStdin:
+                def __init__(self) -> None:
+                    self.writes: list[str] = []
+
+                def write(self, text: str) -> int:
+                    self.writes.append(text)
+                    return len(text)
+
+                def flush(self) -> None:
+                    return None
+
+            fake_stdin = FakeStdin()
+            runner._active_sessions[task.id] = type("ActiveSession", (), {  # type: ignore[attr-defined]
+                "process": None,
+                "stdin": fake_stdin,
+                "session_id": "session_123",
+                "io_lock": __import__("threading").RLock(),
+                "pending_controls": {},
+                "next_request_id": 0,
+                "ignored_result_count": 0,
+            })()
+
+            with patch.object(runner, "_send_claude_control_request", return_value={}):
+                success, detail = runner.steer(task, "Focus on the failing test first.")
+
+            self.assertTrue(success)
+            self.assertEqual(detail, "Steer sent to Claude Code.")
+            self.assertEqual(len(fake_stdin.writes), 1)
+            self.assertIn('"type": "user"', fake_stdin.writes[0])
+            self.assertIn('"session_id": "session_123"', fake_stdin.writes[0])
+            self.assertIn("Focus on the failing test first.", fake_stdin.writes[0])
 
 
 class CursorAgentRunnerTest(unittest.TestCase):
