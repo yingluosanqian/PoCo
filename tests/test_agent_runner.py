@@ -291,7 +291,7 @@ class CodexAppServerRunnerTest(unittest.TestCase):
 
             with patch("poco.agent.runner.shutil.which", return_value="/opt/homebrew/bin/codex"):
                 with patch("poco.agent.runner.subprocess.Popen", return_value=FakePopen()):
-                    with patch("poco.agent.runner._CodexAppServerSession", return_value=fake_session):
+                    with patch("poco.agent.codex_app_server._CodexAppServerSession", return_value=fake_session):
                         updates = list(runner.start(task))
 
             self.assertEqual(updates[1].kind, "progress")
@@ -366,7 +366,7 @@ class CodexAppServerRunnerTest(unittest.TestCase):
 
             with patch("poco.agent.runner.shutil.which", return_value="/opt/homebrew/bin/codex"):
                 with patch("poco.agent.runner.subprocess.Popen", return_value=FakePopen()):
-                    with patch("poco.agent.runner._CodexAppServerSession", return_value=fake_session):
+                    with patch("poco.agent.codex_app_server._CodexAppServerSession", return_value=fake_session):
                         updates = list(runner.start(task))
 
             self.assertEqual(updates[-1].kind, "failed")
@@ -415,7 +415,7 @@ class CodexAppServerRunnerTest(unittest.TestCase):
 
             with patch("poco.agent.runner.shutil.which", return_value="/opt/homebrew/bin/codex"):
                 with patch("poco.agent.runner.subprocess.Popen", return_value=FakePopen()):
-                    with patch("poco.agent.runner._CodexAppServerSession", return_value=fake_session):
+                    with patch("poco.agent.codex_app_server._CodexAppServerSession", return_value=fake_session):
                         updates = list(runner.start(task))
 
             self.assertEqual(updates[-1].kind, "completed")
@@ -471,7 +471,7 @@ class CodexAppServerRunnerTest(unittest.TestCase):
 
             with patch("poco.agent.runner.shutil.which", return_value="/opt/homebrew/bin/codex"):
                 with patch("poco.agent.runner.subprocess.Popen", return_value=FakePopen()):
-                    with patch("poco.agent.runner._CodexAppServerSession", return_value=fake_session):
+                    with patch("poco.agent.codex_app_server._CodexAppServerSession", return_value=fake_session):
                         updates = list(runner.start(task))
 
             self.assertEqual(updates[-1].kind, "completed")
@@ -537,7 +537,7 @@ class CodexAppServerRunnerTest(unittest.TestCase):
 
             with patch("poco.agent.runner.shutil.which", return_value="/opt/homebrew/bin/codex"):
                 with patch("poco.agent.runner.subprocess.Popen", return_value=FakePopen()):
-                    with patch("poco.agent.runner._CodexAppServerSession", return_value=fake_session):
+                    with patch("poco.agent.codex_app_server._CodexAppServerSession", return_value=fake_session):
                         updates = list(runner.start(task))
 
             self.assertEqual(updates[-1].kind, "completed")
@@ -600,7 +600,7 @@ class CodexAppServerRunnerTest(unittest.TestCase):
 
             with patch("poco.agent.runner.shutil.which", return_value="/opt/homebrew/bin/codex"):
                 with patch("poco.agent.runner.subprocess.Popen", return_value=FakePopen()):
-                    with patch("poco.agent.runner._CodexAppServerSession", return_value=fake_session):
+                    with patch("poco.agent.codex_app_server._CodexAppServerSession", return_value=fake_session):
                         updates = list(runner.start(task))
 
             self.assertEqual(updates[-1].kind, "completed")
@@ -668,7 +668,7 @@ class CodexAppServerRunnerTest(unittest.TestCase):
 
             with patch("poco.agent.runner.shutil.which", return_value="/opt/homebrew/bin/codex"):
                 with patch("poco.agent.runner.subprocess.Popen", return_value=FakePopen()):
-                    with patch("poco.agent.runner._CodexAppServerSession", return_value=fake_session):
+                    with patch("poco.agent.codex_app_server._CodexAppServerSession", return_value=fake_session):
                         updates = list(runner.start(task))
 
             self.assertEqual(updates[-1].kind, "failed")
@@ -757,7 +757,7 @@ class CodexAppServerRunnerTest(unittest.TestCase):
 
             with patch("poco.agent.runner.shutil.which", return_value="/opt/homebrew/bin/codex"):
                 with patch("poco.agent.runner.subprocess.Popen", return_value=FakePopen()):
-                    with patch("poco.agent.runner._CodexAppServerSession", return_value=fake_session):
+                    with patch("poco.agent.codex_app_server._CodexAppServerSession", return_value=fake_session):
                         updates = list(runner.start(task))
 
             self.assertEqual(updates[-1].kind, "completed")
@@ -836,7 +836,7 @@ class CodexAppServerRunnerTest(unittest.TestCase):
 
             with patch("poco.agent.runner.shutil.which", return_value="/opt/homebrew/bin/codex"):
                 with patch("poco.agent.runner.subprocess.Popen", return_value=FakePopen()):
-                    with patch("poco.agent.runner._CodexAppServerSession", return_value=fake_session):
+                    with patch("poco.agent.codex_app_server._CodexAppServerSession", return_value=fake_session):
                         updates = list(runner.start(task))
 
             self.assertEqual(updates[-1].kind, "completed")
@@ -899,7 +899,7 @@ class CodexAppServerRunnerTest(unittest.TestCase):
 
             with patch("poco.agent.runner.shutil.which", return_value="/opt/homebrew/bin/codex"):
                 with patch("poco.agent.runner.subprocess.Popen", return_value=FakePopen()):
-                    with patch("poco.agent.runner._CodexAppServerSession", return_value=fake_session):
+                    with patch("poco.agent.codex_app_server._CodexAppServerSession", return_value=fake_session):
                         updates = list(runner.start(task))
 
             self.assertEqual(updates[-1].kind, "failed")
@@ -956,7 +956,7 @@ class CodexAppServerRunnerTest(unittest.TestCase):
 
             with patch("poco.agent.runner.shutil.which", return_value="/opt/homebrew/bin/codex"):
                 with patch("poco.agent.runner.subprocess.Popen", return_value=FakePopen()):
-                    with patch("poco.agent.runner._CodexAppServerSession", return_value=fake_session):
+                    with patch("poco.agent.codex_app_server._CodexAppServerSession", return_value=fake_session):
                         updates = list(runner.start(task))
 
             self.assertEqual(updates[-1].kind, "failed")
@@ -1019,7 +1019,7 @@ class CodexAppServerRunnerTest(unittest.TestCase):
 
             with patch("poco.agent.runner.shutil.which", return_value="/opt/homebrew/bin/codex"):
                 with patch("poco.agent.runner.subprocess.Popen", return_value=FakePopen()):
-                    with patch("poco.agent.runner._CodexAppServerSession", return_value=fake_session):
+                    with patch("poco.agent.codex_app_server._CodexAppServerSession", return_value=fake_session):
                         updates = list(runner.start(task))
 
             self.assertEqual(updates[-1].kind, "completed")
@@ -1100,7 +1100,7 @@ class CodexAppServerRunnerTest(unittest.TestCase):
 
             with patch("poco.agent.runner.shutil.which", return_value="/opt/homebrew/bin/codex"):
                 with patch("poco.agent.runner.subprocess.Popen", return_value=FakePopen()):
-                    with patch("poco.agent.runner._CodexAppServerSession", return_value=fake_session):
+                    with patch("poco.agent.codex_app_server._CodexAppServerSession", return_value=fake_session):
                         updates = list(runner.start(task))
 
             progress_messages = [update.message for update in updates if update.kind == "progress"]
@@ -1160,7 +1160,7 @@ class CodexAppServerRunnerTest(unittest.TestCase):
 
             with patch("poco.agent.runner.shutil.which", return_value="/opt/homebrew/bin/codex"):
                 with patch("poco.agent.runner.subprocess.Popen", return_value=FakePopen()):
-                    with patch("poco.agent.runner._CodexAppServerSession", return_value=fake_session):
+                    with patch("poco.agent.codex_app_server._CodexAppServerSession", return_value=fake_session):
                         updates = list(runner.start(task))
 
             self.assertEqual(updates[-1].kind, "completed")
@@ -1263,7 +1263,7 @@ class CodexAppServerRunnerTest(unittest.TestCase):
                     "poco.agent.runner.subprocess.Popen",
                     side_effect=[FakePopen()],
                 ) as popen:
-                    with patch("poco.agent.runner._CodexAppServerSession", return_value=fake_session):
+                    with patch("poco.agent.codex_app_server._CodexAppServerSession", return_value=fake_session):
                         first_updates = list(runner.start(first_task))
                         second_updates = list(runner.start(second_task))
 
@@ -1370,7 +1370,7 @@ class CodexAppServerRunnerTest(unittest.TestCase):
                     side_effect=[FakePopen(), FakePopen()],
                 ) as popen:
                     with patch(
-                        "poco.agent.runner._CodexAppServerSession",
+                        "poco.agent.codex_app_server._CodexAppServerSession",
                         side_effect=[low_session, medium_session],
                     ):
                         low_updates = list(runner.start(first_task))
@@ -2357,7 +2357,7 @@ class CocoRunnerTest(unittest.TestCase):
             with (
                 patch("poco.agent.runner.shutil.which", return_value="/Users/bytedance/.local/bin/traecli"),
                 patch("poco.agent.runner.subprocess.Popen", return_value=fake_process),
-                patch("poco.agent.runner._TraeAcpClient", FakeSession),
+                patch("poco.agent.coco._TraeAcpClient", FakeSession),
             ):
                 updates = list(runner.start(task))
 
@@ -2452,7 +2452,7 @@ class CocoRunnerTest(unittest.TestCase):
             with (
                 patch("poco.agent.runner.shutil.which", return_value="/Users/bytedance/.local/bin/traecli"),
                 patch("poco.agent.runner.subprocess.Popen", return_value=fake_process),
-                patch("poco.agent.runner._TraeAcpClient", FakeSession),
+                patch("poco.agent.coco._TraeAcpClient", FakeSession),
             ):
                 updates = list(runner.start(task))
 
@@ -2543,7 +2543,7 @@ class CocoRunnerTest(unittest.TestCase):
             with (
                 patch("poco.agent.runner.shutil.which", return_value="/Users/bytedance/.local/bin/traecli"),
                 patch("poco.agent.runner.subprocess.Popen", return_value=fake_process),
-                patch("poco.agent.runner._TraeAcpClient", FakeSession),
+                patch("poco.agent.coco._TraeAcpClient", FakeSession),
             ):
                 updates = list(runner.start(task))
 
@@ -2612,7 +2612,7 @@ class CocoRunnerTest(unittest.TestCase):
             with (
                 patch("poco.agent.runner.shutil.which", return_value="/Users/bytedance/.local/bin/traecli"),
                 patch("poco.agent.runner.subprocess.Popen", return_value=fake_process),
-                patch("poco.agent.runner._TraeAcpClient", FakeSession),
+                patch("poco.agent.coco._TraeAcpClient", FakeSession),
             ):
                 updates = list(runner.start(task))
 
@@ -2719,7 +2719,7 @@ class CocoRunnerTest(unittest.TestCase):
             with (
                 patch("poco.agent.runner.shutil.which", return_value="/Users/bytedance/.local/bin/traecli"),
                 patch("poco.agent.runner.subprocess.Popen", return_value=fake_process),
-                patch("poco.agent.runner._TraeAcpClient", FakeSession),
+                patch("poco.agent.coco._TraeAcpClient", FakeSession),
             ):
                 updates = list(runner.start(task))
 
@@ -2785,7 +2785,7 @@ class CocoRunnerTest(unittest.TestCase):
             with (
                 patch("poco.agent.runner.shutil.which", return_value="/Users/bytedance/.local/bin/traecli"),
                 patch("poco.agent.runner.subprocess.Popen", return_value=fake_process),
-                patch("poco.agent.runner._TraeAcpClient", FakeSession),
+                patch("poco.agent.coco._TraeAcpClient", FakeSession),
             ):
                 updates = list(runner.start(task))
 
@@ -2873,7 +2873,7 @@ class CocoRunnerTest(unittest.TestCase):
             with (
                 patch("poco.agent.runner.shutil.which", return_value="/Users/bytedance/.local/bin/traecli"),
                 patch("poco.agent.runner.subprocess.Popen", return_value=fake_process) as popen,
-                patch("poco.agent.runner._TraeAcpClient", FakeSession),
+                patch("poco.agent.coco._TraeAcpClient", FakeSession),
             ):
                 first_updates = list(runner.start(first_task))
                 second_updates = list(runner.start(second_task))
