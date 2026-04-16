@@ -11,6 +11,7 @@ from poco.project.controller import ProjectController
 from poco.session.controller import SessionController
 from poco.storage.memory import InMemoryProjectStore, InMemorySessionStore, InMemoryTaskStore, InMemoryWorkspaceContextStore
 from poco.task.controller import TaskController
+from poco.task.models import TaskStatus
 from poco.agent.runner import StubAgentRunner
 from poco.workspace.controller import WorkspaceContextController
 
@@ -70,7 +71,7 @@ class NotifyFailingProjectBootstrapper(FakeProjectBootstrapper):
 
 class FakeTaskDispatcher:
     def __init__(self) -> None:
-        self.actions: list[tuple[str, str]] = []
+        self.actions: list[tuple] = []
 
     def dispatch_start(self, task_id: str) -> None:
         self.actions.append(("start", task_id))
@@ -80,6 +81,9 @@ class FakeTaskDispatcher:
 
     def dispatch_next_queued(self, project_id: str) -> None:
         self.actions.append(("next", project_id))
+
+    def notify_task(self, task) -> None:  # type: ignore[no-untyped-def]
+        self.actions.append(("notify", task.id, task.status.value))
 
 
 class FeishuCardGatewayTest(unittest.TestCase):
@@ -719,6 +723,106 @@ class FeishuCardGatewayTest(unittest.TestCase):
             response["card"]["data"]["header"]["title"]["content"],
             f"[Created] Task: {task.id} (stub, /srv/poco/api)",
         )
+
+    def test_task_submit_reconciles_stale_running_task_before_starting_new_one(self) -> None:
+        class InactiveRunner(StubAgentRunner):
+            def is_task_active(self, task) -> bool | None:  # type: ignore[no-untyped-def]
+                return False
+
+        self.task_controller = TaskController(
+            store=self.task_store,
+            runner=InactiveRunner(),
+            session_controller=self.session_controller,
+            running_reconcile_grace_seconds=0.0,
+        )
+        self.task_handler = TaskIntentHandler(
+            self.project_controller,
+            self.workspace_controller,
+            self.task_controller,
+            self.session_controller,
+            dispatcher=self.task_dispatcher,  # type: ignore[arg-type]
+        )
+        self.gateway = FeishuCardActionGateway(
+            dispatcher=CardActionDispatcher(
+                {
+                    "project.home": self.project_handler,
+                    "project.new": self.project_handler,
+                    "project.manage": self.project_handler,
+                    "project.list": self.project_handler,
+                    "project.create": self.project_handler,
+                    "project.delete": self.project_handler,
+                    "project.open": self.project_handler,
+                    "project.configure_agent": self.project_handler,
+                    "project.configure_repo": self.project_handler,
+                    "project.configure_default_dir": self.project_handler,
+                    "project.manage_dir_presets": self.project_handler,
+                    "project.add_dir_preset": self.project_handler,
+                    "project.bind_group": self.project_handler,
+                    "workspace.open": self.workspace_handler,
+                    "workspace.use_default_dir": self.workspace_handler,
+                    "workspace.choose_preset": self.workspace_handler,
+                    "workspace.apply_preset_dir": self.workspace_handler,
+                    "workspace.use_recent_dir": self.workspace_handler,
+                    "workspace.enter_path": self.workspace_handler,
+                    "workspace.enter_path_manual": self.workspace_handler,
+                    "workspace.apply_entered_path": self.workspace_handler,
+                    "workspace.choose_agent": self.workspace_handler,
+                    "workspace.apply_agent": self.workspace_handler,
+                    "task.open_composer": self.task_handler,
+                    "task.submit": self.task_handler,
+                    "task.open": self.task_handler,
+                    "task.approve": self.task_handler,
+                    "task.stop": self.task_handler,
+                    "task.continue": self.task_handler,
+                    "task.steer": self.task_handler,
+                    "task.steer_queue": self.task_handler,
+                }
+            ),
+            renderer=FeishuCardRenderer(),
+            project_controller=self.project_controller,
+        )
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+            group_chat_id="oc_group_proj_1",
+        )
+        stale = self.task_controller.create_task(
+            requester_id="ou_demo_user",
+            prompt="stale task",
+            source="feishu_card",
+            project_id=project.id,
+            effective_workdir="/srv/poco/api",
+            notification_message_id="om_old_task",
+            reply_receive_id="oc_group_proj_1",
+            reply_receive_id_type="chat_id",
+        )
+        stale.set_status(TaskStatus.RUNNING)
+        self.task_controller._store.save(stale)  # type: ignore[attr-defined]
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_task_submit_2"},
+                "action": {
+                    "value": {
+                        "intent_key": "task.submit",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "request_id": "req_task_submit_2",
+                    },
+                    "form_value": {
+                        "prompt": "new work",
+                    },
+                },
+            }
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        self.assertEqual(response["instruction"]["template_key"], "task_status")
+        stale = self.task_controller.get_task(stale.id)
+        self.assertEqual(stale.status, TaskStatus.FAILED)
+        self.assertIn(("notify", stale.id, "failed"), self.task_dispatcher.actions)
 
     def test_task_open_returns_existing_task_status_card(self) -> None:
         project = self.project_controller.create_project(

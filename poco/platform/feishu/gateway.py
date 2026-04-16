@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from poco.interaction.card_dispatcher import build_render_instruction
-from poco.interaction.card_handlers import build_task_status_result
+from poco.interaction.card_handlers import _reconcile_project_tasks, build_task_status_result
 from poco.interaction.card_models import Surface
 from poco.interaction.service import InteractionService
 from poco.platform.feishu.client import FeishuMessageClient
@@ -74,6 +74,7 @@ class FeishuGateway:
         user_id = self._extract_user_id(event)
         text = self._extract_text(event)
         target = self._resolve_reply_target(event, fallback_user_id=user_id)
+        project_id = self._resolve_project_id(event)
         self._record_inbound(
             user_id=user_id,
             text=text,
@@ -118,12 +119,18 @@ class FeishuGateway:
                 "task_id": None,
             }
 
+        _reconcile_project_tasks(
+            project_id,
+            task_controller=self._task_controller,
+            dispatcher=self._dispatcher,
+        )
+
         response = self._interaction_service.handle_text(
             user_id=user_id,
             text=text,
             source="feishu",
             message_surface=self._message_surface(event),
-            project_id=self._resolve_project_id(event),
+            project_id=project_id,
             agent_backend=self._resolve_agent_backend(event),
             effective_backend_config=self._resolve_effective_backend_config(event),
             effective_model=self._resolve_effective_model(event),

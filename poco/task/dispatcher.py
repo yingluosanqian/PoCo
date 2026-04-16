@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 import logging
 from threading import Condition
+from threading import Event
 from threading import RLock
 from threading import Thread
 
@@ -17,14 +18,19 @@ class AsyncTaskDispatcher:
         controller: TaskController,
         *,
         notifier: TaskNotifier | None = None,
+        running_reconcile_interval_seconds: float = 0.5,
     ) -> None:
         self._controller = controller
         self._notifier = notifier or NullTaskNotifier()
+        self._running_reconcile_interval_seconds = max(0.0, running_reconcile_interval_seconds)
         self._running_notify_lock = RLock()
         self._running_notify_changed = Condition(self._running_notify_lock)
         self._running_notify_latest: dict[str, Task] = {}
         self._running_notify_active: set[str] = set()
+        self._stop_event = Event()
         self._logger = logging.getLogger(__name__)
+        if self._running_reconcile_interval_seconds > 0:
+            Thread(target=self._run_reconcile_loop, daemon=True).start()
 
     def dispatch_start(self, task_id: str) -> None:
         self._launch(lambda: self._run_start(task_id))
@@ -166,3 +172,22 @@ class AsyncTaskDispatcher:
             self._notifier.notify_task(task)
         except Exception as exc:
             self._logger.warning("Task notification failed for %s: %s", task.id, exc)
+
+    def _run_reconcile_loop(self) -> None:
+        while not self._stop_event.wait(self._running_reconcile_interval_seconds):
+            self.reconcile_running_tasks_once()
+
+    def reconcile_running_tasks_once(self) -> None:
+        for task in self._controller.list_tasks():
+            if task.status != TaskStatus.RUNNING:
+                continue
+            before_status = task.status
+            before_updated_at = task.updated_at
+            reconciled = self._controller.reconcile_task_execution(task.id)
+            if (
+                reconciled.status == before_status
+                and reconciled.updated_at == before_updated_at
+            ):
+                continue
+            self._notify_if_needed(reconciled)
+            self._dispatch_next_if_possible(reconciled)

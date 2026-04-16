@@ -23,6 +23,7 @@ from poco.storage.memory import InMemoryProjectStore, InMemorySessionStore, InMe
 from poco.storage.sqlite import SqliteTaskStore
 from poco.task.controller import TaskController
 from poco.task.dispatcher import AsyncTaskDispatcher
+from poco.task.models import TaskStatus
 from poco.agent.runner import StubAgentRunner
 from poco.workspace.controller import WorkspaceContextController
 
@@ -78,7 +79,7 @@ class FakeMessageClient:
 
 class FakeDispatcher(AsyncTaskDispatcher):
     def __init__(self) -> None:
-        self.actions: list[tuple[str, str]] = []
+        self.actions: list[tuple] = []
 
     def dispatch_start(self, task_id: str) -> None:
         self.actions.append(("start", task_id))
@@ -88,6 +89,9 @@ class FakeDispatcher(AsyncTaskDispatcher):
 
     def dispatch_next_queued(self, project_id: str) -> None:
         self.actions.append(("next", project_id))
+
+    def notify_task(self, task) -> None:  # type: ignore[no-untyped-def]
+        self.actions.append(("notify", task.id, task.status.value))
 
 
 class FeishuGatewayTest(unittest.TestCase):
@@ -472,6 +476,73 @@ class FeishuGatewayTest(unittest.TestCase):
         self.assertEqual(first_task.status.value, "created")
         self.assertEqual(second_task.status.value, "queued")
         self.assertEqual(second["reply_preview"], "[card] task_status:queued")
+
+    def test_group_message_reconciles_stale_running_task_before_starting_new_one(self) -> None:
+        class InactiveRunner(StubAgentRunner):
+            def is_task_active(self, task) -> bool | None:  # type: ignore[no-untyped-def]
+                return False
+
+        controller = TaskController(
+            store=InMemoryTaskStore(),
+            runner=InactiveRunner(),
+            session_controller=self.session_controller,
+            running_reconcile_grace_seconds=0.0,
+        )
+        interaction = InteractionService(controller, session_controller=self.session_controller)
+        gateway = FeishuGateway(
+            interaction,
+            request_verifier=FeishuRequestVerifier(verification_token="verify-token"),
+            message_client=self.message_client,
+            dispatcher=self.dispatcher,
+            card_gateway=self.card_gateway,
+            task_controller=controller,
+            card_renderer=FeishuCardRenderer(),
+            debug_recorder=self.debug_recorder,
+            project_controller=self.project_controller,
+            workspace_controller=self.workspace_controller,
+        )
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+            group_chat_id="oc_demo_chat",
+        )
+        stale = controller.create_task(
+            requester_id="ou_demo_user",
+            prompt="old prompt",
+            source="feishu",
+            project_id=project.id,
+            effective_workdir="/srv/poco/api",
+            notification_message_id="om_old_task",
+            reply_receive_id="oc_demo_chat",
+            reply_receive_id_type="chat_id",
+        )
+        stale.set_status(TaskStatus.RUNNING)
+        stale.append_live_output("partial answer")
+        controller._store.save(stale)  # type: ignore[attr-defined]
+        payload = {
+            "token": "verify-token",
+            "event": {
+                "sender": {"sender_id": {"open_id": "ou_demo_user"}},
+                "message": {
+                    "chat_type": "group",
+                    "chat_id": "oc_demo_chat",
+                    "content": json.dumps({"text": "new prompt"}),
+                },
+            },
+        }
+
+        response = gateway.handle_event(
+            payload,
+            headers={},
+            raw_body=json.dumps(payload).encode("utf-8"),
+        )
+
+        self.assertTrue(response["ok"])
+        stale = controller.get_task(stale.id)
+        self.assertEqual(stale.status, TaskStatus.COMPLETED)
+        self.assertIn(("notify", stale.id, "completed"), self.dispatcher.actions)
+        self.assertIn(("start", response["task_id"]), self.dispatcher.actions)
 
     def test_plain_group_message_persists_notification_message_id_with_sqlite_store(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:

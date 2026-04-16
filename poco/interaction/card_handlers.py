@@ -567,6 +567,11 @@ class TaskIntentHandler:
         prompt = _extract_prompt(intent.payload)
         if not prompt:
             return _rejected(intent, "Task prompt cannot be empty.")
+        _reconcile_project_tasks(
+            project.id,
+            task_controller=self.task_controller,
+            dispatcher=self.dispatcher,
+        )
 
         context = self.workspace_controller.get_context(project)
         reply_receive_id, reply_receive_id_type = _resolve_task_reply_target(
@@ -1154,6 +1159,24 @@ def _get_project_or_reject(
         return project_controller.get_project(project_id)
     except ProjectNotFoundError as exc:
         return _rejected(intent, str(exc))
+
+
+def _reconcile_project_tasks(
+    project_id: str | None,
+    *,
+    task_controller: TaskController | None,
+    dispatcher: AsyncTaskDispatcher | None = None,
+) -> None:
+    if not project_id or task_controller is None:
+        return
+    reconciled = task_controller.reconcile_project_execution(project_id)
+    if dispatcher is None:
+        return
+    notify_task = getattr(dispatcher, "notify_task", None)
+    if not callable(notify_task):
+        return
+    for task in reconciled:
+        notify_task(task)
 
 
 def _optional_string(value: object) -> str | None:

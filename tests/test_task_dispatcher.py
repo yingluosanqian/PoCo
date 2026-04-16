@@ -11,6 +11,7 @@ from poco.storage.memory import InMemoryTaskStore
 from poco.task.controller import TaskController
 from poco.task.dispatcher import AsyncTaskDispatcher
 from poco.task.models import Task
+from poco.task.models import TaskStatus
 
 
 class FakeNotifier:
@@ -201,6 +202,40 @@ class TaskDispatcherTest(unittest.TestCase):
         updated_second = self.controller.get_task(second.id)
         self.assertEqual(updated_first.status.value, "completed")
         self.assertEqual(updated_second.status.value, "completed")
+
+    def test_reconcile_running_tasks_once_completes_stale_running_task_with_output(self) -> None:
+        class InactiveRunner(StubAgentRunner):
+            def is_task_active(self, task: Task) -> bool | None:
+                return False
+
+        controller = TaskController(
+            store=InMemoryTaskStore(),
+            runner=InactiveRunner(),
+            running_reconcile_grace_seconds=0.0,
+        )
+        notifier = FakeNotifier()
+        dispatcher = InlineDispatcher(
+            controller,
+            notifier=notifier,
+            running_reconcile_interval_seconds=0.0,
+        )
+        task = controller.create_task(
+            requester_id="ou_demo",
+            prompt="stream output",
+            source="feishu",
+            project_id="proj_demo",
+            reply_receive_id="oc_demo_chat",
+            reply_receive_id_type="chat_id",
+        )
+        task.set_status(TaskStatus.RUNNING)
+        task.append_live_output("final answer")
+        controller._store.save(task)  # type: ignore[attr-defined]
+
+        dispatcher.reconcile_running_tasks_once()
+
+        updated = controller.get_task(task.id)
+        self.assertEqual(updated.status.value, "completed")
+        self.assertEqual(notifier.tasks[-1].status.value, "completed")
 
 
 if __name__ == "__main__":

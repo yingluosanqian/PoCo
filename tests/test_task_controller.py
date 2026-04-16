@@ -256,6 +256,36 @@ class TaskControllerTest(unittest.TestCase):
             "Task execution ended unexpectedly because the runner process is no longer active.",
         )
 
+    def test_reconcile_task_execution_recovers_completed_task_from_streamed_output(self) -> None:
+        class InactiveRunner(StubAgentRunner):
+            def is_task_active(self, task: Task) -> bool | None:
+                return False
+
+        controller = TaskController(
+            store=InMemoryTaskStore(),
+            runner=InactiveRunner(),
+            session_controller=self.session_controller,
+            running_reconcile_grace_seconds=0.0,
+        )
+        task = controller.create_task(
+            requester_id="ou_demo",
+            prompt="stream output",
+            source="feishu",
+            project_id="proj_demo",
+        )
+        task.set_status(TaskStatus.RUNNING)
+        task.append_live_output("final streamed answer")
+        controller._store.save(task)  # type: ignore[attr-defined]
+
+        reconciled = controller.reconcile_task_execution(task.id)
+
+        self.assertEqual(reconciled.status, TaskStatus.COMPLETED)
+        self.assertEqual(reconciled.raw_result, "final streamed answer")
+        self.assertEqual(
+            reconciled.events[-1].message,
+            "Task completion was recovered from streamed output after the runner process became inactive.",
+        )
+
     def test_reconcile_task_execution_keeps_recent_running_task_during_grace_period(self) -> None:
         class InactiveRunner(StubAgentRunner):
             name = "cursor_agent"
@@ -281,6 +311,39 @@ class TaskControllerTest(unittest.TestCase):
         reconciled = controller.reconcile_task_execution(task.id)
 
         self.assertEqual(reconciled.status, TaskStatus.RUNNING)
+
+    def test_reconcile_project_execution_updates_all_orphan_running_tasks(self) -> None:
+        class InactiveRunner(StubAgentRunner):
+            def is_task_active(self, task: Task) -> bool | None:
+                return False
+
+        controller = TaskController(
+            store=InMemoryTaskStore(),
+            runner=InactiveRunner(),
+            session_controller=self.session_controller,
+            running_reconcile_grace_seconds=0.0,
+        )
+        first = controller.create_task(
+            requester_id="ou_demo",
+            prompt="first",
+            source="feishu",
+            project_id="proj_demo",
+        )
+        second = controller.create_task(
+            requester_id="ou_demo",
+            prompt="second",
+            source="feishu",
+            project_id="proj_demo",
+        )
+        first.set_status(TaskStatus.RUNNING)
+        second.set_status(TaskStatus.RUNNING)
+        controller._store.save(first)  # type: ignore[attr-defined]
+        controller._store.save(second)  # type: ignore[attr-defined]
+
+        reconciled = controller.reconcile_project_execution("proj_demo")
+
+        self.assertEqual(len(reconciled), 2)
+        self.assertTrue(all(task.status == TaskStatus.FAILED for task in reconciled))
 
     def test_codex_task_creation_resolves_default_execution_context(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

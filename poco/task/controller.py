@@ -309,17 +309,42 @@ class TaskController:
             is_active = active_probe(task)
             if is_active is not False:
                 return task
-            if task.live_output and not task.raw_result:
-                task.set_result(task.live_output)
-            task.clear_live_output()
-            task.set_status(TaskStatus.FAILED)
-            task.add_event(
-                "task_failed",
-                "Task execution ended unexpectedly because the runner process is no longer active.",
-            )
+            recovered_output = task.raw_result or task.live_output
+            if recovered_output:
+                task.set_result(recovered_output)
+                task.clear_live_output()
+                task.set_status(TaskStatus.COMPLETED)
+                task.add_event(
+                    "task_completed",
+                    "Task completion was recovered from streamed output after the runner process became inactive.",
+                )
+            else:
+                task.clear_live_output()
+                task.set_status(TaskStatus.FAILED)
+                task.add_event(
+                    "task_failed",
+                    "Task execution ended unexpectedly because the runner process is no longer active.",
+                )
             self._store.save(task)
             self._sync_session(task)
             return task
+
+    def reconcile_project_execution(self, project_id: str) -> list[Task]:
+        with self._lock:
+            running_task_ids = [
+                task.id
+                for task in self._store.list_all()
+                if task.project_id == project_id and task.status == TaskStatus.RUNNING
+            ]
+        reconciled: list[Task] = []
+        for task_id in running_task_ids:
+            before = self.get_task(task_id)
+            before_status = before.status
+            before_updated_at = before.updated_at
+            after = self.reconcile_task_execution(task_id)
+            if after.status != before_status or after.updated_at != before_updated_at:
+                reconciled.append(after)
+        return reconciled
 
     def start_task_execution(self, task_id: str) -> Task:
         return self._start_or_resume(task_id, mode="start")
