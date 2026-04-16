@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from poco.agent.runner import create_agent_runner
 from poco.config import Settings
 from poco.demo import DemoCommandRequest
+from poco.env_inventory import build_env_inventory
 from poco.interaction.card_dispatcher import CardActionDispatcher, build_render_instruction
 from poco.interaction.card_models import Surface
 from poco.interaction.card_handlers import (
@@ -273,6 +274,9 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
             missing.append("agent backend readiness")
         if settings.feishu_longconn_enabled and not listener_ready:
             missing.append("feishu long connection listener")
+        warnings.append(
+            "Backend env inheritance can be inspected via /debug/env (no values, presence only)."
+        )
 
         return {
             "status": "ok",
@@ -421,6 +425,10 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
         snapshot = app.state.feishu_debug.snapshot()
         snapshot["listener"] = app.state.feishu_longconn.snapshot()
         return snapshot
+
+    @app.get("/debug/env")
+    def env_inventory_snapshot() -> dict[str, Any]:
+        return build_env_inventory()
 
     @app.get("/demo/cards/dm/projects")
     def demo_dm_project_list_card() -> dict[str, Any]:
