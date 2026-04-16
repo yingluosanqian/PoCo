@@ -1,89 +1,193 @@
 # PoCo
 
-PoCo is a Python-first MVP scaffold for controlling server-side AI agent workflows from mobile messaging entrypoints.
+PoCo is a Python-first scaffold for driving server-side coding agents from chat surfaces (Feishu today, Slack since this release). Projects, workspaces, sessions, and tasks all live in PoCo; the chat bot is a thin interactive front-end for them.
+
+## Supported Platforms
+
+- **Feishu** — DM control plane + per-project group chat, over webhook **or** long connection (`longconn`, default).
+- **Slack** — DM control plane + per-project channel, over Socket Mode (default) **or** HTTP webhooks. Slash command `/poco` opens the same project-list card the DM surface renders.
+
+Both platforms run simultaneously when configured. Every `Task` / `Project` remembers which platform it was created from, and replies are routed back to the originating surface by `PlatformRoutingTaskNotifier`.
+
+## Supported Agent Backends
+
+- `codex` (default) — runs through `codex app-server` over stdio; streams real `agentMessage/delta` events into task cards.
+- `claude_code`
+- `cursor_agent`
+- `coco` (Trae CLI)
+- `stub` — local flow validation only.
+
+Backend per project is picked from the DM project-creation card. Environment variables are server-side defaults only.
 
 ## Quick Start
 
-Install from source:
-
 ```bash
 python3 -m pip install -e .
-poco config
+poco config    # interactive prompt for Feishu credentials
 poco start
-```
-
-Then verify:
-
-```bash
 poco status
 ```
 
-When published, the install command should be:
-
-```bash
-python3 -m pip install pocket-coding
-```
-
-## Current Scope
-
-- `FastAPI` webhook service
-- Feishu-first event gateway
-- Optional Feishu long-connection intake for local development
-- Feishu callback verification token support
-- Feishu tenant access token retrieval and text / interactive card send support
-- Card-first interaction scaffolding with platform-neutral dispatcher
-- Codex-first agent execution path
-- Asynchronous background task dispatch
-- Feishu task-state push on confirmation wait and terminal states
-- Platform-independent task controller
-- In-memory task state store
-- Stub fallback runner for flow validation
-
-## Local Run
-
-### Install CLI
-
-Install PoCo once in editable mode so the `poco` command is available:
-
-```bash
-python3 -m pip install -e .
-```
-
-### Lowest-Friction Start
-
-If you only want to verify that PoCo itself can run on this machine, you can start with no Feishu credentials at all:
+`poco config` writes `~/.poco/poco.config.json`. Environment variables override file values at runtime. To run with no chat platform at all (just the HTTP demo surface and agent runner), skip `poco config` and start directly:
 
 ```bash
 poco start
 curl http://127.0.0.1:8000/health
 ```
 
-In that mode:
+`/health` explicitly lists what is missing for each platform.
 
-- PoCo runs in local/demo mode
-- the agent backend can still be checked
-- you can still use the local demo HTTP interface
-- Feishu callback handling is not ready yet
+## Configuration
 
-The `/health` response will tell you exactly what is missing.
+PoCo reads config from three layers, in decreasing precedence:
 
-### Local Demo Interface
+1. `POCO_*` environment variables
+2. Flat keys in `~/.poco/poco.config.json` (same name as the env var)
+3. Sectioned keys in the same file, e.g. `{"feishu": {"app_id": "..."}, "slack": {"bot_token": "..."}}`
 
-You can exercise the full command flow without Feishu:
+### Feishu
+
+| Key | Purpose |
+| --- | --- |
+| `POCO_FEISHU_APP_ID` / `POCO_FEISHU_APP_SECRET` | Required to enable the Feishu integration. |
+| `POCO_FEISHU_DELIVERY_MODE` | `longconn` (default) or `webhook`. |
+| `POCO_FEISHU_VERIFICATION_TOKEN` | Optional webhook token. Lowers friction when unset, lowers security too. |
+| `POCO_FEISHU_ENCRYPT_KEY` | Enables signature validation on webhook callbacks. Encrypted payload bodies are not supported yet. |
+| `POCO_FEISHU_API_BASE_URL` | Defaults to `https://open.feishu.cn`. |
+
+Long-connection mode authenticates inbound events via the long-connection session itself and routes both message events and card callbacks over the same listener. Callback token/signature settings only apply to webhook delivery.
+
+### Slack
+
+| Key | Purpose |
+| --- | --- |
+| `POCO_SLACK_BOT_TOKEN` | `xoxb-…` bot token. Required. |
+| `POCO_SLACK_SIGNING_SECRET` | Required for HTTP webhook signature verification. |
+| `POCO_SLACK_APP_TOKEN` | `xapp-…` app-level token. Required when `POCO_SLACK_DELIVERY_MODE=socket`. |
+| `POCO_SLACK_DELIVERY_MODE` | `socket` (default) or `webhook`. |
+
+Slack is considered enabled when bot token + signing secret (+ app token, for socket mode) are all set. `/poco` slash command posts the project-list card as an ephemeral reply.
+
+### Agent backend (server-side)
+
+Minimum:
+
+```bash
+export POCO_AGENT_BACKEND="codex"
+export POCO_CODEX_COMMAND="codex"
+export POCO_CODEX_WORKDIR="/absolute/path/to/your/repo"
+```
+
+Optional per-backend tuning:
+
+```bash
+# Codex
+export POCO_CODEX_MODEL="gpt-5"
+export POCO_CODEX_SANDBOX="workspace-write"
+export POCO_CODEX_APPROVAL_POLICY="never"
+export POCO_CODEX_TIMEOUT_SECONDS="900"
+export POCO_CODEX_TRANSPORT_IDLE_SECONDS="1800"
+
+# Claude Code
+export POCO_CLAUDE_COMMAND="claude"
+export POCO_CLAUDE_WORKDIR="/absolute/path/to/your/repo"
+export POCO_CLAUDE_MODEL="sonnet"
+export POCO_CLAUDE_PERMISSION_MODE="default"
+export POCO_CLAUDE_TIMEOUT_SECONDS="900"
+
+# Cursor Agent
+export POCO_CURSOR_COMMAND="cursor-agent"
+export POCO_CURSOR_WORKDIR="/absolute/path/to/your/repo"
+export POCO_CURSOR_MODEL="auto"
+export POCO_CURSOR_MODE="default"
+export POCO_CURSOR_SANDBOX="default"
+export POCO_CURSOR_TIMEOUT_SECONDS="900"
+
+# Trae CLI (coco)
+export POCO_COCO_COMMAND="traecli"
+export POCO_COCO_WORKDIR="/absolute/path/to/your/repo"
+export POCO_COCO_MODEL="GPT-5"
+export POCO_COCO_APPROVAL_MODE="default"
+export POCO_COCO_TIMEOUT_SECONDS="900"
+```
+
+### State backend
+
+```bash
+export POCO_STATE_BACKEND="sqlite"        # default
+export POCO_STATE_DB_PATH="~/.poco/poco.db"
+```
+
+SQLite is the default runtime path. It persists projects, workspace context, sessions, and tasks so a restart does not lose group/workspace bookkeeping.
+
+## Interaction Model
+
+- **DM**: control plane. `New` creates a project and its bound group; `Manage` lists projects and exposes delete. DM inbound messages always render the project-list card.
+- **Group**: workspace card with `Stop` / `Working Dir` / `Agent` actions, plus plain-text task submission. `Working Dir` selection (folder browse, manual entry, recent directories, and project-level presets) stays inside cards. `Agent` opens a dedicated selection card.
+
+Group behavior:
+
+- Plain text in a bound group is a task prompt.
+- Tasks in a project run in a single-project queue — a new message is queued while another task is still active.
+- Codex groups persist the upstream thread id and resume it via `codex app-server`, so follow-up messages continue the same Codex conversation.
+- Task cards show bracketed status in the title (e.g. `[Running] Task: … (codex, /srv/api)`), and live-stream throttled agent output.
+- Waiting task cards expose `Approve` / `Reject`; later state transitions update the same card in place before falling back to a new message.
+- Workspace cards are refreshed when the latest task changes and keep a bound `message_id` across updates.
+
+## HTTP Surface
+
+Core endpoints:
+
+| Path | Purpose |
+| --- | --- |
+| `GET /health` | Runtime readiness + missing/warn summary for both platforms. |
+| `GET /tasks`, `GET /tasks/{task_id}` | Raw task state. |
+| `GET /debug/feishu`, `GET /debug/slack` | Recent inbound events, outbound attempts, errors, listener snapshot for the respective platform. |
+| `GET /debug/env` | Presence/length of whitelisted env keys (no values are returned). |
+
+Feishu endpoints:
+
+- `POST /platform/feishu/events`
+- `POST /platform/feishu/card-actions`
+
+Slack endpoints:
+
+- `POST /platform/slack/events` (JSON body, `X-Slack-Signature` verified)
+- `POST /platform/slack/interactive` (form-encoded `payload=…`)
+- `POST /platform/slack/commands` (form-encoded slash command)
+
+Demo endpoints (platform-agnostic):
+
+- `POST /demo/command` — `{"text":"/run …"}`
+- `POST /demo/tasks/{task_id}/approve`
+- `POST /demo/tasks/{task_id}/reject`
+- `GET /demo/cards/dm/projects`
+- `POST /demo/card-actions`
+
+### Supported text commands
+
+In a bound project group, any plain text is treated as a task prompt. The explicit commands are still accepted:
+
+- `/run <prompt>` — start a task.
+- `/status <task_id>`
+- `/approve <task_id>` / `/reject <task_id>`
+- `/help`
+
+If the prompt starts with `confirm:`, the stub runner and the Codex backend pause at a confirmation checkpoint; `/approve <task_id>` resumes.
+
+## Local Demo Example
+
+Without any chat platform configured:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/demo/command \
   -H 'Content-Type: application/json' \
   -d '{"text":"/run Reply with exactly: DEMO_OK"}'
-```
 
-Check task status:
-
-```bash
 curl http://127.0.0.1:8000/tasks/<task_id>
 ```
 
-Approval flow example:
+Approval flow:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/demo/command \
@@ -93,343 +197,42 @@ curl -X POST http://127.0.0.1:8000/demo/command \
 curl -X POST http://127.0.0.1:8000/demo/tasks/<task_id>/approve
 ```
 
-PoCo currently plans to support:
-
-- Codex
-- Claude Code
-- Cursor Agent
-- Trae CLI
-
-Current implementation priority is Codex, and the default backend is `codex`.
-
-Normal user-facing setup should not require agent-specific shell configuration.
-In the intended product flow:
-
-- users only need to configure the Feishu bot and start the PoCo service
-- project backend is chosen in the DM project-creation card
-- backend-specific settings are changed later through Feishu cards
-
-The environment variables below are only server-side defaults and debugging overrides.
-They are not part of the intended end-user setup flow.
-
-Minimum server-side agent configuration:
+## CLI
 
 ```bash
-export POCO_AGENT_BACKEND="codex"
-export POCO_CODEX_COMMAND="codex"
-export POCO_CODEX_WORKDIR="/absolute/path/to/your/repo"
-```
-
-Optional server-side defaults for Codex:
-
-```bash
-export POCO_CODEX_MODEL="gpt-5.4"
-export POCO_CODEX_SANDBOX="workspace-write"
-export POCO_CODEX_APPROVAL_POLICY="never"
-export POCO_CODEX_TIMEOUT_SECONDS="900"
-```
-
-PoCo now runs the `codex` backend through `codex app-server` over stdio, so task cards can consume true `agentMessage/delta` events instead of waiting for a final `exec --json` message block.
-
-Optional server-side defaults for Claude Code:
-
-```bash
-export POCO_CLAUDE_COMMAND="claude"
-export POCO_CLAUDE_WORKDIR="/absolute/path/to/your/repo"
-export POCO_CLAUDE_MODEL="sonnet"
-export POCO_CLAUDE_PERMISSION_MODE="default"
-export POCO_CLAUDE_TIMEOUT_SECONDS="900"
-```
-
-Optional server-side defaults for Cursor Agent:
-
-```bash
-export POCO_CURSOR_COMMAND="cursor-agent"
-export POCO_CURSOR_WORKDIR="/absolute/path/to/your/repo"
-export POCO_CURSOR_MODEL="gpt-5"
-export POCO_CURSOR_MODE="default"
-export POCO_CURSOR_SANDBOX="default"
-export POCO_CURSOR_TIMEOUT_SECONDS="900"
-```
-
-Optional server-side defaults for Trae CLI:
-
-```bash
-export POCO_COCO_COMMAND="traecli"
-export POCO_COCO_WORKDIR="/absolute/path/to/your/repo"
-export POCO_COCO_MODEL="GPT-5.2"
-export POCO_COCO_APPROVAL_MODE="default"
-export POCO_COCO_TIMEOUT_SECONDS="900"
-```
-
-Use `POCO_AGENT_BACKEND=stub` only for local flow validation without a real agent backend.
-
-PoCo now supports `codex`, `claude_code`, `cursor_agent`, and `coco` (Trae CLI).
-
-### Normal User Flow
-
-The intended startup path is now:
-
-```bash
-poco config
-poco start
-```
-
-`poco config` prompts for:
-
-- Feishu App ID
-- Feishu App Secret
-
-PoCo stores them in a local user config file under `~/.poco/poco.config.json`, so normal users do not need to export shell variables.
-
-PoCo now defaults to Feishu `longconn`, so the normal local/mobile-first path does not require setting an inbound delivery mode explicitly. Only set `POCO_FEISHU_DELIVERY_MODE` if you intentionally want to force `webhook`.
-
-Useful lifecycle commands:
-
-```bash
-poco status
-poco shutdown
+poco config           # interactive Feishu credential prompt
+poco start            # starts uvicorn in the background, pid in ~/.poco/poco.pid
+poco status           # pid + /health summary
 poco restart
+poco shutdown
 ```
 
-### Packaging
-
-Build release artifacts locally:
-
-```bash
-python3 -m pip install build
-python3 -m build
-```
-
-This produces:
-
-- `dist/*.whl`
-- `dist/*.tar.gz`
-
-Advanced server-side overrides only:
-
-```bash
-export POCO_FEISHU_API_BASE_URL="https://open.feishu.cn"
-export POCO_FEISHU_VERIFICATION_TOKEN="xxx"
-export POCO_FEISHU_ENCRYPT_KEY="xxx"
-export POCO_STATE_BACKEND="sqlite"
-export POCO_STATE_DB_PATH="/absolute/path/to/poco.db"
-```
-
-Notes:
-
-- `POCO_FEISHU_VERIFICATION_TOKEN` is optional in the current MVP. Leaving it unset reduces setup friction, but also lowers webhook security.
-- If `POCO_FEISHU_ENCRYPT_KEY` is configured, the service expects Feishu signature headers and validates them.
-- Encrypted callback payload bodies are not supported yet, so keep event encryption disabled for the current MVP.
-- `longconn` is now the default inbound mode and removes the need for public inbound webhook access during local development.
-- The current long-connection implementation now handles both `im.message.receive_v1` and card callback traffic for local/mobile-first operation.
-- Callback token/signature settings apply to webhook delivery. Feishu long-connection inbound events are authenticated by the long-connection session itself.
-- `POCO_STATE_BACKEND=sqlite` is now the default runtime path. PoCo persists projects, workspace state and tasks so restart does not lose existing group/workspace tracking.
-- `POCO_STATE_DB_PATH` defaults to `~/.poco/poco.db`.
-
-Manual fallback start:
+Manual fallback:
 
 ```bash
 uvicorn poco.main:app --reload
 ```
 
-Health check:
+## Packaging
 
 ```bash
-curl http://127.0.0.1:8000/health
+python3 -m pip install build
+python3 -m build
+# produces dist/*.whl and dist/*.tar.gz
 ```
 
-The health response now includes:
-
-- current runtime mode: `local` or `feishu`
-- chosen Feishu delivery mode: `webhook` or `longconn`
-- chosen agent backend and whether it looks ready
-- whether the Feishu long-connection listener is actually ready
-- which state backend is in use
-- whether Feishu callback token verification is enabled
-- whether Feishu signature validation is enabled
-- what is still missing
-- warnings about relaxed safety settings
-
-### Card Demo Interface
-
-You can now exercise the first DM card chain locally:
+When published, installation will be:
 
 ```bash
-curl http://127.0.0.1:8000/demo/cards/dm/projects
+python3 -m pip install pocket-coding
 ```
 
-Create a project through the demo card-action endpoint:
+## Debugging Reply Issues
 
-```bash
-curl -X POST http://127.0.0.1:8000/demo/card-actions \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "event": {
-      "operator": {"open_id": "ou_demo_user"},
-      "context": {"open_message_id": "om_demo_card"},
-      "action": {
-        "value": {
-          "intent_key": "project.create",
-          "surface": "dm",
-          "request_id": "req_demo_project_create_1"
-        },
-        "form_value": {
-          "name": "PoCo",
-          "backend": "codex"
-        }
-      }
-    }
-  }'
-```
+When a chat message does not get a reply, compare `/debug/feishu` or `/debug/slack` against the expected flow:
 
-This currently proves the first card chain:
+- If there are no recent inbound entries: the platform never reached PoCo (check long-connection/socket-mode listener status under `listener`, or the public webhook route).
+- If inbound entries exist but there are no outbound attempts: PoCo dropped the message (e.g. unbound group, ignored bot message).
+- If outbound attempts exist but errors accumulate: the platform rejected the send (scope/permission issues usually).
 
-- DM card action payload -> `ActionIntent`
-- dispatcher -> project handler
-- `IntentDispatchResult` -> render instruction
-- renderer -> card response payload
-
-Real Feishu DM bootstrap is now also wired:
-
-- when PoCo receives a DM message event from Feishu
-- it replies with a real Feishu card JSON 2.0 project-list card
-- the project-list card now contains real callback buttons such as `Create Project + Group`
-- `Create Project + Group` now creates the project and, in real Feishu mode, bootstraps a dedicated group chat in the same action
-- after the group is created, PoCo also posts the first workspace overview card into that group
-- opening a project in DM now lands on a `Project Config` card instead of a bare detail card
-- current group chats still keep the text-command fallback path
-
-That means the current interaction split is:
-
-- `DM`: control-plane card bootstrap and first project-management actions
-- `Group`: first workspace overview card plus text-command task fallback
-
-Notes about project bootstrap:
-
-- in real Feishu mode, `project.create` now calls the Feishu group-create API and binds the returned `chat_id` to the new project
-- after binding the group, PoCo best-effort posts the first workspace overview card into the new group
-- if group bootstrap fails, PoCo rolls the project creation back instead of leaving a half-created project behind
-- in local/demo mode without Feishu credentials, `project.create` still works, but no group is created
-
-### Feishu Debug Snapshot
-
-When Feishu messages do not get any reply, inspect:
-
-```bash
-curl http://127.0.0.1:8000/debug/feishu
-```
-
-It shows:
-
-- recent inbound Feishu callbacks
-- the reply target PoCo selected for each callback
-- recent outbound send attempts, including DM card sends
-- recent Feishu send errors
-- current long-connection listener status
-
-This is the fastest way to tell whether the problem is:
-
-- Feishu never called PoCo
-- PoCo picked the wrong reply target
-- PoCo tried to send but Feishu rejected the request
-
-Real Feishu callbacks should target:
-
-```text
-POST /platform/feishu/events
-```
-
-Card action callbacks should currently target:
-
-```text
-POST /platform/feishu/card-actions
-```
-
-Current interaction model:
-
-- DM messages currently bootstrap a compact home card instead of returning text help
-- DM home cards now expose only `New` and `Manage`
-- DM `New` now uses a pure-card form to collect `project name`, then creates the project and group before returning to the DM home card
-- DM `Manage` now focuses on destructive admin actions; projects can be deleted there without opening a project detail card first, and deletion now cascades through local project state in sqlite/in-memory stores
-- newly created project groups now receive an initial workspace overview card
-- group workspace and task cards now keep `Working Dir` selection inside Feishu cards, with both folder browsing and manual path entry
-- group workspace cards are now intentionally compact: workspace metadata is collapsed into the title, and the body keeps only `Stop`, `Working Dir`, and `Agent`
-- `Agent` now opens a dedicated agent-selection card; applying agent settings returns to the main workspace card
-- working dir selection now stays inside Feishu cards; no browser page is required
-- `Use Default` now updates the in-memory workspace context and becomes the first real write path for group-side workdir state
-- `Enter Path` now updates the same in-memory workspace context and becomes the second real write path, using manual source
-- DM `Manage Dir Presets` can now add project-level presets, and group `Choose Preset` can apply them into the current in-memory workspace context
-- Group text `/run` now resolves the bound project and current workspace workdir, then stamps that into task execution context
-- Bound group workspaces now also treat ordinary plain-text messages as task prompts by default
-- Bound group workspaces now run tasks in a single-project queue: if one task is still active, the next message is queued instead of starting a parallel Codex run
-- codex-backed groups now persist the upstream Codex thread id and resume it through `codex app-server`, so follow-up messages continue the same Codex conversation instead of starting from a blank context
-- Group text-created tasks now reply with a single initial `task_status` card, and later live/terminal updates stay on that same card
-- Codex execution now prefers the task's `effective_workdir` over the global fallback directory
-- group card `task.submit` now reuses the same task-execution path and inherits the current workspace workdir
-- `task.submit` now replaces the current composer card with a `task_status` card and binds that message to the task flow
-- The webhook request returns quickly after acknowledging the command
-- Task execution happens in a background dispatcher
-- When a task waits for confirmation, completes, fails, or is cancelled, PoCo now pushes a `task_status` card to the stored Feishu reply target
-- Waiting task cards now include `Approve` / `Reject` actions that resume or cancel the task through card callbacks
-- Once a task status card has been sent, later task-state notifications now try to update that same card in place before falling back to a new message
-- workspace cards now keep a bound message id and will also be refreshed with latest-task changes when task state changes
-- task status cards now prefer the agent's raw result over summary text, and long results are paginated instead of being replaced by a summary
-- task status cards now collapse task id, status, agent and effective workdir into the title; the body is reserved for model output or confirmation text instead of duplicated metadata
-- task status titles now lead with bracketed status, for example `[Running] Task: ... (codex, no working dir)`, to keep the scan path tighter on mobile
-- task and workspace cards now prefer direct action buttons over navigation-only buttons; task cards expose `Stop`, `Working Dir`, and `Agent` instead of `Back`/`Refresh` style controls
-- workspace cards no longer try to show latest-result body; the title carries status / agent / workdir / current task, and the body stays action-only
-- running task cards now show throttled live output updates from the agent, instead of staying at a coarse `running` state
-
-By default, PoCo runs with `longconn` inbound delivery:
-
-- inbound message events arrive over Feishu long connection instead of the webhook route
-- DM events can now trigger proactive project-list card sends
-- group events still reuse the same `InteractionService -> TaskController -> Dispatcher -> Notifier` chain
-- outbound replies still use the Feishu HTTP API
-- card callbacks are now also handled through the Feishu long-connection listener
-
-To verify the DM card bootstrap on a real Feishu bot:
-
-1. Start `uvicorn poco.main:app --reload`
-2. Confirm `/health` shows `feishu_listener_ready=true`
-3. Send any DM message like `hi` to the bot
-4. The bot should reply with a `PoCo Projects` card
-5. Click `Create Project + Group` and the card should return to the DM home card
-
-Example webhook payload:
-
-```json
-{
-  "token": "verification_token_from_feishu",
-  "event": {
-    "sender": {
-      "sender_id": {
-        "open_id": "ou_demo_user"
-      }
-    },
-    "message": {
-      "chat_id": "oc_demo_chat",
-      "content": "{\"text\":\"/run confirm: review the deployment plan\"}"
-    }
-  }
-}
-```
-
-## Supported Commands
-
-- In a bound project group, you can now send plain text directly and PoCo will treat it as the task prompt.
-- Group text-created tasks now reply with a single initial `task_status` card, and later live/terminal updates stay on that same card.
-- Running-state card update failures no longer fallback to new-card fanout.
-- PoCo now keeps a minimal persisted `active session` per project, and workspace cards show that session instead of a placeholder.
-- PoCo now treats each project group as one stable session, instead of exposing multi-session lifecycle controls in the group UI.
-- In sqlite-backed runtime, task card message ids are now persisted immediately so follow-up updates do not fan out into fresh cards.
-- `/run <prompt>`
-- `/status <task_id>`
-- `/approve <task_id>`
-- `/reject <task_id>`
-- `/help`
-
-If the prompt starts with `confirm:`, the stub runner pauses the task at a confirmation checkpoint so the approval flow can be exercised without a real agent backend.
-
-The same `confirm:` prefix also works for the Codex backend: PoCo will pause before invoking `codex`, then continue only after `/approve <task_id>`.
+`/health` also surfaces listener readiness for both platforms plus the current agent backend readiness.
