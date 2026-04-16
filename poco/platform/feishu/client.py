@@ -9,6 +9,8 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
+from poco.platform.common.message_client import MessageSendResult
+
 
 class FeishuApiError(RuntimeError):
     pass
@@ -20,12 +22,6 @@ class FeishuChatNotFoundError(FeishuApiError):
 
 class FeishuChatDeleteForbiddenError(FeishuApiError):
     pass
-
-
-@dataclass(frozen=True, slots=True)
-class FeishuSendResult:
-    message_id: str | None
-    raw_response: dict[str, Any]
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,7 +78,7 @@ class FeishuMessageClient:
         receive_id: str,
         receive_id_type: str,
         text: str,
-    ) -> FeishuSendResult:
+    ) -> MessageSendResult:
         return self._send_message(
             receive_id=receive_id,
             receive_id_type=receive_id_type,
@@ -96,7 +92,7 @@ class FeishuMessageClient:
         receive_id: str,
         receive_id_type: str,
         card: dict[str, Any],
-    ) -> FeishuSendResult:
+    ) -> MessageSendResult:
         return self._send_message(
             receive_id=receive_id,
             receive_id_type=receive_id_type,
@@ -109,7 +105,11 @@ class FeishuMessageClient:
         *,
         message_id: str,
         card: dict[str, Any],
-    ) -> FeishuSendResult:
+        channel: str | None = None,
+    ) -> MessageSendResult:
+        # ``channel`` is accepted for MessageClient compatibility (Slack needs
+        # composite addressing) and is ignored by Feishu.
+        del channel
         token = self._token_provider.get_token()
         response = _request_json(
             method="PATCH",
@@ -131,7 +131,7 @@ class FeishuMessageClient:
             )
 
         data = response.get("data", {})
-        return FeishuSendResult(
+        return MessageSendResult(
             message_id=data.get("message_id") or message_id,
             raw_response=response,
         )
@@ -216,7 +216,7 @@ class FeishuMessageClient:
         receive_id_type: str,
         msg_type: str,
         content: dict[str, Any],
-    ) -> FeishuSendResult:
+    ) -> MessageSendResult:
         token = self._token_provider.get_token()
         query = urlencode({"receive_id_type": receive_id_type})
         response = _request_json(
@@ -240,7 +240,7 @@ class FeishuMessageClient:
             )
 
         data = response.get("data", {})
-        return FeishuSendResult(
+        return MessageSendResult(
             message_id=data.get("message_id"),
             raw_response=response,
         )

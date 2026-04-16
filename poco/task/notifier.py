@@ -4,7 +4,7 @@ from typing import Protocol
 
 from poco.interaction.card_dispatcher import build_render_instruction
 from poco.interaction.card_models import Surface
-from poco.platform.feishu.client import FeishuMessageClient
+from poco.platform.common.message_client import MessageClient
 from poco.platform.feishu.cards import FeishuCardRenderer
 from poco.platform.feishu.debug import FeishuDebugRecorder
 from poco.project.controller import ProjectController
@@ -28,7 +28,7 @@ class NullTaskNotifier:
 class FeishuTaskNotifier:
     def __init__(
         self,
-        message_client: FeishuMessageClient,
+        message_client: MessageClient,
         *,
         renderer: FeishuCardRenderer | None = None,
         project_controller: ProjectController | None = None,
