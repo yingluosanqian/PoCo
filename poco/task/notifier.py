@@ -6,8 +6,11 @@ from poco.interaction.card_dispatcher import build_render_instruction
 from poco.interaction.card_models import Surface
 from poco.platform.common.card_renderer import CardRenderer
 from poco.platform.common.message_client import MessageClient
+from poco.platform.common.platform import Platform
 from poco.platform.feishu.cards import FeishuCardRenderer
 from poco.platform.feishu.debug import FeishuDebugRecorder
+from poco.platform.slack.cards import SlackCardRenderer
+from poco.platform.slack.debug import SlackDebugRecorder
 from poco.project.controller import ProjectController
 from poco.session.controller import SessionController
 from poco.task.controller import TaskController
@@ -89,6 +92,7 @@ class TaskNotifierBase:
                 self._message_client.update_interactive(
                     message_id=task.notification_message_id,
                     card=card,
+                    channel=task.notification_message_channel,
                 )
                 self._sync_workspace_card(task)
                 return
@@ -118,11 +122,12 @@ class TaskNotifierBase:
                 receive_id_type=receive_id_type,
                 card=card,
             )
-            task.set_notification_message_id(result.message_id)
+            task.set_notification_message_id(result.message_id, channel=result.channel)
             if self._task_controller is not None:
                 task = self._task_controller.bind_notification_message(
                     task.id,
                     result.message_id,
+                    channel=result.channel,
                 )
             self._sync_workspace_card(task)
             return
@@ -207,6 +212,7 @@ class TaskNotifierBase:
             self._message_client.update_interactive(
                 message_id=workspace_message_id,
                 card=card,
+                channel=project.workspace_message_channel,
             )
             self._workspace_sync_signatures[project.id] = signature
         except Exception as exc:
@@ -253,7 +259,11 @@ class TaskNotifierBase:
             card=card,
         )
         if result.message_id:
-            self._project_controller.bind_workspace_message(project.id, result.message_id)
+            self._project_controller.bind_workspace_message(
+                project.id,
+                result.message_id,
+                channel=result.channel or project.group_chat_id,
+            )
         self._record_outbound_attempt(
             source="workspace_notifier_bootstrap",
             receive_id=project.group_chat_id,
@@ -356,3 +366,107 @@ class FeishuTaskNotifier(TaskNotifierBase):
             message=message,
             context=context,
         )
+
+
+class SlackTaskNotifier(TaskNotifierBase):
+    """Slack-specific task notifier.
+
+    Slack has no separate ``receive_id_type`` vocabulary (both DM and
+    group posts target a channel id), so all surfaces collapse to
+    ``"channel"``. Debug recording flows through
+    :class:`SlackDebugRecorder`, which stores ``channel`` instead of the
+    Feishu ``receive_id``/``receive_id_type`` pair.
+    """
+
+    def __init__(
+        self,
+        message_client: MessageClient,
+        *,
+        renderer: CardRenderer | None = None,
+        project_controller: ProjectController | None = None,
+        session_controller: SessionController | None = None,
+        task_controller: TaskController | None = None,
+        workspace_controller: WorkspaceContextController | None = None,
+        debug_recorder: SlackDebugRecorder | None = None,
+    ) -> None:
+        super().__init__(
+            message_client,
+            renderer=renderer or SlackCardRenderer(),
+            project_controller=project_controller,
+            session_controller=session_controller,
+            task_controller=task_controller,
+            workspace_controller=workspace_controller,
+        )
+        self._debug_recorder = debug_recorder
+
+    def _receive_id_type_for_surface(self, surface: Surface) -> str | None:
+        if surface in (Surface.GROUP, Surface.DM):
+            return "channel"
+        return None
+
+    def _group_receive_id_type(self) -> str:
+        return "channel"
+
+    def _record_outbound_attempt(
+        self,
+        *,
+        source: str,
+        receive_id: str,
+        receive_id_type: str,
+        text: str,
+        task_id: str | None,
+    ) -> None:
+        del receive_id_type  # Slack debug recorder tracks the channel alone.
+        if self._debug_recorder is None:
+            return
+        self._debug_recorder.record_outbound_attempt(
+            source=source,
+            channel=receive_id,
+            text=text,
+            task_id=task_id,
+        )
+
+    def _record_error(
+        self,
+        *,
+        stage: str,
+        message: str,
+        context: dict[str, Any],
+    ) -> None:
+        if self._debug_recorder is None:
+            return
+        self._debug_recorder.record_error(
+            stage=stage,
+            message=message,
+            context=context,
+        )
+
+
+class PlatformRoutingTaskNotifier:
+    """Dispatch notifications to the notifier matching ``task.platform``.
+
+    Each :class:`Task` records the platform that produced it (see P1-1).
+    When PoCo runs with both Feishu and Slack enabled, the dispatcher
+    needs to deliver task updates back through the same channel so users
+    see replies in the surface they wrote from. This router picks the
+    per-platform notifier and falls back silently if the platform is not
+    configured (e.g. a legacy Feishu task in a Slack-only deployment).
+    """
+
+    def __init__(
+        self,
+        *,
+        feishu: TaskNotifier | None = None,
+        slack: TaskNotifier | None = None,
+    ) -> None:
+        self._notifiers: dict[Platform, TaskNotifier] = {}
+        if feishu is not None:
+            self._notifiers[Platform.FEISHU] = feishu
+        if slack is not None:
+            self._notifiers[Platform.SLACK] = slack
+
+    def notify_task(self, task: Task) -> None:
+        notifier = self._notifiers.get(task.platform)
+        if notifier is None:
+            return
+        notifier.notify_task(task)

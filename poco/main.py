@@ -29,6 +29,13 @@ from poco.platform.feishu.gateway import FeishuGateway
 from poco.platform.feishu.longconn import FeishuLongconnListener
 from poco.platform.feishu.project_bootstrap import FeishuProjectBootstrapper
 from poco.platform.feishu.verification import FeishuRequestVerifier, FeishuVerificationError
+from poco.platform.slack.card_gateway import SlackCardActionGateway
+from poco.platform.slack.cards import SlackCardRenderer
+from poco.platform.slack.client import SlackApiError, SlackMessageClient
+from poco.platform.slack.debug import SlackDebugRecorder
+from poco.platform.slack.gateway import SlackGateway
+from poco.platform.slack.socket_mode import SlackSocketModeListener
+from poco.platform.slack.verification import SlackRequestVerifier, SlackVerificationError
 from poco.project.bootstrap import NullProjectBootstrapper, ProjectBootstrapError
 from poco.project.controller import ProjectController
 from poco.session.controller import SessionController
@@ -36,7 +43,13 @@ from poco.storage.memory import InMemoryProjectStore, InMemorySessionStore, InMe
 from poco.storage.sqlite import SqliteProjectStore, SqliteSessionStore, SqliteTaskStore, SqliteWorkspaceContextStore
 from poco.task.controller import TaskController, TaskNotFoundError
 from poco.task.dispatcher import AsyncTaskDispatcher
-from poco.task.notifier import FeishuTaskNotifier, NullTaskNotifier
+from poco.task.notifier import (
+    FeishuTaskNotifier,
+    NullTaskNotifier,
+    PlatformRoutingTaskNotifier,
+    SlackTaskNotifier,
+    TaskNotifier,
+)
 from poco.workspace.controller import WorkspaceContextController
 
 
@@ -118,7 +131,7 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
             project_controller=project_controller,
             debug_recorder=feishu_debug,
         )
-    notifier = (
+    feishu_notifier: TaskNotifier | None = (
         FeishuTaskNotifier(
             message_client,
             renderer=card_renderer,
@@ -129,8 +142,39 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
             debug_recorder=feishu_debug,
         )
         if message_client is not None
-        else NullTaskNotifier()
+        else None
     )
+
+    slack_debug = SlackDebugRecorder()
+    slack_card_renderer = SlackCardRenderer()
+    slack_request_verifier = SlackRequestVerifier(
+        signing_secret=settings.slack_signing_secret,
+    )
+    slack_message_client: SlackMessageClient | None = None
+    slack_notifier: TaskNotifier | None = None
+    if settings.slack_enabled:
+        slack_message_client = SlackMessageClient(bot_token=settings.slack_bot_token or "")
+        slack_notifier = SlackTaskNotifier(
+            slack_message_client,
+            renderer=slack_card_renderer,
+            project_controller=project_controller,
+            session_controller=session_controller,
+            task_controller=controller,
+            workspace_controller=workspace_controller,
+            debug_recorder=slack_debug,
+        )
+
+    if feishu_notifier is None and slack_notifier is None:
+        notifier: TaskNotifier = NullTaskNotifier()
+    else:
+        notifier = PlatformRoutingTaskNotifier(
+            feishu=feishu_notifier,
+            slack=slack_notifier,
+        )
+    # ``slack_card_gateway`` / ``slack_gateway`` / ``slack_socket_listener`` are
+    # wired after ``dispatcher`` and ``card_dispatcher`` are built below so the
+    # Slack gateway can share the platform-neutral ``CardActionDispatcher`` used
+    # by the Feishu side.
     dispatcher = AsyncTaskDispatcher(controller, notifier=notifier)
     project_intent_handler = ProjectIntentHandler(
         project_controller,
@@ -220,9 +264,52 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
         debug_recorder=feishu_debug,
     )
 
+    slack_card_gateway: SlackCardActionGateway | None = None
+    slack_gateway: SlackGateway | None = None
+    if settings.slack_enabled and slack_message_client is not None:
+        slack_card_gateway = SlackCardActionGateway(
+            dispatcher=card_dispatcher,
+            renderer=slack_card_renderer,
+            project_controller=project_controller,
+            debug_recorder=slack_debug,
+        )
+        slack_gateway = SlackGateway(
+            interaction,
+            message_client=slack_message_client,
+            dispatcher=dispatcher,
+            card_gateway=slack_card_gateway,
+            task_controller=controller,
+            card_renderer=slack_card_renderer,
+            debug_recorder=slack_debug,
+            project_controller=project_controller,
+            workspace_controller=workspace_controller,
+        )
+
+    def _record_slack_listener_error(
+        stage: str,
+        message: str,
+        context: dict[str, Any],
+    ) -> None:
+        slack_debug.record_error(stage=stage, message=message, context=context)
+
+    slack_socket_listener = SlackSocketModeListener(
+        app_token=settings.slack_app_token,
+        delivery_mode=settings.slack_delivery_mode,
+        event_handler=slack_gateway.handle_event if slack_gateway is not None else None,
+        interactive_handler=(
+            slack_card_gateway.handle_action if slack_card_gateway is not None else None
+        ),
+        command_handler=(
+            slack_gateway.handle_slash_command if slack_gateway is not None else None
+        ),
+        error_recorder=_record_slack_listener_error,
+    )
+
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         longconn_listener.start_background()
+        if settings.slack_enabled:
+            slack_socket_listener.start_background()
         yield
 
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
@@ -240,18 +327,30 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
     app.state.message_client = message_client
     app.state.card_renderer = card_renderer
     app.state.project_bootstrapper = project_bootstrapper
+    app.state.slack_gateway = slack_gateway
+    app.state.slack_card_gateway = slack_card_gateway
+    app.state.slack_message_client = slack_message_client
+    app.state.slack_debug = slack_debug
+    app.state.slack_socket_listener = slack_socket_listener
+    app.state.slack_card_renderer = slack_card_renderer
+    app.state.slack_request_verifier = slack_request_verifier
 
     @app.get("/health")
     def health() -> dict[str, Any]:
         agent_ready, agent_detail = runner.is_ready()
         listener_ready, listener_detail = longconn_listener.readiness()
+        slack_listener_ready, slack_listener_detail = slack_socket_listener.readiness()
         missing = []
         warnings = []
 
-        if not settings.feishu_enabled:
+        if not settings.feishu_enabled and not settings.slack_enabled:
             missing.extend(["POCO_FEISHU_APP_ID", "POCO_FEISHU_APP_SECRET"])
             warnings.append(
                 "Feishu integration is disabled. PoCo is currently in local/demo mode."
+            )
+        elif not settings.feishu_enabled:
+            warnings.append(
+                "Feishu integration is disabled. Inbound events are handled via Slack only."
             )
         if not settings.feishu_verification_enabled:
             warnings.append(
@@ -280,6 +379,16 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
             missing.append("agent backend readiness")
         if settings.feishu_longconn_enabled and not listener_ready:
             missing.append("feishu long connection listener")
+        if not settings.slack_enabled:
+            warnings.append(
+                "Slack integration is disabled (missing POCO_SLACK_BOT_TOKEN / signing secret / app token)."
+            )
+        elif settings.slack_socket_mode_enabled:
+            warnings.append(
+                "Slack socket mode is enabled. Public webhook ingress is not required for inbound events."
+            )
+        if settings.slack_enabled and settings.slack_socket_mode_enabled and not slack_listener_ready:
+            missing.append("slack socket mode listener")
         warnings.append(
             "Backend env inheritance can be inspected via /debug/env (no values, presence only)."
         )
@@ -293,6 +402,12 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
             "feishu_signature_enabled": settings.feishu_signature_enabled,
             "feishu_listener_ready": listener_ready,
             "feishu_listener_detail": listener_detail,
+            "slack_enabled": settings.slack_enabled,
+            "slack_delivery_mode": settings.slack_delivery_mode,
+            "slack_socket_mode_enabled": settings.slack_socket_mode_enabled,
+            "slack_signature_enabled": settings.slack_signature_enabled,
+            "slack_listener_ready": slack_listener_ready,
+            "slack_listener_detail": slack_listener_detail,
             "state_backend": settings.state_backend,
             "state_db_path": settings.state_db_path if settings.state_backend == "sqlite" else None,
             "agent_backend": runner.name,
@@ -431,6 +546,89 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
         snapshot = app.state.feishu_debug.snapshot()
         snapshot["listener"] = app.state.feishu_longconn.snapshot()
         return snapshot
+
+    @app.get("/debug/slack")
+    def slack_debug_snapshot() -> dict[str, Any]:
+        snapshot = app.state.slack_debug.snapshot()
+        snapshot["listener"] = app.state.slack_socket_listener.snapshot()
+        return snapshot
+
+    @app.post("/platform/slack/events")
+    async def handle_slack_event(request: Request) -> dict[str, Any]:
+        if slack_gateway is None:
+            raise HTTPException(status_code=503, detail="Slack integration is not configured.")
+        raw_body = await request.body()
+        try:
+            slack_request_verifier.verify(
+                headers=dict(request.headers),
+                raw_body=raw_body,
+            )
+        except SlackVerificationError as exc:
+            raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+        try:
+            payload = json.loads(raw_body.decode("utf-8"))
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=400, detail="Invalid JSON payload.") from exc
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="Slack payload must be a JSON object.")
+
+        try:
+            return slack_gateway.handle_event(payload)
+        except SlackApiError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    @app.post("/platform/slack/interactive")
+    async def handle_slack_interactive(request: Request) -> dict[str, Any]:
+        if slack_card_gateway is None:
+            raise HTTPException(status_code=503, detail="Slack integration is not configured.")
+        raw_body = await request.body()
+        try:
+            slack_request_verifier.verify(
+                headers=dict(request.headers),
+                raw_body=raw_body,
+            )
+        except SlackVerificationError as exc:
+            raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+        # Slack interactive posts arrive URL-encoded with a ``payload`` field
+        # holding the JSON blob.
+        form = await request.form()
+        raw_payload = form.get("payload")
+        if raw_payload is None:
+            try:
+                payload = json.loads(raw_body.decode("utf-8"))
+            except json.JSONDecodeError as exc:
+                raise HTTPException(status_code=400, detail="Missing interactive payload.") from exc
+        else:
+            try:
+                payload = json.loads(str(raw_payload))
+            except json.JSONDecodeError as exc:
+                raise HTTPException(status_code=400, detail="Invalid interactive payload.") from exc
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="Slack interactive payload must be a JSON object.")
+
+        try:
+            return slack_card_gateway.handle_action(payload)
+        except SlackApiError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    @app.post("/platform/slack/commands")
+    async def handle_slack_command(request: Request) -> dict[str, Any]:
+        if slack_gateway is None:
+            raise HTTPException(status_code=503, detail="Slack integration is not configured.")
+        raw_body = await request.body()
+        try:
+            slack_request_verifier.verify(
+                headers=dict(request.headers),
+                raw_body=raw_body,
+            )
+        except SlackVerificationError as exc:
+            raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+        form = await request.form()
+        payload = {key: str(value) for key, value in form.items()}
+        return slack_gateway.handle_slash_command(payload)
 
     @app.get("/debug/env")
     def env_inventory_snapshot() -> dict[str, Any]:

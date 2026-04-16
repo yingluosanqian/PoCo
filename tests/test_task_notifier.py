@@ -49,7 +49,7 @@ class FakeMessageClient:
         return type(
             "SendResult",
             (),
-            {"message_id": "om_task_status_1"},
+            {"message_id": "om_task_status_1", "channel": receive_id},
         )()
 
     def update_interactive(
@@ -57,11 +57,13 @@ class FakeMessageClient:
         *,
         message_id: str,
         card: dict[str, object],
+        channel: str | None = None,
     ) -> None:
         self.updated_cards.append(
             {
                 "message_id": message_id,
                 "card": card,
+                "channel": channel,
             }
         )
 
@@ -72,6 +74,7 @@ class FailingUpdateMessageClient(FakeMessageClient):
         *,
         message_id: str,
         card: dict[str, object],
+        channel: str | None = None,
     ) -> None:
         raise RuntimeError("update failed")
 

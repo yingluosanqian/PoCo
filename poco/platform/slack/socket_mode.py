@@ -69,7 +69,7 @@ class SlackSocketModeListener:
 
     @property
     def enabled(self) -> bool:
-        return self._delivery_mode == "socket_mode"
+        return self._delivery_mode in {"socket", "socket_mode"}
 
     def start_background(self) -> None:
         if not self.enabled:
