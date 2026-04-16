@@ -304,6 +304,7 @@ class CodexAppServerRunner:
         timeout_seconds: int = 900,
         transport_idle_seconds: float = 300.0,
         completion_settle_seconds: float = 1.0,
+        output_stall_seconds: float = 15.0,
     ) -> None:
         self._command = command
         self._workdir = workdir
@@ -314,6 +315,7 @@ class CodexAppServerRunner:
         self._timeout_seconds = timeout_seconds
         self._transport_idle_seconds = transport_idle_seconds
         self._completion_settle_seconds = max(0.0, completion_settle_seconds)
+        self._output_stall_seconds = max(self._completion_settle_seconds, output_stall_seconds)
         self._lock = RLock()
         self._active_processes: dict[str, subprocess.Popen[str]] = {}
         self._active_turns: dict[str, _CodexActiveTurn] = {}
@@ -485,7 +487,8 @@ class CodexAppServerRunner:
             streamed_text = ""
             last_reasoning_token_count: int | None = None
             deadline = monotonic() + self._timeout_seconds
-            last_task_activity_at: float | None = None
+            last_output_at: float | None = None
+            candidate_completion_at: float | None = None
             while True:
                 if self._consume_cancelled(task.id):
                     return
@@ -509,26 +512,52 @@ class CodexAppServerRunner:
                 read_lock = active_state.io_lock if active_state is not None else None
                 if read_lock is not None:
                     read_lock.acquire()
+                message_stream_closed = False
                 try:
-                    message = session.read_next_message(timeout_seconds=0.5)
+                    try:
+                        message = session.read_next_message(timeout_seconds=0.5)
+                    except StopIteration:
+                        message = None
+                        message_stream_closed = True
                 finally:
                     if read_lock is not None:
                         read_lock.release()
                 if message is None:
+                    now = monotonic()
                     if (
-                        final_text
-                        and last_task_activity_at is not None
-                        and monotonic() - last_task_activity_at >= self._completion_settle_seconds
+                        candidate_completion_at is not None
+                        and (final_text is not None or streamed_text)
+                        and now - candidate_completion_at >= self._completion_settle_seconds
                     ):
                         yield AgentRunUpdate(
                             kind="completed",
                             message="Task completed by the codex app-server runner after the final reply settled.",
-                            raw_result=final_text,
+                            raw_result=final_text or streamed_text,
+                            backend_session_id=backend_session_id,
+                        )
+                        return
+                    if (
+                        last_output_at is not None
+                        and (final_text is not None or streamed_text)
+                        and now - last_output_at >= self._output_stall_seconds
+                    ):
+                        yield AgentRunUpdate(
+                            kind="completed",
+                            message="Task completed by the codex app-server runner after output stalled without a terminal event.",
+                            raw_result=final_text or streamed_text,
                             backend_session_id=backend_session_id,
                         )
                         return
                     if process.poll() is not None:
                         break
+                    if message_stream_closed and (final_text is not None or streamed_text):
+                        yield AgentRunUpdate(
+                            kind="completed",
+                            message="Task completed by the codex app-server runner after the app-server message stream closed.",
+                            raw_result=final_text or streamed_text,
+                            backend_session_id=backend_session_id,
+                        )
+                        return
                     continue
                 if "method" not in message:
                     continue
@@ -540,7 +569,7 @@ class CodexAppServerRunner:
                 message_turn_id = _optional_string(params.get("turnId"))
                 if method != "error" and message_thread_id and message_thread_id != backend_session_id:
                     continue
-                last_task_activity_at = monotonic()
+                current_time = monotonic()
 
                 if method == "turn/started":
                     turn = params.get("turn")
@@ -557,6 +586,7 @@ class CodexAppServerRunner:
                         )
                     ):
                         continue
+                    candidate_completion_at = None
                     active_turn_id = started_turn_id
                     if thread_id and active_turn_id:
                         with self._lock:
@@ -575,9 +605,11 @@ class CodexAppServerRunner:
                 if method == "item/agentMessage/delta":
                     if message_turn_id and active_turn_id and message_turn_id != active_turn_id:
                         continue
+                    candidate_completion_at = None
                     delta = _string_or_none(params.get("delta"))
                     if delta:
                         streamed_text += delta
+                        last_output_at = current_time
                         yield AgentRunUpdate(
                             kind="progress",
                             message="Codex output updated.",
@@ -594,7 +626,10 @@ class CodexAppServerRunner:
                         item_type = _optional_string(item.get("type"))
                         if item_type == "agentMessage":
                             final_text = _string_or_none(item.get("text")) or final_text
+                            last_output_at = current_time
+                            candidate_completion_at = current_time
                         elif item_type == "reasoning":
+                            candidate_completion_at = None
                             summary = _codex_reasoning_summary(item)
                             if summary:
                                 yield AgentRunUpdate(
@@ -611,6 +646,7 @@ class CodexAppServerRunner:
                         completed_turn_id = _optional_string(turn.get("id")) or completed_turn_id
                     if completed_turn_id and active_turn_id and completed_turn_id != active_turn_id:
                         continue
+                    candidate_completion_at = None
                     if isinstance(turn, dict) and turn.get("error"):
                         yield AgentRunUpdate(
                             kind="failed",
@@ -631,6 +667,7 @@ class CodexAppServerRunner:
                         continue
                     status = params.get("status")
                     if isinstance(status, dict) and status.get("type") == "active":
+                        candidate_completion_at = None
                         yield AgentRunUpdate(
                             kind="progress",
                             message="Codex is processing your prompt.",
@@ -642,16 +679,11 @@ class CodexAppServerRunner:
                         and status.get("type") == "idle"
                         and (final_text is not None or streamed_text)
                     ):
-                        yield AgentRunUpdate(
-                            kind="completed",
-                            message="Task completed by the codex app-server runner.",
-                            raw_result=final_text or streamed_text,
-                            backend_session_id=backend_session_id,
-                        )
-                        return
+                        candidate_completion_at = current_time
                     continue
 
                 if method == "mcpServer/startupStatus/updated":
+                    candidate_completion_at = None
                     server_name = _optional_string(params.get("name")) or "Codex tools"
                     startup_status = _optional_string(params.get("status")) or "unknown"
                     if startup_status == "starting":
@@ -670,6 +702,7 @@ class CodexAppServerRunner:
                 if method == "thread/tokenUsage/updated":
                     if message_turn_id and active_turn_id and message_turn_id != active_turn_id:
                         continue
+                    candidate_completion_at = None
                     reasoning_token_count = _codex_reasoning_token_count(params)
                     if (
                         reasoning_token_count is None
@@ -698,6 +731,7 @@ class CodexAppServerRunner:
                         message = "Codex is drafting a reply."
                     else:
                         continue
+                    candidate_completion_at = None
                     yield AgentRunUpdate(
                         kind="progress",
                         message=message,
@@ -706,6 +740,7 @@ class CodexAppServerRunner:
                     continue
 
                 if method == "error":
+                    candidate_completion_at = None
                     yield AgentRunUpdate(
                         kind="failed",
                         message=_error_notification_message(params) or "Codex app-server returned an error.",

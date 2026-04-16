@@ -4,6 +4,7 @@ artifacts/local/
 __pycache__/
 .pytest_cache/
 *.egg-info/
+*.pyc
 build/
 dist/
 uv.lock
