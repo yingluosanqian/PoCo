@@ -21,6 +21,7 @@ from poco.agent.common import (
     _requires_confirmation,
     _string_or_none,
 )
+from poco.agent.completion_gate import CompletionGate
 from poco.task.models import Task
 
 _LOGGER = logging.getLogger(__name__)
@@ -38,6 +39,7 @@ class CursorAgentRunner:
         mode: str = "default",
         sandbox: str = "default",
         timeout_seconds: int = 900,
+        completion_settle_seconds: float = 1.0,
     ) -> None:
         self._command = command
         self._workdir = workdir
@@ -45,6 +47,7 @@ class CursorAgentRunner:
         self._mode = mode
         self._sandbox = sandbox
         self._timeout_seconds = timeout_seconds
+        self._completion_settle_seconds = max(0.0, completion_settle_seconds)
         self._logger = _LOGGER
         self._lock = RLock()
         self._active_processes: dict[str, subprocess.Popen[str]] = {}
@@ -175,6 +178,7 @@ class CursorAgentRunner:
                 return
 
             session_announced = False
+            completion_gate = CompletionGate(settle_seconds=self._completion_settle_seconds)
             while True:
                 if self._consume_cancelled(task.id):
                     return
@@ -186,6 +190,21 @@ class CursorAgentRunner:
                     yield AgentRunUpdate(
                         kind="failed",
                         message=f"Cursor Agent timed out after {self._timeout_seconds} seconds.",
+                        backend_session_id=backend_session_id,
+                    )
+                    return
+                should_fire, settle_elapsed = completion_gate.tick(monotonic())
+                if should_fire:
+                    raw_result = final_text or live_text or "Cursor Agent completed without a final response body."
+                    self._logger.info(
+                        "cursor-agent task %s completed via settle fallback after %.2fs (no result event observed)",
+                        task.id,
+                        settle_elapsed,
+                    )
+                    yield AgentRunUpdate(
+                        kind="completed",
+                        message="Task completed by the cursor_agent runner after the final assistant message settled.",
+                        raw_result=raw_result,
                         backend_session_id=backend_session_id,
                     )
                     return
@@ -221,6 +240,7 @@ class CursorAgentRunner:
                             )
                     output_chunk, live_text = _extract_cursor_output_chunk(event, current_live_text=live_text)
                     if output_chunk:
+                        completion_gate.disarm()
                         yield AgentRunUpdate(
                             kind="progress",
                             message="Cursor Agent output updated.",
@@ -230,6 +250,17 @@ class CursorAgentRunner:
                     extracted_final_text = _extract_cursor_final_text(event)
                     if extracted_final_text:
                         final_text = extracted_final_text
+                    if (
+                        output_chunk is None
+                        and extracted_final_text
+                        and live_text
+                        and _optional_string(event.get("type")) != "result"
+                    ):
+                        if completion_gate.arm(monotonic()):
+                            self._logger.info(
+                                "cursor-agent task %s armed completion settle candidate (summary assistant event)",
+                                task.id,
+                            )
                     terminal_result = _extract_cursor_terminal_result(event)
                     if terminal_result is not None:
                         if terminal_result.get("is_error"):

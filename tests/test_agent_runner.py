@@ -2340,6 +2340,80 @@ class CursorAgentRunnerTest(unittest.TestCase):
             self.assertEqual(updates[-1].kind, "failed")
             self.assertEqual(updates[-1].message, "runner crashed")
 
+    def test_cursor_runner_completes_via_settle_after_summary_assistant_without_result_event(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = CursorAgentRunner(
+                command="cursor-agent",
+                workdir=tmpdir,
+                model="gpt-5",
+                completion_settle_seconds=0.0,
+            )
+            task = Task(
+                id="cursor_task_settle",
+                requester_id="ou_demo",
+                prompt="say hi",
+                source="feishu",
+                status=TaskStatus.RUNNING,
+                agent_backend="cursor_agent",
+            )
+
+            def line_stream():
+                yield '{"type":"system","subtype":"init","session_id":"session_settle"}\n'
+                yield '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"hello"}]},"session_id":"session_settle"}\n'
+                yield '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":" world"}]},"session_id":"session_settle"}\n'
+                yield '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"hello world"}]},"session_id":"session_settle"}\n'
+                # Infinite non-disarm heartbeats: cursor CLI never sends the result event.
+                counter = 0
+                while True:
+                    counter += 1
+                    yield f'{{"type":"status","sessionId":"session_settle","step":{counter}}}\n'
+
+            class FakeStdout:
+                def __init__(self) -> None:
+                    self.exhausted = False
+                    self._iter = line_stream()
+
+                def readline(self) -> str:
+                    return next(self._iter)
+
+            class FakeStderr:
+                exhausted = True
+
+                def readline(self) -> str:
+                    return ""
+
+            class FakePopen:
+                def __init__(self) -> None:
+                    self.stdout = FakeStdout()
+                    self.stderr = FakeStderr()
+                    self.returncode = 0
+                    self.killed = False
+
+                def poll(self):  # type: ignore[no-untyped-def]
+                    return 0 if self.killed else None
+
+                def kill(self) -> None:
+                    self.killed = True
+                    self.returncode = -9
+
+            fake_process = FakePopen()
+            with (
+                patch("poco.agent.runner.shutil.which", return_value="/Users/yihanc/.local/bin/cursor-agent"),
+                patch("poco.agent.runner.subprocess.Popen", return_value=fake_process),
+                patch(
+                    "poco.agent.runner.select.select",
+                    side_effect=lambda readers, *_args: ([reader for reader in readers if not getattr(reader, "exhausted", True)], [], []),
+                ),
+            ):
+                updates = list(runner.start(task))
+
+            self.assertEqual(updates[-1].kind, "completed")
+            self.assertEqual(updates[-1].raw_result, "hello world")
+            self.assertEqual(
+                updates[-1].message,
+                "Task completed by the cursor_agent runner after the final assistant message settled.",
+            )
+
 
 class CocoRunnerTest(unittest.TestCase):
     def test_cleanup_subprocess_closes_pipes_and_waits(self) -> None:
