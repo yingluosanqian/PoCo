@@ -4,6 +4,7 @@ import os
 import tempfile
 import unittest
 
+from poco.interaction.card_models import Surface
 from poco.platform.feishu.debug import FeishuDebugRecorder
 from poco.project.controller import ProjectController
 from poco.project.models import Project
@@ -89,7 +90,7 @@ class FeishuTaskNotifierTest(unittest.TestCase):
             project_id="proj_1",
             effective_workdir="/srv/poco/api",
             reply_receive_id="oc_group_1",
-            reply_receive_id_type="chat_id",
+            reply_surface=Surface.GROUP,
             status=TaskStatus.WAITING_FOR_CONFIRMATION,
             awaiting_confirmation_reason="Need explicit approval.",
         )
@@ -122,7 +123,7 @@ class FeishuTaskNotifierTest(unittest.TestCase):
             project_id="proj_1",
             effective_workdir="/srv/poco/api",
             reply_receive_id="oc_group_1",
-            reply_receive_id_type="chat_id",
+            reply_surface=Surface.GROUP,
             status=TaskStatus.RUNNING,
             live_output="line 1\nline 2",
         )
@@ -152,7 +153,7 @@ class FeishuTaskNotifierTest(unittest.TestCase):
             project_id="proj_1",
             effective_workdir="/srv/poco/api",
             reply_receive_id="oc_group_1",
-            reply_receive_id_type="chat_id",
+            reply_surface=Surface.GROUP,
             status=TaskStatus.COMPLETED,
             raw_result="Done.",
         )
@@ -187,7 +188,7 @@ class FeishuTaskNotifierTest(unittest.TestCase):
             project_id="proj_1",
             effective_workdir="/srv/poco/api",
             reply_receive_id="oc_group_1",
-            reply_receive_id_type="chat_id",
+            reply_surface=Surface.GROUP,
             status=TaskStatus.WAITING_FOR_CONFIRMATION,
             awaiting_confirmation_reason="Need explicit approval.",
         )
@@ -217,7 +218,7 @@ class FeishuTaskNotifierTest(unittest.TestCase):
             effective_workdir="/srv/poco/api",
             notification_message_id="om_task_status_1",
             reply_receive_id="oc_group_1",
-            reply_receive_id_type="chat_id",
+            reply_surface=Surface.GROUP,
             status=TaskStatus.RUNNING,
             live_output="line 1",
         )
@@ -264,7 +265,7 @@ class FeishuTaskNotifierTest(unittest.TestCase):
             project_id=project.id,
             effective_workdir="/srv/poco/api",
             reply_receive_id="oc_group_1",
-            reply_receive_id_type="chat_id",
+            reply_surface=Surface.GROUP,
             status=TaskStatus.WAITING_FOR_CONFIRMATION,
             awaiting_confirmation_reason="Need explicit approval.",
         )
@@ -303,7 +304,7 @@ class FeishuTaskNotifierTest(unittest.TestCase):
             effective_workdir="/srv/poco/api",
             notification_message_id="om_existing_card",
             reply_receive_id="oc_group_1",
-            reply_receive_id_type="chat_id",
+            reply_surface=Surface.GROUP,
             status=TaskStatus.RUNNING,
             live_output="line 1",
         )
@@ -331,7 +332,7 @@ class FeishuTaskNotifierTest(unittest.TestCase):
             effective_workdir="/srv/poco/api",
             notification_message_id="om_existing_card",
             reply_receive_id="oc_group_1",
-            reply_receive_id_type="chat_id",
+            reply_surface=Surface.GROUP,
             status=TaskStatus.RUNNING,
             live_output="streaming line",
         )
@@ -369,7 +370,7 @@ class FeishuTaskNotifierTest(unittest.TestCase):
             project_id=project.id,
             effective_workdir="/srv/poco/api",
             reply_receive_id="oc_group_1",
-            reply_receive_id_type="chat_id",
+            reply_surface=Surface.GROUP,
             status=TaskStatus.COMPLETED,
             raw_result="Done.",
         )
@@ -398,7 +399,7 @@ class FeishuTaskNotifierTest(unittest.TestCase):
                 project_id="proj_1",
                 effective_workdir="/srv/poco/api",
                 reply_receive_id="oc_group_1",
-                reply_receive_id_type="chat_id",
+                reply_surface=Surface.GROUP,
             )
             task.set_status(TaskStatus.WAITING_FOR_CONFIRMATION)
             task.awaiting_confirmation_reason = "Need explicit approval."
@@ -435,7 +436,7 @@ class FeishuTaskNotifierTest(unittest.TestCase):
                 project_id="proj_1",
                 effective_workdir="/srv/poco/api",
                 reply_receive_id="oc_group_1",
-                reply_receive_id_type="chat_id",
+                reply_surface=Surface.GROUP,
                 notification_message_id="om_existing_card",
             )
             stale_running = controller.get_task(task.id)

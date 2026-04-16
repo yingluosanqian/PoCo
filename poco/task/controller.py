@@ -8,6 +8,7 @@ from threading import RLock
 from uuid import uuid4
 
 from poco.agent.runner import AgentRunner
+from poco.interaction.card_models import Surface
 from poco.session.controller import SessionController
 from poco.storage.protocols import TaskStore
 from poco.task.models import Task, TaskStatus
@@ -61,7 +62,7 @@ class TaskController:
         backend_session_id: str | None = None,
         notification_message_id: str | None = None,
         reply_receive_id: str | None = None,
-        reply_receive_id_type: str | None = None,
+        reply_surface: Surface | None = None,
     ) -> Task:
         with self._lock:
             resolved_backend_session_id = backend_session_id
@@ -86,7 +87,7 @@ class TaskController:
                     effective_workdir=effective_workdir,
                     notification_message_id=notification_message_id,
                     reply_receive_id=reply_receive_id,
-                    reply_receive_id_type=reply_receive_id_type,
+                    reply_surface=reply_surface,
                 )
             )
             task = Task(
@@ -104,7 +105,7 @@ class TaskController:
                 effective_workdir=resolved_workdir,
                 notification_message_id=notification_message_id,
                 reply_receive_id=reply_receive_id,
-                reply_receive_id_type=reply_receive_id_type,
+                reply_surface=reply_surface,
             )
             task.add_event("task_created", f"Task created from {source}.")
             self._store.save(task)

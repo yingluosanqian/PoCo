@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from poco.interaction.card_dispatcher import CardActionDispatcher
 from poco.interaction.card_handlers import ProjectIntentHandler, TaskIntentHandler, WorkspaceIntentHandler
+from poco.interaction.card_models import Surface
 from poco.platform.feishu.card_gateway import FeishuCardActionGateway
 from poco.platform.feishu.cards import FeishuCardRenderer
 from poco.project.bootstrap import ProjectBootstrapError, ProjectBootstrapResult
@@ -723,7 +724,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
         self.assertEqual(task.effective_workdir, "/srv/poco/api")
         self.assertEqual(task.notification_message_id, "om_task_submit_1")
         self.assertEqual(task.reply_receive_id, "oc_group_proj_1")
-        self.assertEqual(task.reply_receive_id_type, "chat_id")
+        self.assertEqual(task.reply_surface, Surface.GROUP)
         self.assertEqual(self.task_dispatcher.actions, [("start", task.id)])
         self.assertEqual(
             response["card"]["data"]["header"]["title"]["content"],
@@ -806,7 +807,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
             effective_workdir="/srv/poco/api",
             notification_message_id="om_old_task",
             reply_receive_id="oc_group_proj_1",
-            reply_receive_id_type="chat_id",
+            reply_surface=Surface.GROUP,
         )
         stale.set_status(TaskStatus.RUNNING)
         self.task_controller._store.save(stale)  # type: ignore[attr-defined]
@@ -916,7 +917,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
             project_id=project.id,
             effective_workdir="/srv/poco/api",
             reply_receive_id="oc_group_proj_1",
-            reply_receive_id_type="chat_id",
+            reply_surface=Surface.GROUP,
         )
         self.task_controller.start_task_execution(task.id)
         payload = {
@@ -960,7 +961,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
             project_id=project.id,
             effective_workdir="/srv/poco/api",
             reply_receive_id="oc_group_proj_1",
-            reply_receive_id_type="chat_id",
+            reply_surface=Surface.GROUP,
         )
         self.task_controller.start_task_execution(task.id)
         payload = {
@@ -999,7 +1000,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
             project_id=project.id,
             effective_workdir="/srv/poco/api",
             reply_receive_id="oc_group_proj_1",
-            reply_receive_id_type="chat_id",
+            reply_surface=Surface.GROUP,
         )
         payload = {
             "event": {
@@ -1044,7 +1045,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
             session_id=session.id,
             effective_workdir="/srv/poco/api",
             reply_receive_id="oc_group_proj_1",
-            reply_receive_id_type="chat_id",
+            reply_surface=Surface.GROUP,
         )
         task.set_result("partial answer")
         task.set_status(task.status.FAILED)
@@ -1099,7 +1100,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
             effective_workdir="/srv/poco/api",
             backend_session_id="thread_123",
             reply_receive_id="oc_group_proj_1",
-            reply_receive_id_type="chat_id",
+            reply_surface=Surface.GROUP,
         )
         task.set_status(task.status.RUNNING)
         self.task_controller._store.save(task)  # type: ignore[attr-defined]
@@ -1152,7 +1153,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
             effective_workdir="/srv/poco/api",
             backend_session_id="thread_123",
             reply_receive_id="oc_group_proj_1",
-            reply_receive_id_type="chat_id",
+            reply_surface=Surface.GROUP,
         )
         running.set_status(running.status.RUNNING)
         self.task_controller._store.save(running)  # type: ignore[attr-defined]
@@ -1165,7 +1166,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
             effective_workdir="/srv/poco/api",
             backend_session_id="thread_123",
             reply_receive_id="oc_group_proj_1",
-            reply_receive_id_type="chat_id",
+            reply_surface=Surface.GROUP,
         )
         queued = self.task_controller.queue_task(queued.id)
         payload = {
@@ -1210,7 +1211,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
             effective_workdir="/srv/poco/api",
             backend_session_id="chat_123",
             reply_receive_id="oc_group_proj_1",
-            reply_receive_id_type="chat_id",
+            reply_surface=Surface.GROUP,
         )
         running.set_status(running.status.RUNNING)
         self.task_controller._store.save(running)  # type: ignore[attr-defined]
@@ -1222,7 +1223,7 @@ class FeishuCardGatewayTest(unittest.TestCase):
             project_id=project.id,
             effective_workdir="/srv/poco/api",
             reply_receive_id="oc_group_proj_1",
-            reply_receive_id_type="chat_id",
+            reply_surface=Surface.GROUP,
         )
         queued = self.task_controller.queue_task(queued.id)
         payload = {

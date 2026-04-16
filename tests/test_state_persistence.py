@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from poco.agent.tokens import TokenUsage
+from poco.interaction.card_models import Surface
 from poco.main import create_app
 from poco.platform.common.platform import Platform
 
@@ -52,7 +53,7 @@ class StatePersistenceTest(unittest.TestCase):
                     effective_workdir="/srv/poco/api",
                     notification_message_id="om_task_demo",
                     reply_receive_id="oc_group_demo",
-                    reply_receive_id_type="chat_id",
+                    reply_surface=Surface.GROUP,
                 )
                 task.add_event("task_completed", "done")
                 task.set_result("done")

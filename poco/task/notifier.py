@@ -11,7 +11,7 @@ from poco.project.controller import ProjectController
 from poco.session.controller import SessionController
 from poco.task.controller import TaskController
 from poco.task.models import Task, TaskStatus
-from poco.task.rendering import headline_for_notification, render_task_text
+from poco.task.rendering import headline_for_notification
 from poco.workspace.controller import WorkspaceContextController
 
 
@@ -49,108 +49,77 @@ class FeishuTaskNotifier:
 
     def notify_task(self, task: Task) -> None:
         task = self._freshest_task(task)
-        if not task.reply_receive_id or not task.reply_receive_id_type:
+        if not task.reply_receive_id or task.reply_surface is None:
             return
 
-        is_card_target = task.reply_receive_id_type in {"chat_id", "open_id"}
-        if is_card_target:
-            from poco.interaction.card_handlers import build_task_status_result
+        surface = task.reply_surface
+        receive_id_type = _receive_id_type_from_surface(surface)
+        if receive_id_type is None:
+            return
 
-            surface = (
-                Surface.GROUP
-                if task.reply_receive_id_type == "chat_id"
-                else Surface.DM
-            )
-            instruction = build_render_instruction(
-                build_task_status_result(
-                    task,
-                    task_controller=self._task_controller,
-                    message=headline_for_notification(task),
-                ),
-                surface=surface,
-            )
-            card = self._renderer.render(instruction)
-            if task.notification_message_id:
-                if self._debug_recorder is not None:
-                    self._debug_recorder.record_outbound_attempt(
-                        source="task_notifier_update",
-                        receive_id=task.reply_receive_id,
-                        receive_id_type=task.reply_receive_id_type,
-                        text=f"[card-update] task_status:{task.status.value}",
-                        task_id=task.id,
-                    )
-                try:
-                    self._message_client.update_interactive(
-                        message_id=task.notification_message_id,
-                        card=card,
-                    )
-                    self._sync_workspace_card(task)
-                    return
-                except Exception as exc:
-                    if self._debug_recorder is not None:
-                        self._debug_recorder.record_error(
-                            stage="task_notifier_update",
-                            message=str(exc),
-                            context={
-                                "task_id": task.id,
-                                "message_id": task.notification_message_id,
-                            },
-                        )
-                    if task.status == TaskStatus.RUNNING:
-                        return
+        from poco.interaction.card_handlers import build_task_status_result
 
-            preview = f"[card] task_status:{task.status.value}"
+        instruction = build_render_instruction(
+            build_task_status_result(
+                task,
+                task_controller=self._task_controller,
+                message=headline_for_notification(task),
+            ),
+            surface=surface,
+        )
+        card = self._renderer.render(instruction)
+        if task.notification_message_id:
             if self._debug_recorder is not None:
                 self._debug_recorder.record_outbound_attempt(
-                    source="task_notifier",
+                    source="task_notifier_update",
                     receive_id=task.reply_receive_id,
-                    receive_id_type=task.reply_receive_id_type,
-                    text=preview,
+                    receive_id_type=receive_id_type,
+                    text=f"[card-update] task_status:{task.status.value}",
                     task_id=task.id,
                 )
             try:
-                result = self._message_client.send_interactive(
-                    receive_id=task.reply_receive_id,
-                    receive_id_type=task.reply_receive_id_type,
+                self._message_client.update_interactive(
+                    message_id=task.notification_message_id,
                     card=card,
                 )
-                task.set_notification_message_id(result.message_id)
-                if self._task_controller is not None:
-                    task = self._task_controller.bind_notification_message(
-                        task.id,
-                        result.message_id,
-                    )
                 self._sync_workspace_card(task)
                 return
             except Exception as exc:
                 if self._debug_recorder is not None:
                     self._debug_recorder.record_error(
-                        stage="task_notifier",
+                        stage="task_notifier_update",
                         message=str(exc),
                         context={
                             "task_id": task.id,
-                            "receive_id": task.reply_receive_id,
-                            "receive_id_type": task.reply_receive_id_type,
-                            "mode": "interactive",
+                            "message_id": task.notification_message_id,
                         },
                     )
-                raise
+                if task.status == TaskStatus.RUNNING:
+                    return
 
-        text = render_task_text(task, headline=headline_for_notification(task))
+        preview = f"[card] task_status:{task.status.value}"
         if self._debug_recorder is not None:
             self._debug_recorder.record_outbound_attempt(
                 source="task_notifier",
                 receive_id=task.reply_receive_id,
-                receive_id_type=task.reply_receive_id_type,
-                text=text,
+                receive_id_type=receive_id_type,
+                text=preview,
                 task_id=task.id,
             )
         try:
-            self._message_client.send_text(
+            result = self._message_client.send_interactive(
                 receive_id=task.reply_receive_id,
-                receive_id_type=task.reply_receive_id_type,
-                text=text,
+                receive_id_type=receive_id_type,
+                card=card,
             )
+            task.set_notification_message_id(result.message_id)
+            if self._task_controller is not None:
+                task = self._task_controller.bind_notification_message(
+                    task.id,
+                    result.message_id,
+                )
+            self._sync_workspace_card(task)
+            return
         except Exception as exc:
             if self._debug_recorder is not None:
                 self._debug_recorder.record_error(
@@ -159,7 +128,8 @@ class FeishuTaskNotifier:
                     context={
                         "task_id": task.id,
                         "receive_id": task.reply_receive_id,
-                        "receive_id_type": task.reply_receive_id_type,
+                        "receive_id_type": receive_id_type,
+                        "mode": "interactive",
                     },
                 )
             raise
@@ -289,3 +259,11 @@ class FeishuTaskNotifier:
                 text=f"[card] Workspace: {project.name}",
                 task_id=task.id,
             )
+
+
+def _receive_id_type_from_surface(surface: Surface | None) -> str | None:
+    if surface == Surface.GROUP:
+        return "chat_id"
+    if surface == Surface.DM:
+        return "open_id"
+    return None

@@ -9,6 +9,7 @@ import unittest
 from poco.interaction.service import InteractionService
 from poco.interaction.card_dispatcher import CardActionDispatcher
 from poco.interaction.card_handlers import ProjectIntentHandler, WorkspaceIntentHandler
+from poco.interaction.card_models import Surface
 from poco.platform.feishu.card_gateway import FeishuCardActionGateway
 from poco.platform.feishu.cards import FeishuCardRenderer
 from poco.platform.feishu.debug import FeishuDebugRecorder
@@ -194,7 +195,7 @@ class FeishuGatewayTest(unittest.TestCase):
         self.assertIn("This group is not bound to a project yet.", sent["text"])
         snapshot = self.debug_recorder.snapshot()
         self.assertEqual(len(snapshot["inbound_events"]), 1)
-        self.assertEqual(snapshot["inbound_events"][0]["reply_receive_id_type"], "chat_id")
+        self.assertEqual(snapshot["inbound_events"][0]["reply_surface"], "group")
 
     def test_p2p_message_sends_dm_project_card(self) -> None:
         self.project_controller.create_project(
@@ -515,7 +516,7 @@ class FeishuGatewayTest(unittest.TestCase):
             effective_workdir="/srv/poco/api",
             notification_message_id="om_old_task",
             reply_receive_id="oc_demo_chat",
-            reply_receive_id_type="chat_id",
+            reply_surface=Surface.GROUP,
         )
         stale.set_status(TaskStatus.RUNNING)
         stale.append_live_output("partial answer")

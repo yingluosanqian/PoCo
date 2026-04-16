@@ -137,7 +137,7 @@ class FeishuGateway:
             effective_sandbox=self._resolve_effective_sandbox(event),
             effective_workdir=self._resolve_effective_workdir(event),
             reply_receive_id=target["receive_id"],
-            reply_receive_id_type=target["receive_id_type"],
+            reply_surface=_surface_from_receive_id_type(target["receive_id_type"]),
         )
 
         group_project = self._resolve_group_project(event)
@@ -166,11 +166,7 @@ class FeishuGateway:
                     and target["receive_id_type"] in {"chat_id", "open_id"}
                 ):
                     task = self._task_controller.get_task(response.task_id)
-                    surface = (
-                        Surface.GROUP
-                        if target["receive_id_type"] == "chat_id"
-                        else Surface.DM
-                    )
+                    surface = _surface_from_receive_id_type(target["receive_id_type"]) or Surface.GROUP
                     instruction = build_render_instruction(
                         build_task_status_result(
                             task,
@@ -325,11 +321,12 @@ class FeishuGateway:
     ) -> None:
         if self._debug_recorder is None:
             return
+        surface = _surface_from_receive_id_type(target["receive_id_type"])
         self._debug_recorder.record_inbound(
             user_id=user_id,
             text=text,
             reply_receive_id=target["receive_id"],
-            reply_receive_id_type=target["receive_id_type"],
+            reply_surface=surface.value if surface else None,
             payload=payload,
         )
 
@@ -458,3 +455,19 @@ class FeishuGateway:
             text=f"[card] Workspace: {project.name}",
             task_id=project.id,
         )
+
+
+def _surface_from_receive_id_type(receive_id_type: str | None) -> Surface | None:
+    if receive_id_type == "chat_id":
+        return Surface.GROUP
+    if receive_id_type == "open_id":
+        return Surface.DM
+    return None
+
+
+def _receive_id_type_from_surface(surface: Surface | None) -> str | None:
+    if surface == Surface.GROUP:
+        return "chat_id"
+    if surface == Surface.DM:
+        return "open_id"
+    return None

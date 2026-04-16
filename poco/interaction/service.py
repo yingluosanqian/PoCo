@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+from poco.interaction.card_models import Surface
 from poco.session.controller import SessionController
 from poco.task.controller import TaskController, TaskNotFoundError, TaskStateError
 from poco.task.rendering import render_task_text
@@ -41,7 +42,7 @@ class InteractionService:
         effective_sandbox: str | None = None,
         effective_workdir: str | None = None,
         reply_receive_id: str | None = None,
-        reply_receive_id_type: str | None = None,
+        reply_surface: Surface | None = None,
     ) -> InteractionResponse:
         command = text.strip()
         if not command:
@@ -64,7 +65,7 @@ class InteractionService:
                 effective_sandbox=effective_sandbox,
                 effective_workdir=effective_workdir,
                 reply_receive_id=reply_receive_id,
-                reply_receive_id_type=reply_receive_id_type,
+                reply_surface=reply_surface,
             )
 
         if command == "/help":
@@ -90,7 +91,7 @@ class InteractionService:
                 effective_sandbox=effective_sandbox,
                 effective_workdir=effective_workdir,
                 reply_receive_id=reply_receive_id,
-                reply_receive_id_type=reply_receive_id_type,
+                reply_surface=reply_surface,
             )
 
         if command.startswith("/status "):
@@ -133,7 +134,7 @@ class InteractionService:
         effective_sandbox: str | None,
         effective_workdir: str | None,
         reply_receive_id: str | None,
-        reply_receive_id_type: str | None,
+        reply_surface: Surface | None,
     ) -> InteractionResponse:
         task = self._controller.create_task(
             requester_id=requester_id,
@@ -147,7 +148,7 @@ class InteractionService:
             effective_sandbox=effective_sandbox,
             effective_workdir=effective_workdir,
             reply_receive_id=reply_receive_id,
-            reply_receive_id_type=reply_receive_id_type,
+            reply_surface=reply_surface,
         )
         dispatch_action = "start"
         headline = "Task created."

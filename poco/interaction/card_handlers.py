@@ -689,10 +689,10 @@ class TaskIntentHandler:
         )
 
         context = self.workspace_controller.get_context(project)
-        reply_receive_id, reply_receive_id_type = _resolve_task_reply_target(
+        reply_receive_id, reply_surface = _resolve_task_reply_target(
             project,
             actor_id=intent.actor_id,
-            surface=intent.surface.value,
+            surface=intent.surface,
         )
         task = self.task_controller.create_task(
             requester_id=intent.actor_id,
@@ -711,7 +711,7 @@ class TaskIntentHandler:
             effective_workdir=context.active_workdir,
             notification_message_id=_optional_string(intent.source_message_id),
             reply_receive_id=reply_receive_id,
-            reply_receive_id_type=reply_receive_id_type,
+            reply_surface=reply_surface,
         )
         message = f"Task created for {project.name}"
         if self.task_controller.has_active_task_for_project(
@@ -785,10 +785,10 @@ class TaskIntentHandler:
         project = _get_project_or_reject(self.project_controller, intent)
         if isinstance(project, IntentDispatchResult):
             return project
-        reply_receive_id, reply_receive_id_type = _resolve_task_reply_target(
+        reply_receive_id, reply_surface = _resolve_task_reply_target(
             project,
             actor_id=intent.actor_id,
-            surface=intent.surface.value,
+            surface=intent.surface,
         )
         task = self.task_controller.create_task(
             requester_id=intent.actor_id,
@@ -804,7 +804,7 @@ class TaskIntentHandler:
             backend_session_id=original.backend_session_id,
             notification_message_id=_optional_string(intent.source_message_id),
             reply_receive_id=reply_receive_id,
-            reply_receive_id_type=reply_receive_id_type,
+            reply_surface=reply_surface,
         )
         message = "Continuation task created."
         if self.task_controller.has_active_task_for_project(
@@ -1587,10 +1587,12 @@ def _positive_int(value: object, *, default: int) -> int:
     return parsed if parsed > 0 else default
 
 
-def _resolve_task_reply_target(project, *, actor_id: str, surface: str) -> tuple[str | None, str | None]:
-    if surface == "group" and project.group_chat_id:
-        return project.group_chat_id, "chat_id"
-    return actor_id, "open_id"
+def _resolve_task_reply_target(
+    project, *, actor_id: str, surface: Surface
+) -> tuple[str | None, Surface | None]:
+    if surface == Surface.GROUP and project.group_chat_id:
+        return project.group_chat_id, Surface.GROUP
+    return actor_id, Surface.DM
 
 
 def _latest_project_task(task_controller: TaskController | None, project_id: str):

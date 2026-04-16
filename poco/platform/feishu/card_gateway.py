@@ -67,7 +67,7 @@ class FeishuCardActionGateway:
                 user_id=intent.actor_id,
                 text=intent.intent_key,
                 reply_receive_id=intent.source_message_id,
-                reply_receive_id_type=intent.surface.value,
+                reply_surface=intent.surface.value,
                 payload=payload,
             )
 

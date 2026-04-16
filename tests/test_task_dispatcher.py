@@ -7,6 +7,7 @@ from time import sleep
 import unittest
 
 from poco.agent.runner import AgentRunUpdate, StubAgentRunner
+from poco.interaction.card_models import Surface
 from poco.storage.memory import InMemoryTaskStore
 from poco.task.controller import TaskController
 from poco.task.dispatcher import AsyncTaskDispatcher
@@ -77,7 +78,7 @@ class TaskDispatcherTest(unittest.TestCase):
             prompt="summarize the repository",
             source="feishu",
             reply_receive_id="oc_demo_chat",
-            reply_receive_id_type="chat_id",
+            reply_surface=Surface.GROUP,
         )
         self.dispatcher.dispatch_start(task.id)
         updated = self.controller.get_task(task.id)
@@ -93,7 +94,7 @@ class TaskDispatcherTest(unittest.TestCase):
             prompt="confirm: deploy the patch",
             source="feishu",
             reply_receive_id="oc_demo_chat",
-            reply_receive_id_type="chat_id",
+            reply_surface=Surface.GROUP,
         )
         self.dispatcher.dispatch_start(task.id)
         updated = self.controller.get_task(task.id)
@@ -108,7 +109,7 @@ class TaskDispatcherTest(unittest.TestCase):
             prompt="confirm: deploy the patch",
             source="feishu",
             reply_receive_id="oc_demo_chat",
-            reply_receive_id_type="chat_id",
+            reply_surface=Surface.GROUP,
         )
         self.dispatcher.dispatch_start(task.id)
         self.controller.resolve_confirmation(task.id, approved=True)
@@ -129,7 +130,7 @@ class TaskDispatcherTest(unittest.TestCase):
             prompt="stream output",
             source="feishu",
             reply_receive_id="oc_demo_chat",
-            reply_receive_id_type="chat_id",
+            reply_surface=Surface.GROUP,
         )
 
         dispatcher.dispatch_start(task.id)
@@ -156,7 +157,7 @@ class TaskDispatcherTest(unittest.TestCase):
             prompt="stream output",
             source="feishu",
             reply_receive_id="oc_demo_chat",
-            reply_receive_id_type="chat_id",
+            reply_surface=Surface.GROUP,
         )
 
         def release_gate() -> None:
@@ -184,7 +185,7 @@ class TaskDispatcherTest(unittest.TestCase):
             source="feishu",
             project_id="proj_demo",
             reply_receive_id="oc_demo_chat",
-            reply_receive_id_type="chat_id",
+            reply_surface=Surface.GROUP,
         )
         second = self.controller.create_task(
             requester_id="ou_demo",
@@ -192,7 +193,7 @@ class TaskDispatcherTest(unittest.TestCase):
             source="feishu",
             project_id="proj_demo",
             reply_receive_id="oc_demo_chat",
-            reply_receive_id_type="chat_id",
+            reply_surface=Surface.GROUP,
         )
         self.controller.queue_task(second.id)
 
@@ -225,7 +226,7 @@ class TaskDispatcherTest(unittest.TestCase):
             source="feishu",
             project_id="proj_demo",
             reply_receive_id="oc_demo_chat",
-            reply_receive_id_type="chat_id",
+            reply_surface=Surface.GROUP,
         )
         task.set_status(TaskStatus.RUNNING)
         task.append_live_output("final answer")

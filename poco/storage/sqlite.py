@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 from poco.agent.tokens import TokenUsage
+from poco.interaction.card_models import Surface
 from poco.platform.common.platform import Platform
 from poco.project.models import Project
 from poco.session.models import Session, SessionStatus
@@ -22,6 +23,15 @@ def _serialize_token_usage(usage: TokenUsage | None) -> str | None:
     if usage is None:
         return None
     return json.dumps(usage.to_dict(), ensure_ascii=False)
+
+
+def _parse_reply_surface(value: object) -> Surface | None:
+    if not value:
+        return None
+    try:
+        return Surface(str(value))
+    except ValueError:
+        return None
 
 
 def _deserialize_token_usage(value: object) -> TokenUsage | None:
@@ -97,6 +107,7 @@ class _SqliteStoreBase:
                     notification_message_id TEXT,
                     reply_receive_id TEXT,
                     reply_receive_id_type TEXT,
+                    reply_surface TEXT,
                     platform TEXT NOT NULL DEFAULT 'feishu',
                     status TEXT NOT NULL,
                     awaiting_confirmation_reason TEXT,
@@ -179,6 +190,17 @@ class _SqliteStoreBase:
             if "platform" not in task_columns:
                 connection.execute(
                     "ALTER TABLE tasks ADD COLUMN platform TEXT NOT NULL DEFAULT 'feishu'"
+                )
+            if "reply_surface" not in task_columns:
+                connection.execute("ALTER TABLE tasks ADD COLUMN reply_surface TEXT")
+                connection.execute(
+                    """
+                    UPDATE tasks SET reply_surface = CASE reply_receive_id_type
+                        WHEN 'chat_id' THEN 'group'
+                        WHEN 'open_id' THEN 'dm'
+                        ELSE NULL
+                    END
+                    """
                 )
             session_columns = {
                 row["name"]
@@ -287,7 +309,7 @@ class SqliteTaskStore(_SqliteStoreBase):
                 INSERT INTO tasks (
                     id, source, requester_id, prompt, agent_backend, effective_backend_config, effective_model, effective_sandbox, backend_session_id, project_id, session_id,
                     effective_workdir, notification_message_id, reply_receive_id,
-                    reply_receive_id_type, platform, status, awaiting_confirmation_reason,
+                    reply_surface, platform, status, awaiting_confirmation_reason,
                     live_output, raw_result, result_summary, last_token_usage, total_token_usage, created_at, updated_at, events
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
@@ -304,7 +326,7 @@ class SqliteTaskStore(_SqliteStoreBase):
                     effective_workdir = excluded.effective_workdir,
                     notification_message_id = excluded.notification_message_id,
                     reply_receive_id = excluded.reply_receive_id,
-                    reply_receive_id_type = excluded.reply_receive_id_type,
+                    reply_surface = excluded.reply_surface,
                     platform = excluded.platform,
                     status = excluded.status,
                     awaiting_confirmation_reason = excluded.awaiting_confirmation_reason,
@@ -332,7 +354,7 @@ class SqliteTaskStore(_SqliteStoreBase):
                     task.effective_workdir,
                     task.notification_message_id,
                     task.reply_receive_id,
-                    task.reply_receive_id_type,
+                    task.reply_surface.value if task.reply_surface else None,
                     task.platform.value,
                     task.status.value,
                     task.awaiting_confirmation_reason,
@@ -404,7 +426,7 @@ class SqliteTaskStore(_SqliteStoreBase):
             effective_workdir=row["effective_workdir"],
             notification_message_id=row["notification_message_id"],
             reply_receive_id=row["reply_receive_id"],
-            reply_receive_id_type=row["reply_receive_id_type"],
+            reply_surface=_parse_reply_surface(row["reply_surface"]),
             platform=Platform(row["platform"] or Platform.FEISHU.value),
             status=TaskStatus(row["status"]),
             events=events,

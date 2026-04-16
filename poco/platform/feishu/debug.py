@@ -30,7 +30,7 @@ class FeishuDebugRecorder:
         user_id: str | None,
         text: str | None,
         reply_receive_id: str | None,
-        reply_receive_id_type: str | None,
+        reply_surface: str | None,
         payload: dict[str, Any],
     ) -> None:
         event = {
@@ -38,7 +38,7 @@ class FeishuDebugRecorder:
             "user_id": user_id,
             "text": text,
             "reply_receive_id": reply_receive_id,
-            "reply_receive_id_type": reply_receive_id_type,
+            "reply_surface": reply_surface,
             "payload_keys": sorted(payload.keys()),
             "event_keys": sorted((payload.get("event") or {}).keys()) if isinstance(payload.get("event"), dict) else [],
         }

@@ -6,6 +6,7 @@ from enum import StrEnum
 
 from poco.agent.catalog import backend_option, normalize_backend_config
 from poco.agent.tokens import TokenUsage
+from poco.interaction.card_models import Surface
 from poco.platform.common.platform import Platform
 
 
@@ -53,7 +54,7 @@ class Task:
     effective_workdir: str | None = None
     notification_message_id: str | None = None
     reply_receive_id: str | None = None
-    reply_receive_id_type: str | None = None
+    reply_surface: Surface | None = None
     platform: Platform = Platform.FEISHU
     status: TaskStatus = TaskStatus.CREATED
     events: list[TaskEvent] = field(default_factory=list)
@@ -176,7 +177,7 @@ class Task:
             "effective_workdir": self.effective_workdir,
             "notification_message_id": self.notification_message_id,
             "reply_receive_id": self.reply_receive_id,
-            "reply_receive_id_type": self.reply_receive_id_type,
+            "reply_surface": self.reply_surface.value if self.reply_surface else None,
             "platform": self.platform.value,
             "status": self.status.value,
             "awaiting_confirmation_reason": self.awaiting_confirmation_reason,
