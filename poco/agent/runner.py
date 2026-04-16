@@ -303,6 +303,7 @@ class CodexAppServerRunner:
         approval_policy: str = "never",
         timeout_seconds: int = 900,
         transport_idle_seconds: float = 300.0,
+        completion_settle_seconds: float = 1.0,
     ) -> None:
         self._command = command
         self._workdir = workdir
@@ -312,6 +313,7 @@ class CodexAppServerRunner:
         self._approval_policy = approval_policy
         self._timeout_seconds = timeout_seconds
         self._transport_idle_seconds = transport_idle_seconds
+        self._completion_settle_seconds = max(0.0, completion_settle_seconds)
         self._lock = RLock()
         self._active_processes: dict[str, subprocess.Popen[str]] = {}
         self._active_turns: dict[str, _CodexActiveTurn] = {}
@@ -483,6 +485,7 @@ class CodexAppServerRunner:
             streamed_text = ""
             last_reasoning_token_count: int | None = None
             deadline = monotonic() + self._timeout_seconds
+            last_task_activity_at: float | None = None
             while True:
                 if self._consume_cancelled(task.id):
                     return
@@ -512,6 +515,18 @@ class CodexAppServerRunner:
                     if read_lock is not None:
                         read_lock.release()
                 if message is None:
+                    if (
+                        final_text
+                        and last_task_activity_at is not None
+                        and monotonic() - last_task_activity_at >= self._completion_settle_seconds
+                    ):
+                        yield AgentRunUpdate(
+                            kind="completed",
+                            message="Task completed by the codex app-server runner after the final reply settled.",
+                            raw_result=final_text,
+                            backend_session_id=backend_session_id,
+                        )
+                        return
                     if process.poll() is not None:
                         break
                     continue
@@ -525,6 +540,7 @@ class CodexAppServerRunner:
                 message_turn_id = _optional_string(params.get("turnId"))
                 if method != "error" and message_thread_id and message_thread_id != backend_session_id:
                     continue
+                last_task_activity_at = monotonic()
 
                 if method == "turn/started":
                     turn = params.get("turn")
