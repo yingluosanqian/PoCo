@@ -4,6 +4,7 @@ from typing import Protocol
 
 from poco.interaction.card_dispatcher import build_render_instruction
 from poco.interaction.card_models import Surface
+from poco.platform.common.card_renderer import CardRenderer
 from poco.platform.common.message_client import MessageClient
 from poco.platform.feishu.cards import FeishuCardRenderer
 from poco.platform.feishu.debug import FeishuDebugRecorder
@@ -30,7 +31,7 @@ class FeishuTaskNotifier:
         self,
         message_client: MessageClient,
         *,
-        renderer: FeishuCardRenderer | None = None,
+        renderer: CardRenderer | None = None,
         project_controller: ProjectController | None = None,
         session_controller: SessionController | None = None,
         task_controller: TaskController | None = None,
