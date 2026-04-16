@@ -31,18 +31,51 @@ def load_file_config() -> dict[str, object]:
     return data
 
 
-def _setting(name: str, default: str | None = None) -> str | None:
+def _sectioned_value(section: str, field_key: str) -> str | None:
+    data = load_file_config().get(section)
+    if not isinstance(data, dict):
+        return None
+    value = data.get(field_key)
+    return None if value is None else str(value)
+
+
+def _setting(
+    name: str,
+    default: str | None = None,
+    *,
+    section: str | None = None,
+    field_key: str | None = None,
+) -> str | None:
+    """Resolve a configuration value.
+
+    Precedence: environment variable (flat ``POCO_*`` name) > flat config-file
+    key (same name) > sectioned config-file key (``{section: {field_key: ...}}``)
+    > caller-provided ``default``. Sectioned lookup is skipped unless both
+    ``section`` and ``field_key`` are provided.
+    """
+
     env_value = getenv(name)
     if env_value is not None:
         return env_value
-    file_value = load_file_config().get(name, default)
-    if file_value is None:
-        return None
-    return str(file_value)
+    file_data = load_file_config()
+    if name in file_data:
+        value = file_data[name]
+        return None if value is None else str(value)
+    if section and field_key:
+        sectioned = _sectioned_value(section, field_key)
+        if sectioned is not None:
+            return sectioned
+    return default
 
 
-def _setting_int(name: str, default: int) -> int:
-    value = _setting(name, str(default))
+def _setting_int(
+    name: str,
+    default: int,
+    *,
+    section: str | None = None,
+    field_key: str | None = None,
+) -> int:
+    value = _setting(name, str(default), section=section, field_key=field_key)
     return int(value or default)
 
 
@@ -74,17 +107,23 @@ class Settings:
     coco_model: str | None = field(default_factory=lambda: _setting("POCO_COCO_MODEL"))
     coco_approval_mode: str = field(default_factory=lambda: _setting("POCO_COCO_APPROVAL_MODE", "default") or "default")
     coco_timeout_seconds: int = field(default_factory=lambda: _setting_int("POCO_COCO_TIMEOUT_SECONDS", 900))
-    feishu_api_base_url: str = field(default_factory=lambda: (_setting("POCO_FEISHU_API_BASE_URL", "https://open.feishu.cn") or "https://open.feishu.cn").rstrip("/"))
-    feishu_app_id: str | None = field(default_factory=lambda: _setting("POCO_FEISHU_APP_ID"))
-    feishu_app_secret: str | None = field(default_factory=lambda: _setting("POCO_FEISHU_APP_SECRET"))
-    feishu_delivery_mode: str = field(default_factory=lambda: (_setting("POCO_FEISHU_DELIVERY_MODE", "longconn") or "longconn").strip().lower())
-    feishu_verification_token: str | None = field(default_factory=lambda: _setting("POCO_FEISHU_VERIFICATION_TOKEN"))
-    feishu_encrypt_key: str | None = field(default_factory=lambda: _setting("POCO_FEISHU_ENCRYPT_KEY"))
-    state_backend: str = field(default_factory=lambda: (_setting("POCO_STATE_BACKEND", "sqlite") or "sqlite").strip().lower())
+    feishu_api_base_url: str = field(default_factory=lambda: (_setting("POCO_FEISHU_API_BASE_URL", "https://open.feishu.cn", section="feishu", field_key="api_base_url") or "https://open.feishu.cn").rstrip("/"))
+    feishu_app_id: str | None = field(default_factory=lambda: _setting("POCO_FEISHU_APP_ID", section="feishu", field_key="app_id"))
+    feishu_app_secret: str | None = field(default_factory=lambda: _setting("POCO_FEISHU_APP_SECRET", section="feishu", field_key="app_secret"))
+    feishu_delivery_mode: str = field(default_factory=lambda: (_setting("POCO_FEISHU_DELIVERY_MODE", "longconn", section="feishu", field_key="delivery_mode") or "longconn").strip().lower())
+    feishu_verification_token: str | None = field(default_factory=lambda: _setting("POCO_FEISHU_VERIFICATION_TOKEN", section="feishu", field_key="verification_token"))
+    feishu_encrypt_key: str | None = field(default_factory=lambda: _setting("POCO_FEISHU_ENCRYPT_KEY", section="feishu", field_key="encrypt_key"))
+    slack_bot_token: str | None = field(default_factory=lambda: _setting("POCO_SLACK_BOT_TOKEN", section="slack", field_key="bot_token"))
+    slack_app_token: str | None = field(default_factory=lambda: _setting("POCO_SLACK_APP_TOKEN", section="slack", field_key="app_token"))
+    slack_signing_secret: str | None = field(default_factory=lambda: _setting("POCO_SLACK_SIGNING_SECRET", section="slack", field_key="signing_secret"))
+    slack_delivery_mode: str = field(default_factory=lambda: (_setting("POCO_SLACK_DELIVERY_MODE", "socket", section="slack", field_key="delivery_mode") or "socket").strip().lower())
+    state_backend: str = field(default_factory=lambda: (_setting("POCO_STATE_BACKEND", "sqlite", section="state", field_key="backend") or "sqlite").strip().lower())
     state_db_path: str = field(
         default_factory=lambda: _setting(
             "POCO_STATE_DB_PATH",
             str(Path(DEFAULT_RUNTIME_DIR) / "poco.db"),
+            section="state",
+            field_key="db_path",
         )
         or str(Path(DEFAULT_RUNTIME_DIR) / "poco.db")
     )
@@ -102,10 +141,31 @@ class Settings:
         return bool(self.feishu_encrypt_key)
 
     @property
+    def slack_enabled(self) -> bool:
+        if not (self.slack_bot_token and self.slack_signing_secret):
+            return False
+        if self.slack_socket_mode_enabled and not self.slack_app_token:
+            return False
+        return True
+
+    @property
+    def slack_socket_mode_enabled(self) -> bool:
+        return self.slack_delivery_mode == "socket"
+
+    @property
+    def slack_signature_enabled(self) -> bool:
+        return bool(self.slack_signing_secret)
+
+    @property
     def runtime_mode(self) -> str:
+        platforms: list[str] = []
         if self.feishu_enabled:
-            return "feishu"
-        return "local"
+            platforms.append("feishu")
+        if self.slack_enabled:
+            platforms.append("slack")
+        if not platforms:
+            return "local"
+        return "+".join(platforms)
 
     @property
     def feishu_longconn_enabled(self) -> bool:
