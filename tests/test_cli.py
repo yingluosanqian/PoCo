@@ -35,12 +35,90 @@ class PocoCliTest(unittest.TestCase):
             patch("builtins.input", return_value="cli_new_app"),
             patch("poco.cli.getpass", return_value="new_secret"),
         ):
+            os.environ.pop("POCO_FEISHU_APP_ID", None)
+            os.environ.pop("POCO_FEISHU_APP_SECRET", None)
             exit_code = cli.command_config(Namespace())
 
         self.assertEqual(exit_code, 0)
         saved = json.loads(self.config_path.read_text(encoding="utf-8"))
         self.assertEqual(saved["POCO_FEISHU_APP_ID"], "cli_new_app")
         self.assertEqual(saved["POCO_FEISHU_APP_SECRET"], "new_secret")
+
+    def test_config_command_skips_prompts_when_both_env_vars_set(self) -> None:
+        input_mock = Mock(side_effect=AssertionError("input must not be called"))
+        getpass_mock = Mock(side_effect=AssertionError("getpass must not be called"))
+        with (
+            patch.object(cli, "DEFAULT_RUNTIME_DIR", str(self.runtime_dir)),
+            patch.object(cli, "PID_PATH", self.pid_path),
+            patch.object(cli, "LOG_PATH", self.log_path),
+            patch.dict(
+                os.environ,
+                {
+                    "POCO_CONFIG_PATH": str(self.config_path),
+                    "POCO_FEISHU_APP_ID": "env_app_id",
+                    "POCO_FEISHU_APP_SECRET": "env_app_secret",
+                },
+                clear=False,
+            ),
+            patch("builtins.input", input_mock),
+            patch("poco.cli.getpass", getpass_mock),
+        ):
+            exit_code = cli.command_config(Namespace())
+
+        self.assertEqual(exit_code, 0)
+        input_mock.assert_not_called()
+        getpass_mock.assert_not_called()
+        self.assertFalse(self.config_path.exists())
+
+    def test_config_command_only_prompts_missing_env_var(self) -> None:
+        getpass_mock = Mock(side_effect=AssertionError("getpass must not be called"))
+        with (
+            patch.object(cli, "DEFAULT_RUNTIME_DIR", str(self.runtime_dir)),
+            patch.object(cli, "PID_PATH", self.pid_path),
+            patch.object(cli, "LOG_PATH", self.log_path),
+            patch.dict(
+                os.environ,
+                {
+                    "POCO_CONFIG_PATH": str(self.config_path),
+                    "POCO_FEISHU_APP_SECRET": "env_app_secret",
+                },
+                clear=False,
+            ),
+            patch("builtins.input", return_value="prompted_app_id"),
+            patch("poco.cli.getpass", getpass_mock),
+        ):
+            os.environ.pop("POCO_FEISHU_APP_ID", None)
+            exit_code = cli.command_config(Namespace())
+
+        self.assertEqual(exit_code, 0)
+        getpass_mock.assert_not_called()
+        saved = json.loads(self.config_path.read_text(encoding="utf-8"))
+        self.assertEqual(saved["POCO_FEISHU_APP_ID"], "prompted_app_id")
+        self.assertNotIn("POCO_FEISHU_APP_SECRET", saved)
+
+    def test_config_command_ignores_blank_env_var(self) -> None:
+        with (
+            patch.object(cli, "DEFAULT_RUNTIME_DIR", str(self.runtime_dir)),
+            patch.object(cli, "PID_PATH", self.pid_path),
+            patch.object(cli, "LOG_PATH", self.log_path),
+            patch.dict(
+                os.environ,
+                {
+                    "POCO_CONFIG_PATH": str(self.config_path),
+                    "POCO_FEISHU_APP_ID": "   ",
+                    "POCO_FEISHU_APP_SECRET": "   ",
+                },
+                clear=False,
+            ),
+            patch("builtins.input", return_value="prompted_app_id"),
+            patch("poco.cli.getpass", return_value="prompted_secret"),
+        ):
+            exit_code = cli.command_config(Namespace())
+
+        self.assertEqual(exit_code, 0)
+        saved = json.loads(self.config_path.read_text(encoding="utf-8"))
+        self.assertEqual(saved["POCO_FEISHU_APP_ID"], "prompted_app_id")
+        self.assertEqual(saved["POCO_FEISHU_APP_SECRET"], "prompted_secret")
 
     def test_start_command_spawns_background_process_and_writes_pid(self) -> None:
         process = Mock(pid=43210)

@@ -100,17 +100,47 @@ def _prompt(label: str, current: str | None = None, *, secret: bool = False) -> 
     return current or ""
 
 
+def _env_setting(name: str) -> str | None:
+    value = os.getenv(name)
+    if value is None:
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
 def command_config(_: argparse.Namespace) -> int:
     current = _read_config()
-    app_id = _prompt("Feishu App ID", str(current.get("POCO_FEISHU_APP_ID") or ""))
-    app_secret = _prompt(
-        "Feishu App Secret",
-        str(current.get("POCO_FEISHU_APP_SECRET") or ""),
-        secret=True,
-    )
+    env_app_id = _env_setting("POCO_FEISHU_APP_ID")
+    env_app_secret = _env_setting("POCO_FEISHU_APP_SECRET")
+
+    if env_app_id and env_app_secret:
+        print(
+            "Detected POCO_FEISHU_APP_ID and POCO_FEISHU_APP_SECRET in environment; "
+            "skipping interactive setup (env vars take precedence at runtime)."
+        )
+        return 0
+
+    if env_app_id:
+        print("POCO_FEISHU_APP_ID detected in environment; skipping prompt.")
+        app_id = env_app_id
+    else:
+        app_id = _prompt("Feishu App ID", str(current.get("POCO_FEISHU_APP_ID") or ""))
+
+    if env_app_secret:
+        print("POCO_FEISHU_APP_SECRET detected in environment; skipping prompt.")
+        app_secret = env_app_secret
+    else:
+        app_secret = _prompt(
+            "Feishu App Secret",
+            str(current.get("POCO_FEISHU_APP_SECRET") or ""),
+            secret=True,
+        )
+
     data = current.copy()
-    data["POCO_FEISHU_APP_ID"] = app_id
-    data["POCO_FEISHU_APP_SECRET"] = app_secret
+    if not env_app_id:
+        data["POCO_FEISHU_APP_ID"] = app_id
+    if not env_app_secret:
+        data["POCO_FEISHU_APP_SECRET"] = app_secret
     _write_config(data)
     load_file_config.cache_clear()
     print(f"Saved config to {_config_path()}")
