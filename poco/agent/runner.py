@@ -477,6 +477,7 @@ class CodexAppServerRunner:
                     )
 
             final_text: str | None = None
+            streamed_text = ""
             last_reasoning_token_count: int | None = None
             while True:
                 if self._consume_cancelled(task.id):
@@ -539,6 +540,7 @@ class CodexAppServerRunner:
                         continue
                     delta = _string_or_none(params.get("delta"))
                     if delta:
+                        streamed_text += delta
                         yield AgentRunUpdate(
                             kind="progress",
                             message="Codex output updated.",
@@ -582,7 +584,7 @@ class CodexAppServerRunner:
                     yield AgentRunUpdate(
                         kind="completed",
                         message="Task completed by the codex app-server runner.",
-                        raw_result=final_text or "Codex completed without a final response body.",
+                        raw_result=final_text or streamed_text or "Codex completed without a final response body.",
                         backend_session_id=backend_session_id,
                     )
                     return
@@ -601,12 +603,12 @@ class CodexAppServerRunner:
                     if (
                         isinstance(status, dict)
                         and status.get("type") == "idle"
-                        and final_text is not None
+                        and (final_text is not None or streamed_text)
                     ):
                         yield AgentRunUpdate(
                             kind="completed",
                             message="Task completed by the codex app-server runner.",
-                            raw_result=final_text,
+                            raw_result=final_text or streamed_text,
                             backend_session_id=backend_session_id,
                         )
                         return
