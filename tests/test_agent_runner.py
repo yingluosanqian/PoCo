@@ -240,6 +240,14 @@ class CodexAppServerRunnerTest(unittest.TestCase):
             ]
             fake_session.read_next_message.side_effect = [
                 {
+                    "method": "item/started",
+                    "params": {
+                        "threadId": "thread_123",
+                        "turnId": "turn_123",
+                        "item": {"type": "agentMessage", "id": "msg_1", "phase": "final_answer"},
+                    },
+                },
+                {
                     "method": "item/agentMessage/delta",
                     "params": {
                         "threadId": "thread_123",
@@ -262,7 +270,7 @@ class CodexAppServerRunnerTest(unittest.TestCase):
                     "params": {
                         "threadId": "thread_123",
                         "turnId": "turn_123",
-                        "item": {"type": "agentMessage", "text": "line1\nline2"},
+                        "item": {"type": "agentMessage", "text": "line1\nline2", "phase": "final_answer"},
                     },
                 },
                 {
@@ -270,6 +278,13 @@ class CodexAppServerRunnerTest(unittest.TestCase):
                     "params": {
                         "threadId": "thread_123",
                         "status": {"type": "idle"},
+                    },
+                },
+                {
+                    "method": "turn/completed",
+                    "params": {
+                        "threadId": "thread_123",
+                        "turn": {"id": "turn_123"},
                     },
                 },
             ]
@@ -281,12 +296,12 @@ class CodexAppServerRunnerTest(unittest.TestCase):
 
             self.assertEqual(updates[1].kind, "progress")
             self.assertEqual(updates[1].backend_session_id, "thread_123")
-            self.assertEqual(updates[2].output_chunk, "line1")
-            self.assertEqual(updates[3].output_chunk, "\nline2")
+            output_chunks = [update.output_chunk for update in updates if update.output_chunk]
+            self.assertEqual(output_chunks[:2], ["line1", "\nline2"])
             self.assertEqual(updates[-1].kind, "completed")
             self.assertEqual(updates[-1].raw_result, "line1\nline2")
 
-    def test_app_server_runner_completes_from_idle_after_deltas_without_item_completed(self) -> None:
+    def test_app_server_runner_fails_without_turn_completed_after_deltas(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             runner = CodexAppServerRunner(command="codex", workdir=tmpdir)
             task = Task(
@@ -315,6 +330,14 @@ class CodexAppServerRunnerTest(unittest.TestCase):
             ]
             fake_session.read_next_message.side_effect = [
                 {
+                    "method": "item/started",
+                    "params": {
+                        "threadId": "thread_123",
+                        "turnId": "turn_123",
+                        "item": {"type": "agentMessage", "id": "msg_1", "phase": "final_answer"},
+                    },
+                },
+                {
                     "method": "item/agentMessage/delta",
                     "params": {
                         "threadId": "thread_123",
@@ -346,10 +369,10 @@ class CodexAppServerRunnerTest(unittest.TestCase):
                     with patch("poco.agent.runner._CodexAppServerSession", return_value=fake_session):
                         updates = list(runner.start(task))
 
-            self.assertEqual(updates[-1].kind, "completed")
-            self.assertEqual(updates[-1].raw_result, "line1\nline2")
+            self.assertEqual(updates[-1].kind, "failed")
+            self.assertTrue(updates[-1].message)
 
-    def test_app_server_runner_completes_after_final_message_settles_without_terminal_events(self) -> None:
+    def test_app_server_runner_completes_after_final_answer_settles_without_terminal_event(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             runner = CodexAppServerRunner(
                 command="codex",
@@ -358,7 +381,7 @@ class CodexAppServerRunnerTest(unittest.TestCase):
                 completion_settle_seconds=0.0,
             )
             task = Task(
-                id="task_final_text_settle",
+                id="task_final_text_without_idle",
                 requester_id="ou_demo",
                 prompt="stream output",
                 source="feishu",
@@ -384,7 +407,7 @@ class CodexAppServerRunnerTest(unittest.TestCase):
                     "params": {
                         "threadId": "thread_123",
                         "turnId": "turn_123",
-                        "item": {"type": "agentMessage", "text": "final answer"},
+                        "item": {"type": "agentMessage", "text": "final answer", "phase": "final_answer"},
                     },
                 },
                 None,
@@ -397,6 +420,191 @@ class CodexAppServerRunnerTest(unittest.TestCase):
 
             self.assertEqual(updates[-1].kind, "completed")
             self.assertEqual(updates[-1].raw_result, "final answer")
+    
+    def test_app_server_runner_completes_after_idle_following_final_message_without_turn_completed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = CodexAppServerRunner(
+                command="codex",
+                workdir=tmpdir,
+                timeout_seconds=5,
+                completion_settle_seconds=0.0,
+            )
+            task = Task(
+                id="task_final_text_idle",
+                requester_id="ou_demo",
+                prompt="stream output",
+                source="feishu",
+                status=TaskStatus.RUNNING,
+                agent_backend="codex",
+            )
+
+            class FakePopen:
+                def poll(self):  # type: ignore[no-untyped-def]
+                    return None
+
+                def kill(self) -> None:
+                    return None
+
+            fake_session = MagicMock()
+            fake_session.request.side_effect = [
+                {"thread": {"id": "thread_123"}},
+                {"turn": {"id": "turn_123"}},
+            ]
+            fake_session.read_next_message.side_effect = [
+                {
+                    "method": "item/completed",
+                    "params": {
+                        "threadId": "thread_123",
+                        "turnId": "turn_123",
+                        "item": {"type": "agentMessage", "text": "final answer", "phase": "final_answer"},
+                    },
+                },
+                {
+                    "method": "thread/status/changed",
+                    "params": {
+                        "threadId": "thread_123",
+                        "status": {"type": "idle"},
+                    },
+                },
+                None,
+            ]
+
+            with patch("poco.agent.runner.shutil.which", return_value="/opt/homebrew/bin/codex"):
+                with patch("poco.agent.runner.subprocess.Popen", return_value=FakePopen()):
+                    with patch("poco.agent.runner._CodexAppServerSession", return_value=fake_session):
+                        updates = list(runner.start(task))
+
+            self.assertEqual(updates[-1].kind, "completed")
+            self.assertEqual(updates[-1].raw_result, "final answer")
+
+    def test_app_server_runner_ignores_non_final_answer_message_text_before_turn_completed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = CodexAppServerRunner(
+                command="codex",
+                workdir=tmpdir,
+                timeout_seconds=5,
+                completion_settle_seconds=0.0,
+            )
+            task = Task(
+                id="task_non_final_message_idle",
+                requester_id="ou_demo",
+                prompt="stream output",
+                source="feishu",
+                status=TaskStatus.RUNNING,
+                agent_backend="codex",
+            )
+
+            class FakePopen:
+                def __init__(self) -> None:
+                    self._poll_calls = 0
+
+                def poll(self):  # type: ignore[no-untyped-def]
+                    self._poll_calls += 1
+                    return None if self._poll_calls < 3 else 0
+
+                def kill(self) -> None:
+                    return None
+
+            fake_session = MagicMock()
+            fake_session.request.side_effect = [
+                {"thread": {"id": "thread_123"}},
+                {"turn": {"id": "turn_123"}},
+            ]
+            fake_session.read_next_message.side_effect = [
+                {
+                    "method": "item/completed",
+                    "params": {
+                        "threadId": "thread_123",
+                        "turnId": "turn_123",
+                        "item": {"type": "agentMessage", "text": "progress note", "phase": "analysis"},
+                    },
+                },
+                {
+                    "method": "thread/status/changed",
+                    "params": {
+                        "threadId": "thread_123",
+                        "status": {"type": "idle"},
+                    },
+                },
+                {
+                    "method": "turn/completed",
+                    "params": {
+                        "threadId": "thread_123",
+                        "turn": {"id": "turn_123"},
+                    },
+                },
+            ]
+
+            with patch("poco.agent.runner.shutil.which", return_value="/opt/homebrew/bin/codex"):
+                with patch("poco.agent.runner.subprocess.Popen", return_value=FakePopen()):
+                    with patch("poco.agent.runner._CodexAppServerSession", return_value=fake_session):
+                        updates = list(runner.start(task))
+
+            self.assertEqual(updates[-1].kind, "completed")
+            self.assertEqual(
+                updates[-1].raw_result,
+                "Codex completed without a final response body.",
+            )
+
+    def test_app_server_runner_does_not_settle_complete_if_activity_follows_final_answer(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = CodexAppServerRunner(
+                command="codex",
+                workdir=tmpdir,
+                timeout_seconds=5,
+                completion_settle_seconds=0.0,
+            )
+            task = Task(
+                id="task_final_answer_then_more_activity",
+                requester_id="ou_demo",
+                prompt="stream output",
+                source="feishu",
+                status=TaskStatus.RUNNING,
+                agent_backend="codex",
+            )
+
+            class FakePopen:
+                def __init__(self) -> None:
+                    self._poll_calls = 0
+
+                def poll(self):  # type: ignore[no-untyped-def]
+                    self._poll_calls += 1
+                    return None if self._poll_calls < 3 else 0
+
+                def kill(self) -> None:
+                    return None
+
+            fake_session = MagicMock()
+            fake_session.request.side_effect = [
+                {"thread": {"id": "thread_123"}},
+                {"turn": {"id": "turn_123"}},
+            ]
+            fake_session.read_next_message.side_effect = [
+                {
+                    "method": "item/completed",
+                    "params": {
+                        "threadId": "thread_123",
+                        "turnId": "turn_123",
+                        "item": {"type": "agentMessage", "text": "final answer", "phase": "final_answer"},
+                    },
+                },
+                {
+                    "method": "item/started",
+                    "params": {
+                        "threadId": "thread_123",
+                        "turnId": "turn_123",
+                        "item": {"type": "commandExecution", "id": "cmd_1"},
+                    },
+                },
+            ]
+
+            with patch("poco.agent.runner.shutil.which", return_value="/opt/homebrew/bin/codex"):
+                with patch("poco.agent.runner.subprocess.Popen", return_value=FakePopen()):
+                    with patch("poco.agent.runner._CodexAppServerSession", return_value=fake_session):
+                        updates = list(runner.start(task))
+
+            self.assertEqual(updates[-1].kind, "failed")
+            self.assertTrue(updates[-1].message)
 
     def test_app_server_runner_does_not_complete_during_quiet_gap_before_more_output(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -427,6 +635,14 @@ class CodexAppServerRunnerTest(unittest.TestCase):
                 {"turn": {"id": "turn_123"}},
             ]
             fake_session.read_next_message.side_effect = [
+                {
+                    "method": "item/started",
+                    "params": {
+                        "threadId": "thread_123",
+                        "turnId": "turn_123",
+                        "item": {"type": "agentMessage", "id": "msg_1", "phase": "final_answer"},
+                    },
+                },
                 {
                     "method": "item/agentMessage/delta",
                     "params": {
@@ -462,6 +678,13 @@ class CodexAppServerRunnerTest(unittest.TestCase):
                         "status": {"type": "idle"},
                     },
                 },
+                {
+                    "method": "turn/completed",
+                    "params": {
+                        "threadId": "thread_123",
+                        "turn": {"id": "turn_123"},
+                    },
+                },
             ]
 
             with patch("poco.agent.runner.shutil.which", return_value="/opt/homebrew/bin/codex"):
@@ -472,13 +695,12 @@ class CodexAppServerRunnerTest(unittest.TestCase):
             self.assertEqual(updates[-1].kind, "completed")
             self.assertEqual(updates[-1].raw_result, "line1\nline2\nline3")
 
-    def test_app_server_runner_waits_after_idle_before_completing_when_more_output_arrives(self) -> None:
+    def test_app_server_runner_completes_after_turn_completed_when_more_output_arrives(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             runner = CodexAppServerRunner(
                 command="codex",
                 workdir=tmpdir,
                 timeout_seconds=5,
-                completion_settle_seconds=0.2,
             )
             task = Task(
                 id="task_idle_then_more_output",
@@ -502,6 +724,14 @@ class CodexAppServerRunnerTest(unittest.TestCase):
                 {"turn": {"id": "turn_123"}},
             ]
             fake_session.read_next_message.side_effect = [
+                {
+                    "method": "item/started",
+                    "params": {
+                        "threadId": "thread_123",
+                        "turnId": "turn_123",
+                        "item": {"type": "agentMessage", "id": "msg_1", "phase": "final_answer"},
+                    },
+                },
                 {
                     "method": "item/agentMessage/delta",
                     "params": {
@@ -531,7 +761,7 @@ class CodexAppServerRunnerTest(unittest.TestCase):
                     "method": "turn/completed",
                     "params": {
                         "threadId": "thread_123",
-                        "turnId": "turn_123",
+                        "turn": {"id": "turn_123"},
                     },
                 },
             ]
@@ -544,7 +774,7 @@ class CodexAppServerRunnerTest(unittest.TestCase):
             self.assertEqual(updates[-1].kind, "completed")
             self.assertEqual(updates[-1].raw_result, "line1\nline2")
 
-    def test_app_server_runner_completes_after_process_exit_without_terminal_events(self) -> None:
+    def test_app_server_runner_fails_after_process_exit_without_terminal_events(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             runner = CodexAppServerRunner(
                 command="codex",
@@ -579,6 +809,14 @@ class CodexAppServerRunnerTest(unittest.TestCase):
             messages = iter(
                 [
                     {
+                        "method": "item/started",
+                        "params": {
+                            "threadId": "thread_123",
+                            "turnId": "turn_123",
+                            "item": {"type": "agentMessage", "id": "msg_1", "phase": "final_answer"},
+                        },
+                    },
+                    {
                         "method": "item/agentMessage/delta",
                         "params": {
                             "threadId": "thread_123",
@@ -596,16 +834,15 @@ class CodexAppServerRunnerTest(unittest.TestCase):
                     with patch("poco.agent.runner._CodexAppServerSession", return_value=fake_session):
                         updates = list(runner.start(task))
 
-            self.assertEqual(updates[-1].kind, "completed")
-            self.assertEqual(updates[-1].raw_result, "line1")
+            self.assertEqual(updates[-1].kind, "failed")
+            self.assertTrue(updates[-1].message)
 
-    def test_app_server_runner_completes_after_delta_only_output_stalls(self) -> None:
+    def test_app_server_runner_fails_after_delta_only_output_without_turn_completed(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             runner = CodexAppServerRunner(
                 command="codex",
                 workdir=tmpdir,
                 timeout_seconds=5,
-                output_stall_seconds=0.0,
             )
             task = Task(
                 id="task_delta_only_stall",
@@ -630,6 +867,14 @@ class CodexAppServerRunnerTest(unittest.TestCase):
             ]
             fake_session.read_next_message.side_effect = [
                 {
+                    "method": "item/started",
+                    "params": {
+                        "threadId": "thread_123",
+                        "turnId": "turn_123",
+                        "item": {"type": "agentMessage", "id": "msg_1", "phase": "final_answer"},
+                    },
+                },
+                {
                     "method": "item/agentMessage/delta",
                     "params": {
                         "threadId": "thread_123",
@@ -646,8 +891,74 @@ class CodexAppServerRunnerTest(unittest.TestCase):
                     with patch("poco.agent.runner._CodexAppServerSession", return_value=fake_session):
                         updates = list(runner.start(task))
 
+            self.assertEqual(updates[-1].kind, "failed")
+            self.assertTrue(updates[-1].message)
+
+    def test_app_server_runner_does_not_stall_complete_after_tool_activity_follows_output(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = CodexAppServerRunner(
+                command="codex",
+                workdir=tmpdir,
+                timeout_seconds=5,
+            )
+            task = Task(
+                id="task_output_then_tool_activity",
+                requester_id="ou_demo",
+                prompt="stream output",
+                source="feishu",
+                status=TaskStatus.RUNNING,
+                agent_backend="codex",
+            )
+
+            class FakePopen:
+                def poll(self):  # type: ignore[no-untyped-def]
+                    return None
+
+                def kill(self) -> None:
+                    return None
+
+            fake_session = MagicMock()
+            fake_session.request.side_effect = [
+                {"thread": {"id": "thread_123"}},
+                {"turn": {"id": "turn_123"}},
+            ]
+            fake_session.read_next_message.side_effect = [
+                {
+                    "method": "item/completed",
+                    "params": {
+                        "threadId": "thread_123",
+                        "turnId": "turn_123",
+                        "item": {"type": "agentMessage", "text": "progress note"},
+                    },
+                },
+                {
+                    "method": "item/started",
+                    "params": {
+                        "threadId": "thread_123",
+                        "turnId": "turn_123",
+                        "item": {"type": "toolCall", "id": "tool_1"},
+                    },
+                },
+                None,
+                {
+                    "method": "turn/completed",
+                    "params": {
+                        "threadId": "thread_123",
+                        "turn": {"id": "turn_123"},
+                    },
+                },
+            ]
+
+            with patch("poco.agent.runner.shutil.which", return_value="/opt/homebrew/bin/codex"):
+                with patch("poco.agent.runner.subprocess.Popen", return_value=FakePopen()):
+                    with patch("poco.agent.runner._CodexAppServerSession", return_value=fake_session):
+                        updates = list(runner.start(task))
+
             self.assertEqual(updates[-1].kind, "completed")
-            self.assertEqual(updates[-1].raw_result, "line1")
+            self.assertEqual(
+                [update.message for update in updates if update.kind == "completed"],
+                ["Task completed by the codex app-server runner."],
+            )
 
     def test_app_server_runner_surfaces_reasoning_progress_updates(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -700,7 +1011,7 @@ class CodexAppServerRunnerTest(unittest.TestCase):
                     "params": {
                         "threadId": "thread_123",
                         "turnId": "turn_123",
-                        "item": {"type": "agentMessage", "text": "done"},
+                        "item": {"type": "agentMessage", "text": "done", "phase": "final_answer"},
                     },
                 },
                 {
@@ -708,6 +1019,13 @@ class CodexAppServerRunnerTest(unittest.TestCase):
                     "params": {
                         "threadId": "thread_123",
                         "status": {"type": "idle"},
+                    },
+                },
+                {
+                    "method": "turn/completed",
+                    "params": {
+                        "threadId": "thread_123",
+                        "turn": {"id": "turn_123"},
                     },
                 },
             ]
@@ -753,7 +1071,7 @@ class CodexAppServerRunnerTest(unittest.TestCase):
                     "params": {
                         "threadId": "thread_existing",
                         "turnId": "turn_123",
-                        "item": {"type": "agentMessage", "text": "continued answer"},
+                        "item": {"type": "agentMessage", "text": "continued answer", "phase": "final_answer"},
                     },
                 },
                 {
@@ -761,6 +1079,13 @@ class CodexAppServerRunnerTest(unittest.TestCase):
                     "params": {
                         "threadId": "thread_existing",
                         "status": {"type": "idle"},
+                    },
+                },
+                {
+                    "method": "turn/completed",
+                    "params": {
+                        "threadId": "thread_existing",
+                        "turn": {"id": "turn_123"},
                     },
                 },
             ]
@@ -823,7 +1148,7 @@ class CodexAppServerRunnerTest(unittest.TestCase):
                     "params": {
                         "threadId": "thread_first",
                         "turnId": "turn_first",
-                        "item": {"type": "agentMessage", "text": "first answer"},
+                        "item": {"type": "agentMessage", "text": "first answer", "phase": "final_answer"},
                     },
                 },
                 {
@@ -833,13 +1158,20 @@ class CodexAppServerRunnerTest(unittest.TestCase):
                         "status": {"type": "idle"},
                     },
                 },
+                {
+                    "method": "turn/completed",
+                    "params": {
+                        "threadId": "thread_first",
+                        "turn": {"id": "turn_first"},
+                    },
+                },
                 None,
                 {
                     "method": "item/completed",
                     "params": {
                         "threadId": "thread_second",
                         "turnId": "turn_second",
-                        "item": {"type": "agentMessage", "text": "second answer"},
+                        "item": {"type": "agentMessage", "text": "second answer", "phase": "final_answer"},
                     },
                 },
                 {
@@ -847,6 +1179,13 @@ class CodexAppServerRunnerTest(unittest.TestCase):
                     "params": {
                         "threadId": "thread_second",
                         "status": {"type": "idle"},
+                    },
+                },
+                {
+                    "method": "turn/completed",
+                    "params": {
+                        "threadId": "thread_second",
+                        "turn": {"id": "turn_second"},
                     },
                 },
             ]
@@ -908,7 +1247,7 @@ class CodexAppServerRunnerTest(unittest.TestCase):
                     "params": {
                         "threadId": "thread_low",
                         "turnId": "turn_low",
-                        "item": {"type": "agentMessage", "text": "low answer"},
+                        "item": {"type": "agentMessage", "text": "low answer", "phase": "final_answer"},
                     },
                 },
                 {
@@ -916,6 +1255,13 @@ class CodexAppServerRunnerTest(unittest.TestCase):
                     "params": {
                         "threadId": "thread_low",
                         "status": {"type": "idle"},
+                    },
+                },
+                {
+                    "method": "turn/completed",
+                    "params": {
+                        "threadId": "thread_low",
+                        "turn": {"id": "turn_low"},
                     },
                 },
             ]
@@ -931,7 +1277,7 @@ class CodexAppServerRunnerTest(unittest.TestCase):
                     "params": {
                         "threadId": "thread_medium",
                         "turnId": "turn_medium",
-                        "item": {"type": "agentMessage", "text": "medium answer"},
+                        "item": {"type": "agentMessage", "text": "medium answer", "phase": "final_answer"},
                     },
                 },
                 {
@@ -939,6 +1285,13 @@ class CodexAppServerRunnerTest(unittest.TestCase):
                     "params": {
                         "threadId": "thread_medium",
                         "status": {"type": "idle"},
+                    },
+                },
+                {
+                    "method": "turn/completed",
+                    "params": {
+                        "threadId": "thread_medium",
+                        "turn": {"id": "turn_medium"},
                     },
                 },
             ]
