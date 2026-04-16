@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import deque
 from collections.abc import Iterator
 import json
+import logging
 import os
 import select
 import shutil
@@ -15,6 +16,8 @@ from time import monotonic
 from typing import Literal, Protocol
 
 from poco.task.models import Task
+
+_LOGGER = logging.getLogger(__name__)
 
 UpdateKind = Literal["progress", "confirmation_required", "completed", "failed"]
 _TraePromptEventKind = Literal["output", "completed", "failed", "cancelled"]
@@ -1343,6 +1346,7 @@ class CursorAgentRunner:
         self._mode = mode
         self._sandbox = sandbox
         self._timeout_seconds = timeout_seconds
+        self._logger = _LOGGER
         self._lock = RLock()
         self._active_processes: dict[str, subprocess.Popen[str]] = {}
         self._cancelled_tasks: set[str] = set()
@@ -1443,6 +1447,15 @@ class CursorAgentRunner:
         final_text: str | None = None
         live_text = ""
         try:
+            self._logger.info(
+                "Starting cursor-agent task %s: model=%s mode=%s sandbox=%s workdir=%s resume=%s",
+                task.id,
+                resolved_model or "<default>",
+                resolved_mode or "<default>",
+                resolved_sandbox or "<default>",
+                workdir,
+                bool(task.backend_session_id),
+            )
             process = subprocess.Popen(
                 command,
                 cwd=workdir,
@@ -1486,6 +1499,13 @@ class CursorAgentRunner:
                         continue
                     if stream is stderr:
                         stderr_lines.append(line)
+                        stderr_line = line.strip()
+                        if stderr_line:
+                            self._logger.warning(
+                                "cursor-agent stderr for task %s: %s",
+                                task.id,
+                                stderr_line,
+                            )
                         continue
                     event = _parse_json_event(line)
                     if event is None:
@@ -1514,15 +1534,28 @@ class CursorAgentRunner:
                     terminal_result = _extract_cursor_terminal_result(event)
                     if terminal_result is not None:
                         if terminal_result.get("is_error"):
+                            detail = _extract_cursor_error_detail(terminal_result)
+                            self._logger.warning(
+                                "cursor-agent terminal error for task %s: %s event=%s",
+                                task.id,
+                                detail or "<no detail>",
+                                _compact_json(terminal_result),
+                            )
                             yield AgentRunUpdate(
                                 kind="failed",
-                                message=_extract_cursor_error_detail(terminal_result)
+                                message=detail
                                 or "".join(stderr_lines).strip()
                                 or "Cursor Agent reported an error.",
                                 backend_session_id=backend_session_id,
                             )
                             return
                         raw_result = final_text or live_text or "Cursor Agent completed without a final response body."
+                        self._logger.info(
+                            "cursor-agent task %s completed via terminal result: session=%s chars=%s",
+                            task.id,
+                            backend_session_id or "<none>",
+                            len(raw_result),
+                        )
                         yield AgentRunUpdate(
                             kind="completed",
                             message="Task completed by the cursor_agent runner.",
@@ -1534,6 +1567,12 @@ class CursorAgentRunner:
             if self._consume_cancelled(task.id):
                 return
             if process.returncode and process.returncode != 0:
+                self._logger.warning(
+                    "cursor-agent task %s exited non-zero: returncode=%s stderr=%s",
+                    task.id,
+                    process.returncode,
+                    "".join(stderr_lines).strip() or "<empty>",
+                )
                 yield AgentRunUpdate(
                     kind="failed",
                     message="".join(stderr_lines).strip() or "Cursor Agent exited with a non-zero status.",
@@ -1541,6 +1580,12 @@ class CursorAgentRunner:
                 )
                 return
             raw_result = final_text or live_text or "Cursor Agent completed without a final response body."
+            self._logger.info(
+                "cursor-agent task %s completed after process exit: session=%s chars=%s",
+                task.id,
+                backend_session_id or "<none>",
+                len(raw_result),
+            )
             yield AgentRunUpdate(
                 kind="completed",
                 message="Task completed by the cursor_agent runner.",
@@ -1548,6 +1593,7 @@ class CursorAgentRunner:
                 backend_session_id=backend_session_id,
             )
         except OSError as exc:
+            self._logger.warning("Failed to start cursor-agent task %s: %s", task.id, exc)
             yield AgentRunUpdate(
                 kind="failed",
                 message=f"Failed to start Cursor Agent CLI: {exc}",
@@ -2390,6 +2436,16 @@ def _extract_cursor_error_detail(event: dict[str, object]) -> str | None:
         if value:
             return value
     return None
+
+
+def _compact_json(value: object, *, limit: int = 800) -> str:
+    try:
+        text = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    except (TypeError, ValueError):
+        text = str(value)
+    if len(text) <= limit:
+        return text
+    return f"{text[: limit - 3]}..."
 
 
 def _extract_coco_acp_session_id(payload: dict[str, object]) -> str | None:

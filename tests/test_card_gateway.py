@@ -1692,6 +1692,45 @@ class FeishuCardGatewayTest(unittest.TestCase):
         self.assertEqual(updated.backend_config["anthropic_base_url"], "http://localhost:8765")
         self.assertEqual(updated.backend_config["anthropic_api_key"], "mira-proxy")
 
+    def test_workspace_choose_agent_normalizes_legacy_cursor_config_values(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo Cursor",
+            created_by="ou_demo_user",
+            backend="cursor_agent",
+            backend_config={"model": "gpt-5", "mode": "default", "sandbox": "workspace-write"},
+        )
+
+        self.assertEqual(project.model, "auto")
+        self.assertEqual(project.sandbox, "enabled")
+        self.assertEqual(project.backend_config["model"], "auto")
+        self.assertEqual(project.backend_config["sandbox"], "enabled")
+
+        open_payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_choose_cursor_agent_1"},
+                "action": {
+                    "value": {
+                        "intent_key": "workspace.choose_agent",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "request_id": "req_choose_cursor_agent_1",
+                    },
+                },
+            }
+        }
+
+        opened = self.gateway.handle_action(open_payload)
+
+        self.assertEqual(opened["instruction"]["template_key"], "workspace_choose_agent")
+        form = opened["card"]["data"]["body"]["elements"][1]
+        self.assertEqual(form["elements"][0]["name"], "model")
+        self.assertEqual(form["elements"][0]["value"], "auto")
+        self.assertEqual(form["elements"][1]["name"], "mode")
+        self.assertEqual(form["elements"][1]["value"], "default")
+        self.assertEqual(form["elements"][2]["name"], "sandbox")
+        self.assertEqual(form["elements"][2]["value"], "enabled")
+
     def test_workspace_apply_preset_rejects_unknown_preset(self) -> None:
         project = self.project_controller.create_project(
             name="PoCo",

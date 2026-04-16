@@ -64,7 +64,7 @@ class Settings:
     claude_timeout_seconds: int = field(default_factory=lambda: _setting_int("POCO_CLAUDE_TIMEOUT_SECONDS", 900))
     cursor_command: str = field(default_factory=lambda: _setting("POCO_CURSOR_COMMAND", "cursor-agent") or "cursor-agent")
     cursor_workdir: str = field(default_factory=lambda: _setting("POCO_CURSOR_WORKDIR", DEFAULT_REPO_ROOT) or DEFAULT_REPO_ROOT)
-    cursor_model: str | None = field(default_factory=lambda: _setting("POCO_CURSOR_MODEL", "gpt-5"))
+    cursor_model: str | None = field(default_factory=lambda: _setting("POCO_CURSOR_MODEL", "auto"))
     cursor_mode: str = field(default_factory=lambda: _setting("POCO_CURSOR_MODE", "default") or "default")
     cursor_sandbox: str = field(default_factory=lambda: _setting("POCO_CURSOR_SANDBOX", "default") or "default")
     cursor_timeout_seconds: int = field(default_factory=lambda: _setting_int("POCO_CURSOR_TIMEOUT_SECONDS", 900))

@@ -8,6 +8,7 @@ from poco.agent.catalog import (
     _discover_codex_model_options,
     get_backend_descriptor,
     get_backend_model_options,
+    normalize_backend_config,
 )
 
 
@@ -19,6 +20,17 @@ class AgentCatalogTest(unittest.TestCase):
     def test_cursor_descriptor_defaults_to_auto_model(self) -> None:
         descriptor = get_backend_descriptor("cursor_agent")
         self.assertEqual(descriptor.default_config["model"], "auto")
+
+    def test_cursor_legacy_config_is_normalized_to_canonical_values(self) -> None:
+        normalized = normalize_backend_config(
+            "cursor_agent",
+            {"model": "gpt-5", "mode": "default", "sandbox": "workspace-write"},
+        )
+
+        self.assertEqual(
+            normalized,
+            {"model": "auto", "mode": "default", "sandbox": "enabled"},
+        )
 
     def test_codex_model_options_are_discovered_from_app_server(self) -> None:
         with (

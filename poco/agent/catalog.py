@@ -177,6 +177,8 @@ def normalize_backend_config(
     normalized = dict(descriptor.default_config)
     if config:
         normalized.update({key: value for key, value in config.items() if value not in (None, "")})
+    if (backend or "").strip().lower() == "cursor_agent":
+        normalized = _normalize_cursor_backend_config(normalized)
     return normalized
 
 
@@ -188,6 +190,21 @@ def backend_option(backend: str, config: dict[str, object], key: str) -> str | N
         return None
     text = str(value).strip()
     return text or None
+
+
+def _normalize_cursor_backend_config(config: dict[str, object]) -> dict[str, object]:
+    normalized = dict(config)
+    model = normalized.get("model")
+    if isinstance(model, str) and model.strip() == "gpt-5":
+        normalized["model"] = "auto"
+    sandbox = normalized.get("sandbox")
+    if isinstance(sandbox, str):
+        stripped = sandbox.strip()
+        if stripped in {"read-only", "workspace-write"}:
+            normalized["sandbox"] = "enabled"
+        elif stripped == "danger-full-access":
+            normalized["sandbox"] = "disabled"
+    return normalized
 
 
 def _cursor_command() -> str:
