@@ -303,7 +303,6 @@ class CodexAppServerRunner:
         approval_policy: str = "never",
         timeout_seconds: int = 900,
         transport_idle_seconds: float = 300.0,
-        completion_quiet_seconds: float = 2.0,
     ) -> None:
         self._command = command
         self._workdir = workdir
@@ -313,7 +312,6 @@ class CodexAppServerRunner:
         self._approval_policy = approval_policy
         self._timeout_seconds = timeout_seconds
         self._transport_idle_seconds = transport_idle_seconds
-        self._completion_quiet_seconds = max(0.0, completion_quiet_seconds)
         self._lock = RLock()
         self._active_processes: dict[str, subprocess.Popen[str]] = {}
         self._active_turns: dict[str, _CodexActiveTurn] = {}
@@ -485,7 +483,6 @@ class CodexAppServerRunner:
             streamed_text = ""
             last_reasoning_token_count: int | None = None
             deadline = monotonic() + self._timeout_seconds
-            last_output_at: float | None = None
             while True:
                 if self._consume_cancelled(task.id):
                     return
@@ -515,18 +512,6 @@ class CodexAppServerRunner:
                     if read_lock is not None:
                         read_lock.release()
                 if message is None:
-                    if (
-                        (streamed_text or final_text)
-                        and last_output_at is not None
-                        and monotonic() - last_output_at >= self._completion_quiet_seconds
-                    ):
-                        yield AgentRunUpdate(
-                            kind="completed",
-                            message="Task completed by the codex app-server runner.",
-                            raw_result=final_text or streamed_text,
-                            backend_session_id=backend_session_id,
-                        )
-                        return
                     if process.poll() is not None:
                         break
                     continue
@@ -577,7 +562,6 @@ class CodexAppServerRunner:
                     delta = _string_or_none(params.get("delta"))
                     if delta:
                         streamed_text += delta
-                        last_output_at = monotonic()
                         yield AgentRunUpdate(
                             kind="progress",
                             message="Codex output updated.",
@@ -594,8 +578,6 @@ class CodexAppServerRunner:
                         item_type = _optional_string(item.get("type"))
                         if item_type == "agentMessage":
                             final_text = _string_or_none(item.get("text")) or final_text
-                            if final_text:
-                                last_output_at = monotonic()
                         elif item_type == "reasoning":
                             summary = _codex_reasoning_summary(item)
                             if summary:
@@ -717,6 +699,14 @@ class CodexAppServerRunner:
 
             transport_broken = True
             if self._consume_cancelled(task.id):
+                return
+            if final_text or streamed_text:
+                yield AgentRunUpdate(
+                    kind="completed",
+                    message="Task completed by the codex app-server runner after the app-server transport closed.",
+                    raw_result=final_text or streamed_text,
+                    backend_session_id=backend_session_id,
+                )
                 return
             yield AgentRunUpdate(
                 kind="failed",

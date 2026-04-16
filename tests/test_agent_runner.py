@@ -349,16 +349,15 @@ class CodexAppServerRunnerTest(unittest.TestCase):
             self.assertEqual(updates[-1].kind, "completed")
             self.assertEqual(updates[-1].raw_result, "line1\nline2")
 
-    def test_app_server_runner_completes_after_quiet_period_without_terminal_events(self) -> None:
+    def test_app_server_runner_does_not_complete_during_quiet_gap_before_more_output(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             runner = CodexAppServerRunner(
                 command="codex",
                 workdir=tmpdir,
                 timeout_seconds=5,
-                completion_quiet_seconds=0.0,
             )
             task = Task(
-                id="task_stream_quiet_only",
+                id="task_stream_quiet_gap",
                 requester_id="ou_demo",
                 prompt="stream output",
                 source="feishu",
@@ -398,6 +397,22 @@ class CodexAppServerRunnerTest(unittest.TestCase):
                     },
                 },
                 None,
+                {
+                    "method": "item/agentMessage/delta",
+                    "params": {
+                        "threadId": "thread_123",
+                        "turnId": "turn_123",
+                        "itemId": "msg_1",
+                        "delta": "\nline3",
+                    },
+                },
+                {
+                    "method": "thread/status/changed",
+                    "params": {
+                        "threadId": "thread_123",
+                        "status": {"type": "idle"},
+                    },
+                },
             ]
 
             with patch("poco.agent.runner.shutil.which", return_value="/opt/homebrew/bin/codex"):
@@ -406,7 +421,62 @@ class CodexAppServerRunnerTest(unittest.TestCase):
                         updates = list(runner.start(task))
 
             self.assertEqual(updates[-1].kind, "completed")
-            self.assertEqual(updates[-1].raw_result, "line1\nline2")
+            self.assertEqual(updates[-1].raw_result, "line1\nline2\nline3")
+
+    def test_app_server_runner_completes_after_process_exit_without_terminal_events(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = CodexAppServerRunner(
+                command="codex",
+                workdir=tmpdir,
+                timeout_seconds=5,
+            )
+            task = Task(
+                id="task_stream_process_exit",
+                requester_id="ou_demo",
+                prompt="stream output",
+                source="feishu",
+                status=TaskStatus.RUNNING,
+                agent_backend="codex",
+            )
+
+            class FakePopen:
+                def __init__(self) -> None:
+                    self._poll_calls = 0
+
+                def poll(self):  # type: ignore[no-untyped-def]
+                    self._poll_calls += 1
+                    return None if self._poll_calls < 3 else 0
+
+                def kill(self) -> None:
+                    return None
+
+            fake_session = MagicMock()
+            fake_session.request.side_effect = [
+                {"thread": {"id": "thread_123"}},
+                {"turn": {"id": "turn_123"}},
+            ]
+            messages = iter(
+                [
+                    {
+                        "method": "item/agentMessage/delta",
+                        "params": {
+                            "threadId": "thread_123",
+                            "turnId": "turn_123",
+                            "itemId": "msg_1",
+                            "delta": "line1",
+                        },
+                    },
+                ]
+            )
+            fake_session.read_next_message.side_effect = lambda timeout_seconds=0.5: next(messages, None)
+
+            with patch("poco.agent.runner.shutil.which", return_value="/opt/homebrew/bin/codex"):
+                with patch("poco.agent.runner.subprocess.Popen", return_value=FakePopen()):
+                    with patch("poco.agent.runner._CodexAppServerSession", return_value=fake_session):
+                        updates = list(runner.start(task))
+
+            self.assertEqual(updates[-1].kind, "completed")
+            self.assertEqual(updates[-1].raw_result, "line1")
 
     def test_app_server_runner_surfaces_reasoning_progress_updates(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
