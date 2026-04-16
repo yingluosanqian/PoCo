@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from poco.interaction.card_dispatcher import CardActionDispatcher
 from poco.interaction.card_handlers import ProjectIntentHandler, TaskIntentHandler, WorkspaceIntentHandler
@@ -1629,6 +1630,74 @@ class FeishuCardGatewayTest(unittest.TestCase):
         self.assertEqual(updated.model, "gpt-5.4")
         self.assertEqual(updated.sandbox, "danger-full-access")
         self.assertEqual(updated.backend_config["reasoning_effort"], "low")
+
+    def test_workspace_apply_agent_triggers_runner_warm(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo Warm",
+            created_by="ou_demo_user",
+            backend="codex",
+            workdir="/srv/poco/warm-workdir",
+        )
+        apply_payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_apply_warm"},
+                "action": {
+                    "value": {
+                        "intent_key": "workspace.apply_agent",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "request_id": "req_apply_warm",
+                    },
+                    "form_value": {
+                        "model": "gpt-5.4",
+                        "sandbox": "workspace-write",
+                        "reasoning_effort": "high",
+                    },
+                },
+            }
+        }
+
+        with patch.object(self.task_controller, "warm_runner", return_value=True) as warm:
+            response = self.gateway.handle_action(apply_payload)
+
+        self.assertEqual(response["instruction"]["template_key"], "workspace_overview")
+        warm.assert_called_once_with(
+            backend="codex",
+            workdir="/srv/poco/warm-workdir",
+            reasoning_effort="high",
+        )
+
+    def test_workspace_apply_agent_skips_warm_when_workdir_unknown(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo No Workdir",
+            created_by="ou_demo_user",
+            backend="codex",
+        )
+        apply_payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_apply_no_workdir"},
+                "action": {
+                    "value": {
+                        "intent_key": "workspace.apply_agent",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "request_id": "req_apply_no_workdir",
+                    },
+                    "form_value": {
+                        "model": "gpt-5.4",
+                        "sandbox": "workspace-write",
+                        "reasoning_effort": "medium",
+                    },
+                },
+            }
+        }
+
+        with patch.object(self.task_controller, "warm_runner", return_value=True) as warm:
+            self.gateway.handle_action(apply_payload)
+
+        warm.assert_not_called()
 
     def test_workspace_choose_agent_normalizes_legacy_cursor_config_values(self) -> None:
         project = self.project_controller.create_project(

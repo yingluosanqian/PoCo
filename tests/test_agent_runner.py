@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import subprocess
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -1417,6 +1419,62 @@ class CodexAppServerRunnerTest(unittest.TestCase):
                     "input": [{"type": "text", "text": "Please focus on the failing test."}],
                 },
             )
+
+
+    def test_app_server_runner_warm_schedules_background_start_once(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = CodexAppServerRunner(command="codex", workdir=tmpdir)
+            started: dict[str, int] = {"calls": 0}
+            ready_event = threading.Event()
+
+            fake_transport = MagicMock()
+            fake_transport.process.poll.return_value = None
+
+            def _fake_start(workdir, *, reasoning_effort):  # type: ignore[no-untyped-def]
+                started["calls"] += 1
+                ready_event.wait(timeout=1.0)
+                return fake_transport
+
+            with patch.object(runner, "_start_transport", side_effect=_fake_start):
+                scheduled_first = runner.warm(workdir=tmpdir, reasoning_effort="medium")
+                scheduled_second = runner.warm(workdir=tmpdir, reasoning_effort="medium")
+                ready_event.set()
+                # Give the worker a chance to complete before the idempotent check.
+                for _ in range(50):
+                    if (tmpdir, "medium") in runner._transports:
+                        break
+                    time.sleep(0.01)
+                scheduled_third = runner.warm(workdir=tmpdir, reasoning_effort="medium")
+
+            self.assertTrue(scheduled_first)
+            self.assertFalse(scheduled_second)
+            self.assertFalse(scheduled_third)
+            self.assertEqual(started["calls"], 1)
+            self.assertIn((tmpdir, "medium"), runner._transports)
+
+    def test_app_server_runner_warm_swallows_start_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = CodexAppServerRunner(command="codex", workdir=tmpdir)
+            failure_seen = threading.Event()
+
+            def _failing_start(workdir, *, reasoning_effort):  # type: ignore[no-untyped-def]
+                try:
+                    raise RuntimeError("simulated transport start failure")
+                finally:
+                    failure_seen.set()
+
+            with patch.object(runner, "_start_transport", side_effect=_failing_start):
+                scheduled = runner.warm(workdir=tmpdir, reasoning_effort="medium")
+                self.assertTrue(failure_seen.wait(timeout=1.0))
+                # Give the worker thread a moment to finish cleanup after the raise.
+                for _ in range(50):
+                    if (tmpdir, "medium") not in runner._warming_keys:
+                        break
+                    time.sleep(0.01)
+
+            self.assertTrue(scheduled)
+            self.assertNotIn((tmpdir, "medium"), runner._transports)
+            self.assertNotIn((tmpdir, "medium"), runner._warming_keys)
 
 
 class ClaudeCodeRunnerTest(unittest.TestCase):

@@ -10,7 +10,7 @@ import shutil
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
-from threading import RLock
+from threading import RLock, Thread
 from time import monotonic
 
 from poco.agent.common import (
@@ -79,6 +79,7 @@ class CodexAppServerRunner:
         self._active_turns: dict[str, _CodexActiveTurn] = {}
         self._cancelled_tasks: set[str] = set()
         self._transports: dict[tuple[str, str], _CodexAppServerTransport] = {}
+        self._warming_keys: set[tuple[str, str]] = set()
 
     def is_ready(self) -> tuple[bool, str]:
         executable = shutil.which(self._command)
@@ -87,6 +88,64 @@ class CodexAppServerRunner:
         if not Path(self._workdir).exists():
             return False, f"Codex workdir does not exist: {self._workdir}"
         return True, f"Codex app-server ready via {executable}"
+
+    def warm(
+        self,
+        *,
+        workdir: str,
+        reasoning_effort: str | None = None,
+    ) -> bool:
+        """Best-effort background pre-warm of a transport for the given key.
+
+        Returns True if a warm was scheduled, False if the transport was
+        already alive or a warm for the same key is in flight. Never raises;
+        logs at INFO on failure.
+        """
+        effort = reasoning_effort or self._reasoning_effort
+        cache_key = (workdir, effort)
+        with self._lock:
+            existing = self._transports.get(cache_key)
+            if existing is not None and existing.process.poll() is None:
+                return False
+            if cache_key in self._warming_keys:
+                return False
+            self._warming_keys.add(cache_key)
+
+        def _worker() -> None:
+            transport: _CodexAppServerTransport | None = None
+            try:
+                transport = self._start_transport(workdir, reasoning_effort=effort)
+            except Exception as exc:  # pragma: no cover - defensive catch
+                _LOGGER.info(
+                    "codex warm failed for workdir=%s reasoning_effort=%s: %s",
+                    workdir,
+                    effort,
+                    exc,
+                )
+            stale: subprocess.Popen[str] | None = None
+            with self._lock:
+                self._warming_keys.discard(cache_key)
+                if transport is None:
+                    return
+                existing = self._transports.get(cache_key)
+                if existing is not None and existing.process.poll() is None:
+                    stale = transport.process
+                else:
+                    if existing is not None:
+                        self._transports.pop(cache_key, None)
+                    transport.last_used_at = monotonic()
+                    self._transports[cache_key] = transport
+            if stale is not None:
+                _cleanup_subprocess(stale)
+                return
+            _LOGGER.info(
+                "codex warm ready: workdir=%s reasoning_effort=%s",
+                workdir,
+                effort,
+            )
+
+        Thread(target=_worker, daemon=True, name="codex-warm").start()
+        return True
 
     def start(self, task: Task) -> Iterator[AgentRunUpdate]:
         yield AgentRunUpdate(

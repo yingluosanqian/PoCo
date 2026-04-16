@@ -66,6 +66,7 @@ def create_app(*, settings: Settings | None = None) -> FastAPI:
         codex_reasoning_effort=settings.codex_reasoning_effort,
         codex_approval_policy=settings.codex_approval_policy,
         codex_timeout_seconds=settings.codex_timeout_seconds,
+        codex_transport_idle_seconds=settings.codex_transport_idle_seconds,
         claude_command=settings.claude_command,
         claude_workdir=settings.claude_workdir,
         claude_model=settings.claude_model,

@@ -36,6 +36,31 @@ class SettingsConfigFileTest(unittest.TestCase):
         self.assertEqual(settings.feishu_app_secret, "secret_test_value")
         self.assertEqual(settings.feishu_delivery_mode, "longconn")
 
+    def test_codex_transport_idle_seconds_has_thirty_minute_default(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"POCO_CONFIG_PATH": os.path.join(self.tempdir.name, "absent.json")},
+            clear=False,
+        ):
+            load_file_config.cache_clear()
+            settings = Settings()
+
+        self.assertEqual(settings.codex_transport_idle_seconds, 1800)
+
+    def test_codex_transport_idle_seconds_respects_env_override(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "POCO_CONFIG_PATH": os.path.join(self.tempdir.name, "absent.json"),
+                "POCO_CODEX_TRANSPORT_IDLE_SECONDS": "60",
+            },
+            clear=False,
+        ):
+            load_file_config.cache_clear()
+            settings = Settings()
+
+        self.assertEqual(settings.codex_transport_idle_seconds, 60)
+
     def test_env_still_overrides_config_file(self) -> None:
         config_path = os.path.join(self.tempdir.name, "poco.config.json")
         with open(config_path, "w", encoding="utf-8") as handle:

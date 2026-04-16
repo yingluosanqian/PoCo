@@ -57,6 +57,7 @@ class Settings:
     codex_reasoning_effort: str = field(default_factory=lambda: _setting("POCO_CODEX_REASONING_EFFORT", "medium") or "medium")
     codex_approval_policy: str = field(default_factory=lambda: _setting("POCO_CODEX_APPROVAL_POLICY", "never") or "never")
     codex_timeout_seconds: int = field(default_factory=lambda: _setting_int("POCO_CODEX_TIMEOUT_SECONDS", 900))
+    codex_transport_idle_seconds: int = field(default_factory=lambda: _setting_int("POCO_CODEX_TRANSPORT_IDLE_SECONDS", 1800))
     claude_command: str = field(default_factory=lambda: _setting("POCO_CLAUDE_COMMAND", "claude") or "claude")
     claude_workdir: str = field(default_factory=lambda: _setting("POCO_CLAUDE_WORKDIR", DEFAULT_REPO_ROOT) or DEFAULT_REPO_ROOT)
     claude_model: str | None = field(default_factory=lambda: _setting("POCO_CLAUDE_MODEL", "sonnet"))

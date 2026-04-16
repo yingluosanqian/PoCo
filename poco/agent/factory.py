@@ -18,6 +18,7 @@ def create_agent_runner(
     codex_reasoning_effort: str,
     codex_approval_policy: str,
     codex_timeout_seconds: int,
+    codex_transport_idle_seconds: int = 1800,
     claude_command: str,
     claude_workdir: str,
     claude_model: str | None,
@@ -45,6 +46,7 @@ def create_agent_runner(
             reasoning_effort=codex_reasoning_effort,
             approval_policy=codex_approval_policy,
             timeout_seconds=codex_timeout_seconds,
+            transport_idle_seconds=float(codex_transport_idle_seconds),
         ),
         "claude_code": ClaudeCodeRunner(
             command=claude_command,

@@ -131,6 +131,25 @@ class MultiAgentRunner:
             return None
         return probe(task)
 
+    def warm(
+        self,
+        *,
+        backend: str,
+        workdir: str,
+        reasoning_effort: str | None = None,
+    ) -> bool:
+        runner = self._runners.get(backend)
+        if runner is None:
+            return False
+        warm_method = getattr(runner, "warm", None)
+        if not callable(warm_method):
+            return False
+        try:
+            result = warm_method(workdir=workdir, reasoning_effort=reasoning_effort)
+        except TypeError:
+            return False
+        return bool(result)
+
     def _delegate(self, task: Task) -> AgentRunner:
         runner = self._runners.get(task.agent_backend)
         if runner is not None:

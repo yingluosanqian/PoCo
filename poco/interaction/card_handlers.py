@@ -507,6 +507,19 @@ class WorkspaceIntentHandler:
             backend_config=backend_config,
         )
         context = self.workspace_controller.get_context(project)
+        warm_workdir = (context.active_workdir if context else None) or project.workdir
+        if warm_workdir:
+            reasoning_effort_value = project.backend_config.get("reasoning_effort")
+            reasoning_effort = (
+                reasoning_effort_value
+                if isinstance(reasoning_effort_value, str) and reasoning_effort_value
+                else None
+            )
+            self.task_controller.warm_runner(
+                backend=project.backend,
+                workdir=warm_workdir,
+                reasoning_effort=reasoning_effort,
+            )
         return build_workspace_overview_result(
             project,
             context=context,

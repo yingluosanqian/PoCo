@@ -112,6 +112,39 @@ class TaskController:
         with self._lock:
             return self._store.list_all()
 
+    def warm_runner(
+        self,
+        *,
+        backend: str,
+        workdir: str,
+        reasoning_effort: str | None = None,
+    ) -> bool:
+        """Best-effort pre-warm of the underlying runner. Returns True if a
+        warm was actually scheduled; False if the runner does not support
+        warm, the parameters are incomplete, or the attempt raised.
+        """
+        if not backend or not workdir:
+            return False
+        warm = getattr(self._runner, "warm", None)
+        if not callable(warm):
+            return False
+        try:
+            return bool(
+                warm(
+                    backend=backend,
+                    workdir=workdir,
+                    reasoning_effort=reasoning_effort,
+                )
+            )
+        except Exception:
+            self._logger.info(
+                "warm_runner raised for backend=%s workdir=%s",
+                backend,
+                workdir,
+                exc_info=True,
+            )
+            return False
+
     def list_tasks_for_project(self, project_id: str) -> list[Task]:
         with self._lock:
             return [
