@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 import json
+import logging
 import os
 import select
 import shutil
@@ -21,7 +22,10 @@ from poco.agent.common import (
     _requires_confirmation,
     _string_or_none,
 )
+from poco.agent.completion_gate import CompletionGate
 from poco.task.models import Task
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -53,12 +57,14 @@ class ClaudeCodeRunner:
         model: str | None = None,
         permission_mode: str = "default",
         timeout_seconds: int = 900,
+        completion_settle_seconds: float = 1.0,
     ) -> None:
         self._command = command
         self._workdir = workdir
         self._model = model
         self._permission_mode = permission_mode
         self._timeout_seconds = timeout_seconds
+        self._completion_settle_seconds = max(0.0, completion_settle_seconds)
         self._lock = RLock()
         self._active_processes: dict[str, subprocess.Popen[str]] = {}
         self._active_sessions: dict[str, _ClaudeActiveSession] = {}
@@ -225,6 +231,7 @@ class ClaudeCodeRunner:
             with self._lock:
                 self._active_sessions[task.id] = active_session
 
+            completion_gate = CompletionGate(settle_seconds=self._completion_settle_seconds)
             while True:
                 if self._consume_cancelled(task.id):
                     return
@@ -236,6 +243,20 @@ class ClaudeCodeRunner:
                     yield AgentRunUpdate(
                         kind="failed",
                         message=f"Claude Code timed out after {self._timeout_seconds} seconds.",
+                        backend_session_id=backend_session_id,
+                    )
+                    return
+                should_fire, settle_elapsed = completion_gate.tick(monotonic())
+                if should_fire:
+                    _LOGGER.info(
+                        "claude_code task %s completed via settle fallback after %.2fs (no result event observed)",
+                        task.id,
+                        settle_elapsed,
+                    )
+                    yield AgentRunUpdate(
+                        kind="completed",
+                        message="Task completed by the claude_code runner after the final assistant message settled.",
+                        raw_result=streamed_text or final_text or "Claude Code completed without a final response body.",
                         backend_session_id=backend_session_id,
                     )
                     return
@@ -278,6 +299,7 @@ class ClaudeCodeRunner:
                             if isinstance(delta, dict) and delta.get("type") == "text_delta":
                                 text = _string_or_none(delta.get("text"))
                                 if text:
+                                    completion_gate.disarm()
                                     streamed_text += text
                                     yield AgentRunUpdate(
                                         kind="progress",
@@ -288,10 +310,20 @@ class ClaudeCodeRunner:
                         continue
                     if event_type == "assistant":
                         message = event.get("message")
+                        stop_reason: str | None = None
                         if isinstance(message, dict):
                             final_text = _extract_claude_message_text(message) or final_text
+                            stop_reason = _extract_claude_message_stop_reason(message)
                         backend_session_id = _optional_string(event.get("session_id")) or backend_session_id
                         active_session.session_id = backend_session_id
+                        if stop_reason == "end_turn":
+                            if completion_gate.arm(monotonic()):
+                                _LOGGER.info(
+                                    "claude_code task %s armed completion settle candidate (stop_reason=end_turn)",
+                                    task.id,
+                                )
+                        else:
+                            completion_gate.disarm()
                         continue
                     if event_type == "result":
                         backend_session_id = _optional_string(event.get("session_id")) or backend_session_id
@@ -309,6 +341,7 @@ class ClaudeCodeRunner:
                                 or final_text
                                 or "Claude Code completed without a final response body."
                             )
+                            _LOGGER.info("claude_code task %s completed via result event", task.id)
                             yield AgentRunUpdate(
                                 kind="completed",
                                 message="Task completed by the claude_code runner.",
@@ -537,3 +570,7 @@ def _extract_claude_message_text(message: dict[str, object]) -> str | None:
     if not parts:
         return None
     return "".join(parts)
+
+
+def _extract_claude_message_stop_reason(message: dict[str, object]) -> str | None:
+    return _optional_string(message.get("stop_reason"))

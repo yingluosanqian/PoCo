@@ -1795,6 +1795,97 @@ class ClaudeCodeRunnerTest(unittest.TestCase):
             self.assertIn("Focus on the failing test first.", fake_stdin.writes[0])
 
 
+    def test_claude_runner_completes_via_settle_after_end_turn_assistant_without_result_event(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = ClaudeCodeRunner(
+                command="claude",
+                workdir=tmpdir,
+                model="sonnet",
+                completion_settle_seconds=0.0,
+            )
+            task = Task(
+                id="claude_task_settle",
+                requester_id="ou_demo",
+                prompt="stream output",
+                source="feishu",
+                status=TaskStatus.RUNNING,
+                agent_backend="claude_code",
+            )
+
+            def line_stream():
+                yield '{"type":"control_response","response":{"subtype":"success","request_id":"req_1_deadbeef","response":{"ok":true}}}\n'
+                yield '{"type":"system","subtype":"init","session_id":"session_123"}\n'
+                yield '{"type":"stream_event","session_id":"session_123","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"partial answer"}}}\n'
+                yield '{"type":"assistant","session_id":"session_123","message":{"content":[{"type":"text","text":"partial answer"}],"stop_reason":"end_turn"}}\n'
+                # Infinite non-disarm heartbeats: claude CLI never sends the result event.
+                counter = 0
+                while True:
+                    counter += 1
+                    yield f'{{"type":"control_request","request_id":"req_heartbeat_{counter}","request":{{"subtype":"can_use_tool"}}}}\n'
+
+            class FakeStdout:
+                def __init__(self) -> None:
+                    self.exhausted = False
+                    self._iter = line_stream()
+
+                def readline(self) -> str:
+                    return next(self._iter)
+
+            class FakeStderr:
+                exhausted = True
+
+                def readline(self) -> str:
+                    return ""
+
+            class FakeStdin:
+                def __init__(self) -> None:
+                    self.writes: list[str] = []
+
+                def write(self, text: str) -> int:
+                    self.writes.append(text)
+                    return len(text)
+
+                def flush(self) -> None:
+                    return None
+
+                def close(self) -> None:
+                    return None
+
+            class FakePopen:
+                def __init__(self) -> None:
+                    self.stdin = FakeStdin()
+                    self.stdout = FakeStdout()
+                    self.stderr = FakeStderr()
+                    self.returncode = 0
+                    self.killed = False
+
+                def poll(self):  # type: ignore[no-untyped-def]
+                    return 0 if self.killed else None
+
+                def kill(self) -> None:
+                    self.killed = True
+                    self.returncode = -9
+
+            fake_process = FakePopen()
+            with (
+                patch("poco.agent.runner.shutil.which", return_value="/Users/yihanc/.local/bin/claude"),
+                patch("poco.agent.runner.subprocess.Popen", return_value=fake_process),
+                patch(
+                    "poco.agent.runner.select.select",
+                    side_effect=lambda readers, *_args: ([reader for reader in readers if not getattr(reader, "exhausted", True)], [], []),
+                ),
+                patch("poco.agent.runner.os.urandom", return_value=b"\xde\xad\xbe\xef"),
+            ):
+                updates = list(runner.start(task))
+
+            self.assertEqual(updates[-1].kind, "completed")
+            self.assertEqual(updates[-1].raw_result, "partial answer")
+            self.assertEqual(
+                updates[-1].message,
+                "Task completed by the claude_code runner after the final assistant message settled.",
+            )
+
+
 class CursorAgentRunnerTest(unittest.TestCase):
     def test_cursor_runner_streams_deltas_and_completes(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
