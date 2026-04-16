@@ -25,6 +25,7 @@ from poco.agent.common import (
     _string_or_none,
 )
 from poco.agent.completion_gate import CompletionGate
+from poco.agent.tokens import TokenUsage
 from poco.task.models import Task
 
 _LOGGER = logging.getLogger(__name__)
@@ -303,7 +304,8 @@ class CodexAppServerRunner:
             final_text: str | None = None
             final_streamed_text = ""
             streamed_text = ""
-            last_reasoning_token_count: int | None = None
+            last_seen_turn_usage: TokenUsage | None = None
+            last_seen_total_usage: TokenUsage | None = None
             deadline = monotonic() + self._timeout_seconds
             agent_message_phases: dict[str, str | None] = {}
             completion_gate = CompletionGate(settle_seconds=self._completion_settle_seconds)
@@ -501,18 +503,24 @@ class CodexAppServerRunner:
                 if method == "thread/tokenUsage/updated":
                     if message_turn_id and active_turn_id and message_turn_id != active_turn_id:
                         continue
-                    reasoning_token_count = _codex_reasoning_token_count(params)
+                    last_usage, total_usage = _codex_token_usage(params)
+                    if last_usage is None and total_usage is None:
+                        continue
                     if (
-                        reasoning_token_count is None
-                        or reasoning_token_count <= 0
-                        or reasoning_token_count == last_reasoning_token_count
+                        last_usage == last_seen_turn_usage
+                        and total_usage == last_seen_total_usage
                     ):
                         continue
-                    last_reasoning_token_count = reasoning_token_count
+                    if last_usage is not None:
+                        last_seen_turn_usage = last_usage
+                    if total_usage is not None:
+                        last_seen_total_usage = total_usage
                     yield AgentRunUpdate(
                         kind="progress",
-                        message=f"Codex is thinking. reasoning tokens: {reasoning_token_count}.",
+                        message="Codex token usage updated.",
                         backend_session_id=backend_session_id,
+                        last_token_usage=last_usage,
+                        total_token_usage=total_usage,
                     )
                     continue
 
@@ -793,22 +801,29 @@ def _extract_turn_id(result: dict[str, object]) -> str | None:
     return _optional_string(result.get("turnId"))
 
 
-def _codex_reasoning_token_count(params: dict[str, object]) -> int | None:
+def _codex_token_usage(
+    params: dict[str, object],
+) -> tuple[TokenUsage | None, TokenUsage | None]:
     token_usage = params.get("tokenUsage")
     if not isinstance(token_usage, dict):
+        return (None, None)
+    last_bucket = _codex_usage_bucket(token_usage.get("last"))
+    total_bucket = _codex_usage_bucket(token_usage.get("total"))
+    return (last_bucket, total_bucket)
+
+
+def _codex_usage_bucket(bucket: object) -> TokenUsage | None:
+    if not isinstance(bucket, dict):
         return None
-    for bucket_name in ("last", "total"):
-        bucket = token_usage.get(bucket_name)
-        if not isinstance(bucket, dict):
-            continue
-        count = bucket.get("reasoningOutputTokens")
-        if isinstance(count, bool):
-            continue
-        if isinstance(count, int):
-            return count
-        if isinstance(count, float):
-            return int(count)
-    return None
+    return TokenUsage.from_dict(
+        {
+            "input_tokens": bucket.get("inputTokens"),
+            "cached_input_tokens": bucket.get("cachedInputTokens"),
+            "output_tokens": bucket.get("outputTokens"),
+            "reasoning_output_tokens": bucket.get("reasoningOutputTokens"),
+            "total_tokens": bucket.get("totalTokens"),
+        }
+    )
 
 
 def _codex_reasoning_summary(item: dict[str, object]) -> str | None:

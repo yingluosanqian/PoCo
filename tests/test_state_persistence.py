@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from poco.agent.tokens import TokenUsage
 from poco.main import create_app
 
 
@@ -55,6 +56,19 @@ class StatePersistenceTest(unittest.TestCase):
                 task.add_event("task_completed", "done")
                 task.set_result("done")
                 task.set_status(task.status.COMPLETED)
+                task.update_token_usage(
+                    last=TokenUsage(
+                        input_tokens=1200,
+                        cached_input_tokens=800,
+                        output_tokens=340,
+                        reasoning_output_tokens=17,
+                    ),
+                    total=TokenUsage(
+                        input_tokens=4500,
+                        output_tokens=1100,
+                        reasoning_output_tokens=42,
+                    ),
+                )
                 task_controller1._store.save(task)  # type: ignore[attr-defined]
 
                 app2 = create_app()
@@ -79,6 +93,23 @@ class StatePersistenceTest(unittest.TestCase):
                 self.assertEqual(recovered_task.session_id, session.id)
                 self.assertEqual(recovered_task.backend_session_id, "thread_123")
                 self.assertEqual(recovered_task.raw_result, "done")
+                self.assertEqual(
+                    recovered_task.last_token_usage,
+                    TokenUsage(
+                        input_tokens=1200,
+                        cached_input_tokens=800,
+                        output_tokens=340,
+                        reasoning_output_tokens=17,
+                    ),
+                )
+                self.assertEqual(
+                    recovered_task.total_token_usage,
+                    TokenUsage(
+                        input_tokens=4500,
+                        output_tokens=1100,
+                        reasoning_output_tokens=42,
+                    ),
+                )
                 recovered_session = session_controller2.get_session(session.id)
                 self.assertEqual(recovered_session.latest_task_id, task.id)
                 self.assertEqual(recovered_session.backend_session_id, "thread_123")

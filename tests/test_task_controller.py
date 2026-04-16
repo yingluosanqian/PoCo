@@ -4,7 +4,9 @@ import tempfile
 import unittest
 from datetime import UTC, datetime
 
+from poco.agent.common import AgentRunUpdate
 from poco.agent.runner import CodexCliRunner, StubAgentRunner
+from poco.agent.tokens import TokenUsage
 from poco.session.controller import SessionController
 from poco.storage.memory import InMemorySessionStore, InMemoryTaskStore
 from poco.task.controller import TaskController
@@ -497,6 +499,70 @@ class TaskControllerTest(unittest.TestCase):
         self.assertEqual(completed.status, TaskStatus.COMPLETED)
         self.assertGreaterEqual(len(seen), 2)
         self.assertIn((TaskStatus.RUNNING, "Codex is thinking.", "thread_123"), seen)
+
+    def test_runner_progress_with_token_usage_stamps_task(self) -> None:
+        turn_usage = TokenUsage(
+            input_tokens=1200,
+            cached_input_tokens=800,
+            output_tokens=340,
+            reasoning_output_tokens=17,
+        )
+        session_usage = TokenUsage(
+            input_tokens=4500,
+            output_tokens=1100,
+            reasoning_output_tokens=42,
+        )
+
+        class TokenRunner:
+            name = "tokens"
+
+            def is_ready(self):
+                return True, "ok"
+
+            def steer(self, task: Task, prompt: str):
+                return False, "unsupported"
+
+            def resolve_execution_context(self, task: Task):
+                return None, task.effective_workdir, task.effective_sandbox
+
+            def cancel(self, task_id: str) -> bool:
+                return False
+
+            def start(self, task: Task):
+                yield AgentRunUpdate(
+                    kind="progress",
+                    message="Codex token usage updated.",
+                    last_token_usage=turn_usage,
+                    total_token_usage=session_usage,
+                )
+                yield AgentRunUpdate(
+                    kind="completed",
+                    message="done",
+                    raw_result="final answer",
+                )
+
+            def resume_after_confirmation(self, task: Task):
+                return self.start(task)
+
+            def is_task_active(self, task: Task):
+                return None
+
+        controller = TaskController(
+            store=InMemoryTaskStore(),
+            runner=TokenRunner(),
+            session_controller=self.session_controller,
+        )
+        task = controller.create_task(
+            requester_id="ou_demo",
+            prompt="track tokens",
+            source="feishu",
+        )
+
+        completed = controller.start_task_execution(task.id)
+
+        self.assertEqual(completed.status, TaskStatus.COMPLETED)
+        self.assertEqual(completed.last_token_usage, turn_usage)
+        self.assertEqual(completed.total_token_usage, session_usage)
 
     def test_callback_exception_does_not_abort_task_completion(self) -> None:
         class ProgressRunner:

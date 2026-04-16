@@ -1072,7 +1072,17 @@ class CodexAppServerRunnerTest(unittest.TestCase):
                         "threadId": "thread_123",
                         "turnId": "turn_123",
                         "tokenUsage": {
-                            "last": {"reasoningOutputTokens": 17},
+                            "last": {
+                                "inputTokens": 1200,
+                                "cachedInputTokens": 800,
+                                "outputTokens": 340,
+                                "reasoningOutputTokens": 17,
+                            },
+                            "total": {
+                                "inputTokens": 4500,
+                                "outputTokens": 1100,
+                                "reasoningOutputTokens": 42,
+                            },
                         },
                     },
                 },
@@ -1107,7 +1117,24 @@ class CodexAppServerRunnerTest(unittest.TestCase):
 
             progress_messages = [update.message for update in updates if update.kind == "progress"]
             self.assertIn("Codex is thinking.", progress_messages)
-            self.assertIn("Codex is thinking. reasoning tokens: 17.", progress_messages)
+            self.assertIn("Codex token usage updated.", progress_messages)
+
+            usage_updates = [
+                update for update in updates
+                if update.last_token_usage is not None or update.total_token_usage is not None
+            ]
+            self.assertEqual(len(usage_updates), 1)
+            last_usage = usage_updates[0].last_token_usage
+            total_usage = usage_updates[0].total_token_usage
+            self.assertIsNotNone(last_usage)
+            self.assertEqual(last_usage.input_tokens, 1200)
+            self.assertEqual(last_usage.cached_input_tokens, 800)
+            self.assertEqual(last_usage.output_tokens, 340)
+            self.assertEqual(last_usage.reasoning_output_tokens, 17)
+            self.assertIsNotNone(total_usage)
+            self.assertEqual(total_usage.input_tokens, 4500)
+            self.assertEqual(total_usage.output_tokens, 1100)
+            self.assertEqual(total_usage.reasoning_output_tokens, 42)
             self.assertEqual(updates[-1].raw_result, "done")
 
     def test_app_server_runner_resumes_existing_thread(self) -> None:

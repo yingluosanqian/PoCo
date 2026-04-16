@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
+from poco.agent.tokens import TokenUsage
 from poco.project.models import Project
 from poco.session.models import Session, SessionStatus
 from poco.task.models import Task, TaskEvent, TaskStatus
@@ -14,6 +15,22 @@ from poco.workspace.models import WorkspaceContext
 
 def _parse_datetime(value: str) -> datetime:
     return datetime.fromisoformat(value)
+
+
+def _serialize_token_usage(usage: TokenUsage | None) -> str | None:
+    if usage is None:
+        return None
+    return json.dumps(usage.to_dict(), ensure_ascii=False)
+
+
+def _deserialize_token_usage(value: object) -> TokenUsage | None:
+    if not value:
+        return None
+    try:
+        parsed = json.loads(value)
+    except (TypeError, ValueError):
+        return None
+    return TokenUsage.from_dict(parsed)
 
 
 class _SqliteStoreBase:
@@ -83,6 +100,8 @@ class _SqliteStoreBase:
                     live_output TEXT,
                     raw_result TEXT,
                     result_summary TEXT,
+                    last_token_usage TEXT,
+                    total_token_usage TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     events TEXT NOT NULL
@@ -146,6 +165,10 @@ class _SqliteStoreBase:
                 connection.execute("ALTER TABLE tasks ADD COLUMN effective_sandbox TEXT")
             if "backend_session_id" not in task_columns:
                 connection.execute("ALTER TABLE tasks ADD COLUMN backend_session_id TEXT")
+            if "last_token_usage" not in task_columns:
+                connection.execute("ALTER TABLE tasks ADD COLUMN last_token_usage TEXT")
+            if "total_token_usage" not in task_columns:
+                connection.execute("ALTER TABLE tasks ADD COLUMN total_token_usage TEXT")
             session_columns = {
                 row["name"]
                 for row in connection.execute("PRAGMA table_info(sessions)").fetchall()
@@ -251,8 +274,8 @@ class SqliteTaskStore(_SqliteStoreBase):
                     id, source, requester_id, prompt, agent_backend, effective_backend_config, effective_model, effective_sandbox, backend_session_id, project_id, session_id,
                     effective_workdir, notification_message_id, reply_receive_id,
                     reply_receive_id_type, status, awaiting_confirmation_reason,
-                    live_output, raw_result, result_summary, created_at, updated_at, events
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    live_output, raw_result, result_summary, last_token_usage, total_token_usage, created_at, updated_at, events
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     source = excluded.source,
                     requester_id = excluded.requester_id,
@@ -273,6 +296,8 @@ class SqliteTaskStore(_SqliteStoreBase):
                     live_output = excluded.live_output,
                     raw_result = excluded.raw_result,
                     result_summary = excluded.result_summary,
+                    last_token_usage = excluded.last_token_usage,
+                    total_token_usage = excluded.total_token_usage,
                     created_at = excluded.created_at,
                     updated_at = excluded.updated_at,
                     events = excluded.events
@@ -298,6 +323,8 @@ class SqliteTaskStore(_SqliteStoreBase):
                     task.live_output,
                     task.raw_result,
                     task.result_summary,
+                    _serialize_token_usage(task.last_token_usage),
+                    _serialize_token_usage(task.total_token_usage),
                     task.created_at.isoformat(),
                     task.updated_at.isoformat(),
                     json.dumps(
@@ -368,6 +395,8 @@ class SqliteTaskStore(_SqliteStoreBase):
             live_output=row["live_output"],
             raw_result=row["raw_result"],
             result_summary=row["result_summary"],
+            last_token_usage=_deserialize_token_usage(row["last_token_usage"]),
+            total_token_usage=_deserialize_token_usage(row["total_token_usage"]),
             created_at=_parse_datetime(row["created_at"]),
             updated_at=_parse_datetime(row["updated_at"]),
         )

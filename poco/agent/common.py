@@ -8,6 +8,7 @@ import subprocess
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
+from poco.agent.tokens import TokenUsage
 from poco.task.models import Task
 
 _LOGGER = logging.getLogger(__name__)
@@ -22,6 +23,8 @@ class AgentRunUpdate:
     output_chunk: str | None = None
     raw_result: str | None = None
     backend_session_id: str | None = None
+    last_token_usage: TokenUsage | None = None
+    total_token_usage: TokenUsage | None = None
 
     @property
     def result_summary(self) -> str | None:

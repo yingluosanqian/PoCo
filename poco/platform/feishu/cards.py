@@ -1260,6 +1260,10 @@ def _render_task_status(
     else:
         elements.append(_markdown(_format_task_output_for_backend(raw_result, backend=agent_backend)))
 
+    token_block = _token_usage_block(task)
+    if token_block is not None:
+        elements.append(token_block)
+
     if task.get("project_id"):
         config_locked = status in {"created", "queued", "running", "waiting_for_confirmation"}
         if status in {"created", "running"}:
@@ -1350,6 +1354,56 @@ def _running_task_progress_text(task: dict[str, Any]) -> str | None:
         if kind in {"runner_progress", "task_started"}:
             return message
     return None
+
+
+_TOKEN_USAGE_FIELD_ORDER: tuple[tuple[str, str], ...] = (
+    ("input_tokens", "in"),
+    ("cached_input_tokens", "cached"),
+    ("output_tokens", "out"),
+    ("reasoning_output_tokens", "reasoning"),
+    ("total_tokens", "total"),
+)
+
+
+def _token_usage_block(task: dict[str, Any]) -> dict[str, Any] | None:
+    turn_line = _token_usage_line(task.get("last_token_usage"))
+    session_line = _token_usage_line(task.get("total_token_usage"))
+    lines: list[str] = []
+    if turn_line:
+        lines.append(f"_turn_ · {turn_line}")
+    if session_line:
+        lines.append(f"_session_ · {session_line}")
+    if not lines:
+        return None
+    return _markdown("\n".join(lines))
+
+
+def _token_usage_line(usage: object) -> str | None:
+    if not isinstance(usage, dict):
+        return None
+    parts: list[str] = []
+    for key, label in _TOKEN_USAGE_FIELD_ORDER:
+        value = usage.get(key)
+        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+            continue
+        parts.append(f"{label} {_format_token_count(value)}")
+    if not parts:
+        return None
+    return " · ".join(parts)
+
+
+def _format_token_count(value: int) -> str:
+    if value < 1000:
+        return str(value)
+    if value < 1_000_000:
+        scaled = value / 1000
+        if scaled < 10:
+            return f"{scaled:.1f}k"
+        return f"{int(round(scaled))}k"
+    scaled = value / 1_000_000
+    if scaled < 10:
+        return f"{scaled:.1f}M"
+    return f"{int(round(scaled))}M"
 
 
 def _config_subcard(

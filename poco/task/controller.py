@@ -565,6 +565,10 @@ class TaskController:
                             )
                         if getattr(update, "output_chunk", None):
                             task.append_live_output(update.output_chunk)
+                        task.update_token_usage(
+                            last=getattr(update, "last_token_usage", None),
+                            total=getattr(update, "total_token_usage", None),
+                        )
                         task.add_event("runner_progress", update.message)
                     elif update.kind == "confirmation_required":
                         task.awaiting_confirmation_reason = update.message

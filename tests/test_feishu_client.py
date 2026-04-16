@@ -861,6 +861,88 @@ class FeishuClientTest(unittest.TestCase):
         self.assertEqual(card["body"]["elements"][1]["behaviors"][0]["value"]["intent_key"], "task.stop")
         self.assertEqual(len(card["body"]["elements"]), 2)
 
+    def test_task_status_card_renders_token_usage_block_when_present(self) -> None:
+        task = {
+            "id": "task_tokens",
+            "project_id": "proj_1",
+            "agent_backend": "codex",
+            "effective_workdir": "/srv/poco/api",
+            "prompt": "build project",
+            "status": "running",
+            "awaiting_confirmation_reason": None,
+            "live_output": "Step 1",
+            "last_token_usage": {
+                "input_tokens": 1200,
+                "cached_input_tokens": 800,
+                "output_tokens": 340,
+                "reasoning_output_tokens": 17,
+            },
+            "total_token_usage": {
+                "input_tokens": 4500,
+                "output_tokens": 1100,
+                "reasoning_output_tokens": 42,
+            },
+        }
+        card = FeishuCardRenderer().render(
+            build_render_instruction(
+                IntentDispatchResult(
+                    status=DispatchStatus.OK,
+                    intent_key="task.status",
+                    resource_refs=ResourceRefs(project_id="proj_1", task_id="task_tokens"),
+                    view_model=ViewModel("task_status", {"task": task}),
+                    refresh_mode=RefreshMode.REPLACE_CURRENT,
+                ),
+                surface=Surface.GROUP,
+            )
+        )
+
+        token_block = card["body"]["elements"][1]
+        self.assertEqual(token_block["tag"], "markdown")
+        content = token_block["content"]
+        self.assertIn("_turn_", content)
+        self.assertIn("_session_", content)
+        self.assertIn("in 1.2k", content)
+        self.assertIn("cached 800", content)
+        self.assertIn("out 340", content)
+        self.assertIn("reasoning 17", content)
+        self.assertIn("in 4.5k", content)
+        self.assertIn("out 1.1k", content)
+        # Stop button still follows token block.
+        self.assertEqual(
+            card["body"]["elements"][2]["behaviors"][0]["value"]["intent_key"],
+            "task.stop",
+        )
+
+    def test_task_status_card_omits_token_usage_when_absent(self) -> None:
+        task = {
+            "id": "task_notok",
+            "project_id": "proj_1",
+            "agent_backend": "codex",
+            "effective_workdir": "/srv/poco/api",
+            "prompt": "build project",
+            "status": "running",
+            "awaiting_confirmation_reason": None,
+            "live_output": "Step 1",
+        }
+        card = FeishuCardRenderer().render(
+            build_render_instruction(
+                IntentDispatchResult(
+                    status=DispatchStatus.OK,
+                    intent_key="task.status",
+                    resource_refs=ResourceRefs(project_id="proj_1", task_id="task_notok"),
+                    view_model=ViewModel("task_status", {"task": task}),
+                    refresh_mode=RefreshMode.REPLACE_CURRENT,
+                ),
+                surface=Surface.GROUP,
+            )
+        )
+
+        for element in card["body"]["elements"]:
+            if element.get("tag") != "markdown":
+                continue
+            self.assertNotIn("_turn_", element.get("content", ""))
+            self.assertNotIn("_session_", element.get("content", ""))
+
     def test_task_status_card_running_claude_keeps_live_card_simple(self) -> None:
         task = {
             "id": "task_run_steer_claude",

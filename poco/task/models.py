@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 
 from poco.agent.catalog import backend_option, normalize_backend_config
+from poco.agent.tokens import TokenUsage
 
 
 def utc_now() -> datetime:
@@ -58,6 +59,8 @@ class Task:
     live_output: str | None = None
     raw_result: str | None = None
     result_summary: str | None = None
+    last_token_usage: TokenUsage | None = None
+    total_token_usage: TokenUsage | None = None
     created_at: datetime = field(default_factory=utc_now)
     updated_at: datetime = field(default_factory=utc_now)
 
@@ -138,6 +141,23 @@ class Task:
         self.live_output = None
         self.updated_at = utc_now()
 
+    def update_token_usage(
+        self,
+        *,
+        last: TokenUsage | None = None,
+        total: TokenUsage | None = None,
+    ) -> bool:
+        changed = False
+        if last is not None and last != self.last_token_usage:
+            self.last_token_usage = last
+            changed = True
+        if total is not None and total != self.total_token_usage:
+            self.total_token_usage = total
+            changed = True
+        if changed:
+            self.updated_at = utc_now()
+        return changed
+
     def to_dict(self) -> dict[str, object]:
         return {
             "id": self.id,
@@ -160,6 +180,8 @@ class Task:
             "live_output": self.live_output,
             "raw_result": self.raw_result,
             "result_summary": self.result_summary,
+            "last_token_usage": self.last_token_usage.to_dict() if self.last_token_usage else None,
+            "total_token_usage": self.total_token_usage.to_dict() if self.total_token_usage else None,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
             "events": [event.to_dict() for event in self.events],
