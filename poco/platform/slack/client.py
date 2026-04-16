@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -10,6 +11,21 @@ from poco.platform.common.message_client import MessageSendResult
 
 class SlackApiError(RuntimeError):
     pass
+
+
+class SlackChannelNotFoundError(SlackApiError):
+    pass
+
+
+class SlackChannelArchiveForbiddenError(SlackApiError):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class SlackChannelCreateResult:
+    channel_id: str
+    name: str | None
+    raw_response: dict[str, Any]
 
 
 class SlackMessageClient:
@@ -74,6 +90,51 @@ class SlackMessageClient:
             channel=response.get("channel") or channel,
             raw_response=response,
         )
+
+    def create_channel(
+        self,
+        *,
+        name: str,
+        is_private: bool = False,
+    ) -> SlackChannelCreateResult:
+        """Create a Slack channel via ``conversations.create``.
+
+        Slack normalises channel names aggressively (lowercase, no spaces)
+        — callers are expected to pass a conforming name. If Slack returns
+        ``name_taken`` we surface a generic :class:`SlackApiError`; the
+        bootstrapper is responsible for picking a unique suffix.
+        """
+
+        payload: dict[str, Any] = {"name": name, "is_private": bool(is_private)}
+        response = self._call("conversations.create", payload)
+        channel = response.get("channel") or {}
+        channel_id = channel.get("id")
+        if not channel_id:
+            raise SlackApiError("Slack conversations.create did not return a channel id.")
+        return SlackChannelCreateResult(
+            channel_id=channel_id,
+            name=channel.get("name"),
+            raw_response=response,
+        )
+
+    def invite_users_to_channel(self, *, channel: str, user_ids: list[str]) -> None:
+        if not user_ids:
+            return
+        self._call(
+            "conversations.invite",
+            {"channel": channel, "users": ",".join(user_ids)},
+        )
+
+    def archive_channel(self, *, channel: str) -> None:
+        try:
+            self._call("conversations.archive", {"channel": channel})
+        except SlackApiError as exc:
+            detail = str(exc)
+            if "channel_not_found" in detail:
+                raise SlackChannelNotFoundError(detail) from exc
+            if "cant_archive_general" in detail or "not_authorized" in detail:
+                raise SlackChannelArchiveForbiddenError(detail) from exc
+            raise
 
     def _post_message(
         self,
