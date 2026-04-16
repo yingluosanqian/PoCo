@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 import logging
 from datetime import UTC, datetime, timedelta
 from threading import RLock
@@ -10,6 +11,15 @@ from poco.agent.runner import AgentRunner
 from poco.session.controller import SessionController
 from poco.storage.protocols import TaskStore
 from poco.task.models import Task, TaskStatus
+
+
+@dataclass(slots=True)
+class KnownSession:
+    backend_session_id: str
+    project_id: str | None
+    project_name: str | None
+    first_prompt_preview: str
+    last_used_at: datetime
 
 
 class TaskNotFoundError(ValueError):
@@ -152,6 +162,61 @@ class TaskController:
                 for task in self._store.list_all()
                 if task.project_id == project_id
             ]
+
+    def list_known_backend_sessions(
+        self,
+        *,
+        backend: str,
+        project_name_resolver: Callable[[str], str | None] | None = None,
+    ) -> list[KnownSession]:
+        """Return a deduped list of `KnownSession` entries from task history.
+
+        Filters tasks by `agent_backend == backend and backend_session_id` truthy.
+        Dedupes by `backend_session_id`: the "last used" record is picked based on
+        `task.updated_at` (most recent). The `first_prompt_preview` comes from the
+        earliest (first) task that used the given `backend_session_id`. Results
+        are sorted by `last_used_at` descending. No limit is applied.
+        """
+        with self._lock:
+            tasks = list(self._store.list_all())
+
+        first_by_id: dict[str, Task] = {}
+        last_by_id: dict[str, Task] = {}
+        for task in tasks:
+            if task.agent_backend != backend:
+                continue
+            if not task.backend_session_id:
+                continue
+            session_id = task.backend_session_id
+            current_first = first_by_id.get(session_id)
+            if current_first is None or task.created_at < current_first.created_at:
+                first_by_id[session_id] = task
+            current_last = last_by_id.get(session_id)
+            if current_last is None or task.updated_at > current_last.updated_at:
+                last_by_id[session_id] = task
+
+        results: list[KnownSession] = []
+        for session_id, last_task in last_by_id.items():
+            first_task = first_by_id.get(session_id, last_task)
+            preview_source = (first_task.prompt or "").strip()
+            first_prompt_preview = preview_source[:50]
+            project_name: str | None = None
+            if last_task.project_id and project_name_resolver is not None:
+                try:
+                    project_name = project_name_resolver(last_task.project_id)
+                except Exception:
+                    project_name = None
+            results.append(
+                KnownSession(
+                    backend_session_id=session_id,
+                    project_id=last_task.project_id,
+                    project_name=project_name,
+                    first_prompt_preview=first_prompt_preview,
+                    last_used_at=last_task.updated_at,
+                )
+            )
+        results.sort(key=lambda entry: entry.last_used_at, reverse=True)
+        return results
 
     def has_active_task_for_project(
         self,

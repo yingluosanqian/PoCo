@@ -74,6 +74,16 @@ class FeishuCardRenderer:
                 instruction.template_data,
                 surface=instruction.surface.value,
             )
+        if instruction.template_key == "workspace_choose_session":
+            return _render_workspace_choose_session(
+                instruction.template_data,
+                surface=instruction.surface.value,
+            )
+        if instruction.template_key == "workspace_enter_session_id":
+            return _render_workspace_enter_session_id(
+                instruction.template_data,
+                surface=instruction.surface.value,
+            )
         if instruction.template_key == "task_composer":
             return _render_task_composer(
                 instruction.template_data,
@@ -449,7 +459,7 @@ def _render_workspace_overview(
         elements.append(_plain_text("Stop is available only while a task is running."))
     if not config_locked:
         elements.append(
-            _two_up(
+            _three_up(
                 _action_button(
                     label="Working Dir",
                     intent_value={
@@ -467,6 +477,15 @@ def _render_workspace_overview(
                         "project_id": project["id"],
                     },
                     name=f"choose_workspace_agent_{project['id']}",
+                ),
+                _action_button(
+                    label="Session",
+                    intent_value={
+                        "intent_key": "workspace.choose_session",
+                        "surface": surface,
+                        "project_id": project["id"],
+                    },
+                    name=f"choose_workspace_session_{project['id']}",
                 ),
             )
         )
@@ -909,6 +928,198 @@ def _render_workspace_choose_agent(
     ]
     return _card_shell(
         title=f"Config Agent: {project['name']}",
+        template="blue",
+        elements=elements,
+    )
+
+
+def _render_workspace_choose_session(
+    data: dict[str, Any],
+    *,
+    surface: str,
+) -> dict[str, Any]:
+    project = data["project"]
+    session_options = data.get("session_options") or []
+    active_backend_session_id = data.get("active_backend_session_id")
+    has_sessions = bool(session_options)
+    summary_lines = [
+        f"**Active Backend Session**\n`{active_backend_session_id or 'not set'}`",
+    ]
+    elements: list[dict[str, Any]] = [_markdown("\n".join(summary_lines))]
+    if has_sessions:
+        default_value = session_options[0]["value"]
+        elements.append(
+            {
+                "tag": "form",
+                "name": f"workspace_choose_session_form_{project['id']}",
+                "elements": [
+                    _select_static(
+                        name="backend_session_id",
+                        placeholder="Select a historical session",
+                        options=session_options,
+                        value=default_value,
+                    ),
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "Apply"},
+                        "type": "primary",
+                        "width": "default",
+                        "size": "medium",
+                        "name": f"apply_workspace_session_{project['id']}",
+                        "form_action_type": "submit",
+                        "behaviors": [
+                            {
+                                "type": "callback",
+                                "value": {
+                                    "intent_key": "workspace.apply_session",
+                                    "surface": surface,
+                                    "project_id": project["id"],
+                                },
+                            }
+                        ],
+                        "margin": "0px 0px 12px 0px",
+                    },
+                ],
+            }
+        )
+    else:
+        elements.append(_markdown("No known backend sessions for this agent yet."))
+    elements.append(
+        _three_up(
+            {
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": "Enter ID"},
+                "type": "default",
+                "width": "default",
+                "size": "medium",
+                "name": f"open_enter_session_id_{project['id']}",
+                "behaviors": [
+                    {
+                        "type": "callback",
+                        "value": {
+                            "intent_key": "workspace.enter_session_id",
+                            "surface": surface,
+                            "project_id": project["id"],
+                        },
+                    }
+                ],
+                "margin": "0px 0px 12px 0px",
+            },
+            {
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": "Start Fresh"},
+                "type": "default",
+                "width": "default",
+                "size": "medium",
+                "name": f"clear_workspace_session_{project['id']}",
+                "behaviors": [
+                    {
+                        "type": "callback",
+                        "value": {
+                            "intent_key": "workspace.clear_session",
+                            "surface": surface,
+                            "project_id": project["id"],
+                        },
+                    }
+                ],
+                "margin": "0px 0px 12px 0px",
+            },
+            {
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": "Cancel"},
+                "type": "default",
+                "width": "default",
+                "size": "medium",
+                "name": f"cancel_workspace_session_{project['id']}",
+                "behaviors": [
+                    {
+                        "type": "callback",
+                        "value": {
+                            "intent_key": "workspace.open",
+                            "surface": surface,
+                            "project_id": project["id"],
+                        },
+                    }
+                ],
+                "margin": "0px 0px 12px 0px",
+            },
+        )
+    )
+    elements.append(_markdown(data.get("note") or ""))
+    return _card_shell(
+        title=f"Session: {project['name']}",
+        template="blue",
+        elements=elements,
+    )
+
+
+def _render_workspace_enter_session_id(
+    data: dict[str, Any],
+    *,
+    surface: str,
+) -> dict[str, Any]:
+    project = data["project"]
+    current_backend_session_id = data.get("current_backend_session_id") or ""
+    elements: list[dict[str, Any]] = [
+        _markdown(
+            f"**Active Backend Session**\n`{current_backend_session_id or 'not set'}`"
+        ),
+        {
+            "tag": "form",
+            "name": f"workspace_enter_session_id_form_{project['id']}",
+            "elements": [
+                _input(
+                    name="backend_session_id",
+                    placeholder="Paste backend session id",
+                    value=current_backend_session_id,
+                ),
+                _two_up(
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "Apply"},
+                        "type": "primary",
+                        "width": "default",
+                        "size": "medium",
+                        "name": f"apply_entered_session_id_{project['id']}",
+                        "form_action_type": "submit",
+                        "behaviors": [
+                            {
+                                "type": "callback",
+                                "value": {
+                                    "intent_key": "workspace.apply_entered_session_id",
+                                    "surface": surface,
+                                    "project_id": project["id"],
+                                },
+                            }
+                        ],
+                        "margin": "0px 0px 12px 0px",
+                    },
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "Cancel"},
+                        "type": "default",
+                        "width": "default",
+                        "size": "medium",
+                        "name": f"cancel_enter_session_id_{project['id']}",
+                        "behaviors": [
+                            {
+                                "type": "callback",
+                                "value": {
+                                    "intent_key": "workspace.choose_session",
+                                    "surface": surface,
+                                    "project_id": project["id"],
+                                },
+                            }
+                        ],
+                        "margin": "0px 0px 12px 0px",
+                    },
+                ),
+            ],
+        },
+        _markdown(data.get("note") or ""),
+    ]
+    return _card_shell(
+        title=f"Session ID: {project['name']}",
         template="blue",
         elements=elements,
     )

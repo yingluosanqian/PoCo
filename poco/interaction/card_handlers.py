@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 from poco.agent.catalog import backend_option, get_backend_descriptor, get_backend_model_options
@@ -16,7 +17,7 @@ from poco.interaction.card_models import (
 from poco.project.bootstrap import ProjectBootstrapError, ProjectBootstrapper
 from poco.project.controller import ProjectConfigError, ProjectController, ProjectNotFoundError
 from poco.session.controller import SessionController
-from poco.task.controller import TaskController, TaskNotFoundError, TaskStateError
+from poco.task.controller import KnownSession, TaskController, TaskNotFoundError, TaskStateError
 from poco.task.dispatcher import AsyncTaskDispatcher
 from poco.workspace.controller import WorkspaceContextController, WorkspaceContextError
 
@@ -312,6 +313,16 @@ class WorkspaceIntentHandler:
             return self._apply_entered_path(intent)
         if intent.intent_key == "workspace.apply_agent":
             return self._apply_agent(intent)
+        if intent.intent_key == "workspace.choose_session":
+            return self._open_choose_session(intent)
+        if intent.intent_key == "workspace.apply_session":
+            return self._apply_session(intent)
+        if intent.intent_key == "workspace.enter_session_id":
+            return self._open_enter_session_id(intent)
+        if intent.intent_key == "workspace.apply_entered_session_id":
+            return self._apply_entered_session_id(intent)
+        if intent.intent_key == "workspace.clear_session":
+            return self._clear_session(intent)
         if intent.intent_key != "workspace.open":
             return _rejected(intent, f"Unsupported workspace intent: {intent.intent_key}")
         project = _get_project_or_reject(self.project_controller, intent)
@@ -527,6 +538,97 @@ class WorkspaceIntentHandler:
             latest_task=_latest_project_task(self.task_controller, project.id),
             task_controller=self.task_controller,
             message=f"Agent updated for {project.name}",
+        )
+
+    def _open_choose_session(self, intent: ActionIntent) -> IntentDispatchResult:
+        project = _get_project_or_reject(self.project_controller, intent)
+        if isinstance(project, IntentDispatchResult):
+            return project
+        sessions: list[KnownSession] = []
+        if self.task_controller is not None:
+            sessions = self.task_controller.list_known_backend_sessions(
+                backend=project.backend,
+                project_name_resolver=lambda pid: _resolve_project_name(self.project_controller, pid),
+            )
+        active_session = _active_project_session(self.session_controller, project.id)
+        active_backend_session_id = getattr(active_session, "backend_session_id", None)
+        return IntentDispatchResult(
+            status=DispatchStatus.OK,
+            intent_key=intent.intent_key,
+            resource_refs=ResourceRefs(
+                project_id=project.id,
+                session_id=getattr(active_session, "id", None),
+            ),
+            view_model=_workspace_choose_session_view_model(
+                project,
+                sessions=sessions,
+                active_backend_session_id=active_backend_session_id,
+            ),
+            refresh_mode=RefreshMode.REPLACE_CURRENT,
+            message=f"Backend sessions for {project.name}",
+        )
+
+    def _apply_session(self, intent: ActionIntent) -> IntentDispatchResult:
+        return self._attach_session(intent, backend_session_id=_extract_backend_session_id(intent.payload))
+
+    def _open_enter_session_id(self, intent: ActionIntent) -> IntentDispatchResult:
+        project = _get_project_or_reject(self.project_controller, intent)
+        if isinstance(project, IntentDispatchResult):
+            return project
+        active_session = _active_project_session(self.session_controller, project.id)
+        current_backend_session_id = getattr(active_session, "backend_session_id", None)
+        return IntentDispatchResult(
+            status=DispatchStatus.OK,
+            intent_key=intent.intent_key,
+            resource_refs=ResourceRefs(
+                project_id=project.id,
+                session_id=getattr(active_session, "id", None),
+            ),
+            view_model=_workspace_enter_session_id_view_model(
+                project,
+                current_backend_session_id=current_backend_session_id,
+            ),
+            refresh_mode=RefreshMode.REPLACE_CURRENT,
+            message=f"Enter backend session id for {project.name}",
+        )
+
+    def _apply_entered_session_id(self, intent: ActionIntent) -> IntentDispatchResult:
+        backend_session_id = _extract_backend_session_id(intent.payload)
+        if not backend_session_id:
+            return _rejected(intent, "Backend session id cannot be empty.")
+        return self._attach_session(intent, backend_session_id=backend_session_id)
+
+    def _clear_session(self, intent: ActionIntent) -> IntentDispatchResult:
+        return self._attach_session(intent, backend_session_id=None)
+
+    def _attach_session(
+        self,
+        intent: ActionIntent,
+        *,
+        backend_session_id: str | None,
+    ) -> IntentDispatchResult:
+        project = _get_project_or_reject(self.project_controller, intent)
+        if isinstance(project, IntentDispatchResult):
+            return project
+        if self.session_controller is None:
+            return _rejected(intent, "Session controller is not configured.")
+        self.session_controller.attach_backend_session(
+            project.id,
+            backend_session_id,
+            created_by=intent.actor_id,
+        )
+        context = self.workspace_controller.get_context(project)
+        if backend_session_id is None:
+            message = f"Cleared backend session for {project.name}"
+        else:
+            message = f"Attached backend session for {project.name}"
+        return build_workspace_overview_result(
+            project,
+            context=context,
+            active_session=_active_project_session(self.session_controller, project.id),
+            latest_task=_latest_project_task(self.task_controller, project.id),
+            task_controller=self.task_controller,
+            message=message,
         )
 
 
@@ -1113,6 +1215,86 @@ def _workspace_enter_path_view_model(project, *, context, browse_path: str | Non
     )
 
 
+def _workspace_choose_session_view_model(
+    project,
+    *,
+    sessions: list[KnownSession],
+    active_backend_session_id: str | None,
+) -> ViewModel:
+    now = datetime.now(UTC)
+    options: list[dict[str, str]] = []
+    for session in sessions:
+        options.append(
+            {
+                "label": _format_known_session_label(session, now=now),
+                "value": session.backend_session_id,
+            }
+        )
+    return ViewModel(
+        "workspace_choose_session",
+        {
+            "project": project.to_dict(),
+            "session_options": options,
+            "active_backend_session_id": active_backend_session_id,
+            "has_sessions": bool(options),
+            "note": "Pick a historical backend session, or enter one manually. 'Start Fresh' clears the current binding so the next task starts a new backend thread.",
+        },
+    )
+
+
+def _workspace_enter_session_id_view_model(
+    project,
+    *,
+    current_backend_session_id: str | None,
+) -> ViewModel:
+    return ViewModel(
+        "workspace_enter_session_id",
+        {
+            "project": project.to_dict(),
+            "current_backend_session_id": current_backend_session_id,
+            "note": "Paste any backend session id. Apply overwrites the current project's active session binding and returns to the workspace card.",
+        },
+    )
+
+
+def _format_known_session_label(session: KnownSession, *, now: datetime) -> str:
+    project_label = session.project_name or session.project_id or "unknown"
+    preview = session.first_prompt_preview.strip()
+    if preview:
+        middle = f"'{preview}'"
+    else:
+        middle = session.backend_session_id[:12]
+    relative = _format_relative_time(session.last_used_at, now=now)
+    return f"{project_label} · {middle} · {relative}"
+
+
+def _format_relative_time(when: datetime, *, now: datetime) -> str:
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=UTC)
+    delta = now - when
+    total_seconds = int(delta.total_seconds())
+    if total_seconds < 0:
+        total_seconds = 0
+    if total_seconds < 60:
+        return "just now"
+    minutes = total_seconds // 60
+    if minutes < 60:
+        return f"{minutes}m ago"
+    hours = minutes // 60
+    if hours < 24:
+        return f"{hours}h ago"
+    days = hours // 24
+    return f"{days}d ago"
+
+
+def _resolve_project_name(project_controller: ProjectController, project_id: str) -> str | None:
+    try:
+        project = project_controller.get_project(project_id)
+    except ProjectNotFoundError:
+        return None
+    return project.name
+
+
 def _workspace_choose_agent_view_model(project) -> ViewModel:
     descriptor = get_backend_descriptor(project.backend)
     model_options = get_backend_model_options(project.backend)
@@ -1267,6 +1449,25 @@ def _extract_config_field_value(
         if selected is not None:
             return selected
     return current
+
+
+def _extract_backend_session_id(payload: dict[str, object]) -> str | None:
+    direct = _optional_string(payload.get("backend_session_id"))
+    if direct is not None:
+        return direct
+    input_value = payload.get("input_value")
+    if isinstance(input_value, str) and input_value.strip():
+        return input_value.strip()
+    if isinstance(input_value, dict):
+        nested = input_value.get("backend_session_id")
+        if isinstance(nested, dict):
+            selected = _optional_string(nested.get("value"))
+            if selected is not None:
+                return selected
+        selected = _optional_string(nested)
+        if selected is not None:
+            return selected
+    return None
 
 
 def _extract_browse_path(payload: dict[str, object]) -> str | None:

@@ -151,6 +151,11 @@ class FeishuCardGatewayTest(unittest.TestCase):
                     "workspace.apply_entered_path": self.workspace_handler,
                     "workspace.choose_agent": self.workspace_handler,
                     "workspace.apply_agent": self.workspace_handler,
+                    "workspace.choose_session": self.workspace_handler,
+                    "workspace.apply_session": self.workspace_handler,
+                    "workspace.enter_session_id": self.workspace_handler,
+                    "workspace.apply_entered_session_id": self.workspace_handler,
+                    "workspace.clear_session": self.workspace_handler,
                     "task.open_composer": self.task_handler,
                     "task.open": self.task_handler,
                     "task.submit": self.task_handler,
@@ -769,6 +774,11 @@ class FeishuCardGatewayTest(unittest.TestCase):
                     "workspace.apply_entered_path": self.workspace_handler,
                     "workspace.choose_agent": self.workspace_handler,
                     "workspace.apply_agent": self.workspace_handler,
+                    "workspace.choose_session": self.workspace_handler,
+                    "workspace.apply_session": self.workspace_handler,
+                    "workspace.enter_session_id": self.workspace_handler,
+                    "workspace.apply_entered_session_id": self.workspace_handler,
+                    "workspace.clear_session": self.workspace_handler,
                     "task.open_composer": self.task_handler,
                     "task.submit": self.task_handler,
                     "task.open": self.task_handler,
@@ -1819,6 +1829,255 @@ class FeishuCardGatewayTest(unittest.TestCase):
         delete_button = response["card"]["data"]["body"]["elements"][1]
         self.assertEqual(delete_button["text"]["content"], "Delete Project")
         self.assertEqual(delete_button["behaviors"][0]["value"]["intent_key"], "project.delete")
+
+    def test_workspace_choose_session_opens_chooser_with_history(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+            group_chat_id="oc_group_proj_1",
+        )
+        other_project = self.project_controller.create_project(
+            name="Legacy",
+            created_by="ou_demo_user",
+            backend="codex",
+        )
+        self.task_controller.create_task(
+            requester_id="ou_demo_user",
+            prompt="old codex prompt",
+            source="feishu_card",
+            agent_backend="codex",
+            backend_session_id="thread_known",
+            project_id=other_project.id,
+        )
+        # A task with a different backend must be filtered out.
+        self.task_controller.create_task(
+            requester_id="ou_demo_user",
+            prompt="coco prompt",
+            source="feishu_card",
+            agent_backend="coco",
+            backend_session_id="coco_thread",
+            project_id=project.id,
+        )
+
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_card_sess_1"},
+                "action": {
+                    "value": {
+                        "intent_key": "workspace.choose_session",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "request_id": "req_workspace_choose_session_1",
+                    },
+                },
+            }
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        self.assertEqual(response["instruction"]["template_key"], "workspace_choose_session")
+        template_data = response["instruction"]["template_data"]
+        session_options = template_data["session_options"]
+        self.assertEqual([opt["value"] for opt in session_options], ["thread_known"])
+        self.assertIn("Legacy", session_options[0]["label"])
+        self.assertIn("old codex prompt", session_options[0]["label"])
+
+    def test_workspace_choose_session_graceful_empty_state(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+            group_chat_id="oc_group_proj_1",
+        )
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_card_sess_empty"},
+                "action": {
+                    "value": {
+                        "intent_key": "workspace.choose_session",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "request_id": "req_workspace_choose_session_empty",
+                    },
+                },
+            }
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        self.assertEqual(response["instruction"]["template_key"], "workspace_choose_session")
+        template_data = response["instruction"]["template_data"]
+        self.assertEqual(template_data["session_options"], [])
+        self.assertFalse(template_data["has_sessions"])
+
+    def test_workspace_apply_session_updates_active_session_backend_id(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+            group_chat_id="oc_group_proj_1",
+        )
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_card_apply_sess"},
+                "action": {
+                    "value": {
+                        "intent_key": "workspace.apply_session",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "request_id": "req_workspace_apply_session_1",
+                    },
+                    "form_value": {
+                        "backend_session_id": "thread_picked",
+                    },
+                },
+            }
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        self.assertEqual(response["instruction"]["template_key"], "workspace_overview")
+        active = self.session_controller.get_active_session(project.id)
+        assert active is not None
+        self.assertEqual(active.backend_session_id, "thread_picked")
+
+    def test_workspace_enter_session_id_opens_prefilled_form(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+            group_chat_id="oc_group_proj_1",
+        )
+        self.session_controller.attach_backend_session(
+            project.id,
+            "thread_current",
+            created_by="ou_demo_user",
+        )
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_card_enter_sess"},
+                "action": {
+                    "value": {
+                        "intent_key": "workspace.enter_session_id",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "request_id": "req_workspace_enter_session_id_1",
+                    },
+                },
+            }
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        self.assertEqual(response["instruction"]["template_key"], "workspace_enter_session_id")
+        template_data = response["instruction"]["template_data"]
+        self.assertEqual(template_data["current_backend_session_id"], "thread_current")
+
+    def test_workspace_apply_entered_session_id_updates_active_session(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+            group_chat_id="oc_group_proj_1",
+        )
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_card_apply_entered"},
+                "action": {
+                    "value": {
+                        "intent_key": "workspace.apply_entered_session_id",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "request_id": "req_workspace_apply_entered_1",
+                    },
+                    "form_value": {
+                        "backend_session_id": "thread_external_abc123",
+                    },
+                },
+            }
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        self.assertEqual(response["instruction"]["template_key"], "workspace_overview")
+        active = self.session_controller.get_active_session(project.id)
+        assert active is not None
+        self.assertEqual(active.backend_session_id, "thread_external_abc123")
+
+    def test_workspace_clear_session_nulls_backend_session_id(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+            group_chat_id="oc_group_proj_1",
+        )
+        self.session_controller.attach_backend_session(
+            project.id,
+            "thread_to_clear",
+            created_by="ou_demo_user",
+        )
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_card_clear_sess"},
+                "action": {
+                    "value": {
+                        "intent_key": "workspace.clear_session",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "request_id": "req_workspace_clear_session_1",
+                    },
+                },
+            }
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        self.assertEqual(response["instruction"]["template_key"], "workspace_overview")
+        active = self.session_controller.get_active_session(project.id)
+        assert active is not None
+        self.assertIsNone(active.backend_session_id)
+
+    def test_workspace_overview_group_surface_contains_session_button(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo",
+            created_by="ou_demo_user",
+            backend="codex",
+            group_chat_id="oc_group_proj_1",
+        )
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_card_overview_session"},
+                "action": {
+                    "value": {
+                        "intent_key": "workspace.open",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "request_id": "req_workspace_open_session_btn",
+                    },
+                },
+            }
+        }
+
+        response = self.gateway.handle_action(payload)
+
+        self.assertEqual(response["instruction"]["template_key"], "workspace_overview")
+        body = response["card"]["data"]["body"]
+        button_names: list[str] = []
+        for element in body["elements"]:
+            if element.get("tag") == "column_set":
+                for column in element.get("columns", []):
+                    for sub in column.get("elements", []):
+                        if sub.get("tag") == "button":
+                            button_names.append(sub.get("name", ""))
+        self.assertIn(f"choose_workspace_session_{project.id}", button_names)
 
     def test_write_action_uses_top_level_event_id_for_idempotency(self) -> None:
         payload = {

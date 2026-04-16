@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from datetime import UTC, datetime
 
 from poco.agent.runner import CodexCliRunner, StubAgentRunner
 from poco.session.controller import SessionController
@@ -556,6 +557,130 @@ class TaskControllerTest(unittest.TestCase):
 
         self.assertEqual(completed.status, TaskStatus.COMPLETED)
         self.assertEqual(completed.raw_result, "done")
+
+    def test_list_known_backend_sessions_empty_history(self) -> None:
+        self.assertEqual(self.controller.list_known_backend_sessions(backend="codex"), [])
+
+    def test_list_known_backend_sessions_single_session(self) -> None:
+        task = self.controller.create_task(
+            requester_id="ou_demo",
+            prompt="fix the api",
+            source="feishu",
+            agent_backend="codex",
+            backend_session_id="thread_abc",
+            project_id="proj_demo",
+        )
+        del task
+
+        sessions = self.controller.list_known_backend_sessions(
+            backend="codex",
+            project_name_resolver=lambda _: "Demo",
+        )
+
+        self.assertEqual(len(sessions), 1)
+        entry = sessions[0]
+        self.assertEqual(entry.backend_session_id, "thread_abc")
+        self.assertEqual(entry.project_id, "proj_demo")
+        self.assertEqual(entry.project_name, "Demo")
+        self.assertEqual(entry.first_prompt_preview, "fix the api")
+
+    def test_list_known_backend_sessions_dedupes_multiple_tasks_same_id(self) -> None:
+        first = self.controller.create_task(
+            requester_id="ou_demo",
+            prompt="first prompt",
+            source="feishu",
+            agent_backend="codex",
+            backend_session_id="thread_abc",
+            project_id="proj_demo",
+        )
+        first.created_at = datetime(2026, 4, 1, 10, 0, tzinfo=UTC)
+        first.updated_at = datetime(2026, 4, 1, 10, 0, tzinfo=UTC)
+        self.controller._store.save(first)  # type: ignore[attr-defined]
+
+        second = self.controller.create_task(
+            requester_id="ou_demo",
+            prompt="second prompt",
+            source="feishu",
+            agent_backend="codex",
+            backend_session_id="thread_abc",
+            project_id="proj_demo",
+        )
+        second.created_at = datetime(2026, 4, 2, 10, 0, tzinfo=UTC)
+        second.updated_at = datetime(2026, 4, 2, 10, 0, tzinfo=UTC)
+        self.controller._store.save(second)  # type: ignore[attr-defined]
+
+        sessions = self.controller.list_known_backend_sessions(backend="codex")
+
+        self.assertEqual(len(sessions), 1)
+        entry = sessions[0]
+        self.assertEqual(entry.backend_session_id, "thread_abc")
+        # first_prompt_preview comes from the FIRST (oldest) task
+        self.assertEqual(entry.first_prompt_preview, "first prompt")
+        self.assertEqual(entry.last_used_at, datetime(2026, 4, 2, 10, 0, tzinfo=UTC))
+
+    def test_list_known_backend_sessions_sorted_by_recency(self) -> None:
+        older = self.controller.create_task(
+            requester_id="ou_demo",
+            prompt="older session",
+            source="feishu",
+            agent_backend="codex",
+            backend_session_id="thread_old",
+            project_id="proj_demo",
+        )
+        older.updated_at = datetime(2026, 4, 1, 10, 0, tzinfo=UTC)
+        self.controller._store.save(older)  # type: ignore[attr-defined]
+
+        newer = self.controller.create_task(
+            requester_id="ou_demo",
+            prompt="newer session",
+            source="feishu",
+            agent_backend="codex",
+            backend_session_id="thread_new",
+            project_id="proj_demo",
+        )
+        newer.updated_at = datetime(2026, 4, 10, 10, 0, tzinfo=UTC)
+        self.controller._store.save(newer)  # type: ignore[attr-defined]
+
+        sessions = self.controller.list_known_backend_sessions(backend="codex")
+
+        self.assertEqual([s.backend_session_id for s in sessions], ["thread_new", "thread_old"])
+
+    def test_list_known_backend_sessions_filters_by_backend(self) -> None:
+        self.controller.create_task(
+            requester_id="ou_demo",
+            prompt="coco prompt",
+            source="feishu",
+            agent_backend="coco",
+            backend_session_id="coco_thread",
+            project_id="proj_demo",
+        )
+        self.controller.create_task(
+            requester_id="ou_demo",
+            prompt="codex prompt",
+            source="feishu",
+            agent_backend="codex",
+            backend_session_id="codex_thread",
+            project_id="proj_demo",
+        )
+
+        codex_only = self.controller.list_known_backend_sessions(backend="codex")
+        coco_only = self.controller.list_known_backend_sessions(backend="coco")
+
+        self.assertEqual([s.backend_session_id for s in codex_only], ["codex_thread"])
+        self.assertEqual([s.backend_session_id for s in coco_only], ["coco_thread"])
+
+    def test_list_known_backend_sessions_skips_tasks_without_backend_session_id(self) -> None:
+        self.controller.create_task(
+            requester_id="ou_demo",
+            prompt="no session",
+            source="feishu",
+            agent_backend="codex",
+            project_id="proj_demo",
+        )
+
+        sessions = self.controller.list_known_backend_sessions(backend="codex")
+
+        self.assertEqual(sessions, [])
 
 
 if __name__ == "__main__":
