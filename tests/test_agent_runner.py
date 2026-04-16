@@ -546,6 +546,74 @@ class CodexAppServerRunnerTest(unittest.TestCase):
                 "Codex completed without a final response body.",
             )
 
+    def test_app_server_runner_completes_via_top_of_loop_settle_when_heartbeats_prevent_quiet_window(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = CodexAppServerRunner(
+                command="codex",
+                workdir=tmpdir,
+                timeout_seconds=5,
+                completion_settle_seconds=0.0,
+            )
+            task = Task(
+                id="task_final_answer_with_heartbeats",
+                requester_id="ou_demo",
+                prompt="stream output",
+                source="feishu",
+                status=TaskStatus.RUNNING,
+                agent_backend="codex",
+            )
+
+            class FakePopen:
+                def poll(self):  # type: ignore[no-untyped-def]
+                    return None
+
+                def kill(self) -> None:
+                    return None
+
+            def heartbeat_stream():  # type: ignore[no-untyped-def]
+                yield {
+                    "method": "item/completed",
+                    "params": {
+                        "threadId": "thread_123",
+                        "turnId": "turn_123",
+                        "item": {"type": "agentMessage", "text": "final answer", "phase": "final_answer"},
+                    },
+                }
+                token = 0
+                while True:
+                    token += 1
+                    yield {
+                        "method": "thread/tokenUsage/updated",
+                        "params": {
+                            "threadId": "thread_123",
+                            "turnId": "turn_123",
+                            "usage": {"reasoningTokenCount": token},
+                        },
+                    }
+
+            fake_session = MagicMock()
+            fake_session.request.side_effect = [
+                {"thread": {"id": "thread_123"}},
+                {"turn": {"id": "turn_123"}},
+            ]
+            fake_session.read_next_message.side_effect = heartbeat_stream()
+
+            with patch("poco.agent.runner.shutil.which", return_value="/opt/homebrew/bin/codex"):
+                with patch("poco.agent.runner.subprocess.Popen", return_value=FakePopen()):
+                    with patch("poco.agent.runner._CodexAppServerSession", return_value=fake_session):
+                        updates = list(runner.start(task))
+
+            self.assertEqual(updates[-1].kind, "completed")
+            self.assertEqual(updates[-1].raw_result, "final answer")
+            self.assertEqual(
+                updates[-1].message,
+                "Task completed by the codex app-server runner after the final answer settled.",
+            )
+            # Settle must fire after a small finite number of heartbeats, not loop forever.
+            # Expected sequence: read final_answer (arms), read one heartbeat (tick_seen=True),
+            # top-of-loop settle fires on the next iteration.
+            self.assertLessEqual(fake_session.read_next_message.call_count, 3)
+
     def test_app_server_runner_does_not_settle_complete_if_activity_follows_final_answer(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             runner = CodexAppServerRunner(

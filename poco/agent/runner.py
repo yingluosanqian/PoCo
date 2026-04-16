@@ -488,6 +488,7 @@ class CodexAppServerRunner:
             deadline = monotonic() + self._timeout_seconds
             agent_message_phases: dict[str, str | None] = {}
             candidate_completion_at: float | None = None
+            candidate_tick_seen = False
             while True:
                 if self._consume_cancelled(task.id):
                     return
@@ -498,6 +499,24 @@ class CodexAppServerRunner:
                         backend_session_id=backend_session_id,
                     )
                     return
+                if candidate_completion_at is not None:
+                    if candidate_tick_seen:
+                        settle_elapsed = monotonic() - candidate_completion_at
+                        if settle_elapsed >= self._completion_settle_seconds:
+                            _LOGGER.info(
+                                "codex task %s completed via settle fallback after %.2fs (no turn/completed observed)",
+                                task.id,
+                                settle_elapsed,
+                            )
+                            yield AgentRunUpdate(
+                                kind="completed",
+                                message="Task completed by the codex app-server runner after the final answer settled.",
+                                raw_result=final_text or final_streamed_text or "Codex completed without a final response body.",
+                                backend_session_id=backend_session_id,
+                            )
+                            return
+                    else:
+                        candidate_tick_seen = True
                 with self._lock:
                     active_state = self._active_turns.get(task.id)
                 read_lock = active_state.io_lock if active_state is not None else None
@@ -514,17 +533,6 @@ class CodexAppServerRunner:
                     if read_lock is not None:
                         read_lock.release()
                 if message is None:
-                    if (
-                        candidate_completion_at is not None
-                        and monotonic() - candidate_completion_at >= self._completion_settle_seconds
-                    ):
-                        yield AgentRunUpdate(
-                            kind="completed",
-                            message="Task completed by the codex app-server runner after the final answer settled.",
-                            raw_result=final_text or final_streamed_text or "Codex completed without a final response body.",
-                            backend_session_id=backend_session_id,
-                        )
-                        return
                     if process.poll() is not None:
                         break
                     if message_stream_closed:
@@ -604,7 +612,13 @@ class CodexAppServerRunner:
                                 agent_message_phases[item_id] = phase
                             if phase == "final_answer":
                                 final_text = _string_or_none(item.get("text")) or final_text
+                                if candidate_completion_at is None:
+                                    _LOGGER.info(
+                                        "codex task %s armed completion settle candidate (phase=final_answer)",
+                                        task.id,
+                                    )
                                 candidate_completion_at = current_time
+                                candidate_tick_seen = False
                             else:
                                 candidate_completion_at = None
                         elif item_type == "reasoning":
@@ -634,6 +648,7 @@ class CodexAppServerRunner:
                             backend_session_id=backend_session_id,
                         )
                         return
+                    _LOGGER.info("codex task %s completed via turn/completed", task.id)
                     yield AgentRunUpdate(
                         kind="completed",
                         message="Task completed by the codex app-server runner.",
