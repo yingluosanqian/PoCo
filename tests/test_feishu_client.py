@@ -1263,6 +1263,42 @@ class FeishuClientTest(unittest.TestCase):
         self.assertEqual(continue_button["tag"], "button")
         self.assertEqual(continue_button["behaviors"][0]["value"]["intent_key"], "task.continue")
 
+    def test_task_status_card_shows_failed_event_message_when_no_result_body(self) -> None:
+        task = {
+            "id": "task_fail_2",
+            "project_id": "proj_1",
+            "agent_backend": "cursor_agent",
+            "effective_workdir": "/srv/poco/api",
+            "status": "failed",
+            "awaiting_confirmation_reason": None,
+            "raw_result": None,
+            "result_summary": None,
+            "events": [
+                {"kind": "task_created", "message": "Task created.", "created_at": "2026-04-16T00:00:00+00:00"},
+                {"kind": "task_failed", "message": "runner crashed", "created_at": "2026-04-16T00:00:01+00:00"},
+            ],
+        }
+        card = FeishuCardRenderer().render(
+            build_render_instruction(
+                IntentDispatchResult(
+                    status=DispatchStatus.OK,
+                    intent_key="task.status",
+                    resource_refs=ResourceRefs(project_id="proj_1", task_id="task_fail_2"),
+                    view_model=ViewModel(
+                        "task_status",
+                        {
+                            "task": task,
+                        },
+                    ),
+                    refresh_mode=RefreshMode.REPLACE_CURRENT,
+                ),
+                surface=Surface.GROUP,
+            )
+        )
+
+        self.assertEqual(card["body"]["elements"][0]["tag"], "markdown")
+        self.assertIn("runner crashed", card["body"]["elements"][0]["content"])
+
     def test_task_status_card_shows_queue_position_and_blocking_task(self) -> None:
         task = {
             "id": "task_queue_1",

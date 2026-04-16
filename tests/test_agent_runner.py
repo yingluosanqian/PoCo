@@ -349,6 +349,65 @@ class CodexAppServerRunnerTest(unittest.TestCase):
             self.assertEqual(updates[-1].kind, "completed")
             self.assertEqual(updates[-1].raw_result, "line1\nline2")
 
+    def test_app_server_runner_completes_after_quiet_period_without_terminal_events(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = CodexAppServerRunner(
+                command="codex",
+                workdir=tmpdir,
+                timeout_seconds=5,
+                completion_quiet_seconds=0.0,
+            )
+            task = Task(
+                id="task_stream_quiet_only",
+                requester_id="ou_demo",
+                prompt="stream output",
+                source="feishu",
+                status=TaskStatus.RUNNING,
+                agent_backend="codex",
+            )
+
+            class FakePopen:
+                def poll(self):  # type: ignore[no-untyped-def]
+                    return None
+
+                def kill(self) -> None:
+                    return None
+
+            fake_session = MagicMock()
+            fake_session.request.side_effect = [
+                {"thread": {"id": "thread_123"}},
+                {"turn": {"id": "turn_123"}},
+            ]
+            fake_session.read_next_message.side_effect = [
+                {
+                    "method": "item/agentMessage/delta",
+                    "params": {
+                        "threadId": "thread_123",
+                        "turnId": "turn_123",
+                        "itemId": "msg_1",
+                        "delta": "line1",
+                    },
+                },
+                {
+                    "method": "item/agentMessage/delta",
+                    "params": {
+                        "threadId": "thread_123",
+                        "turnId": "turn_123",
+                        "itemId": "msg_1",
+                        "delta": "\nline2",
+                    },
+                },
+                None,
+            ]
+
+            with patch("poco.agent.runner.shutil.which", return_value="/opt/homebrew/bin/codex"):
+                with patch("poco.agent.runner.subprocess.Popen", return_value=FakePopen()):
+                    with patch("poco.agent.runner._CodexAppServerSession", return_value=fake_session):
+                        updates = list(runner.start(task))
+
+            self.assertEqual(updates[-1].kind, "completed")
+            self.assertEqual(updates[-1].raw_result, "line1\nline2")
+
     def test_app_server_runner_surfaces_reasoning_progress_updates(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             runner = CodexAppServerRunner(command="codex", workdir=tmpdir)
@@ -1463,6 +1522,65 @@ class CursorAgentRunnerTest(unittest.TestCase):
             self.assertIn("auto", captured["command"])
             self.assertIn("--sandbox", captured["command"])
             self.assertIn("enabled", captured["command"])
+
+    def test_cursor_runner_surfaces_terminal_error_message(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = CursorAgentRunner(command="cursor-agent", workdir=tmpdir, model="gpt-5")
+            task = Task(
+                id="cursor_task_error",
+                requester_id="ou_demo",
+                prompt="broken",
+                source="feishu",
+                status=TaskStatus.RUNNING,
+                agent_backend="cursor_agent",
+            )
+
+            class FakeStdout:
+                def __init__(self) -> None:
+                    self.exhausted = False
+                    self._lines = iter(
+                        [
+                            '{"type":"result","subtype":"error","is_error":true,"error":{"message":"runner crashed"},"session_id":"session_err"}\n',
+                        ]
+                    )
+
+                def readline(self) -> str:
+                    line = next(self._lines, "")
+                    if not line:
+                        self.exhausted = True
+                    return line
+
+            class FakeStderr:
+                exhausted = True
+
+                def readline(self) -> str:
+                    return ""
+
+            class FakePopen:
+                def __init__(self) -> None:
+                    self.stdout = FakeStdout()
+                    self.stderr = FakeStderr()
+                    self.returncode = 1
+
+                def poll(self):  # type: ignore[no-untyped-def]
+                    return 1 if self.stdout.exhausted else None
+
+                def kill(self) -> None:
+                    return None
+
+            fake_process = FakePopen()
+            with (
+                patch("poco.agent.runner.shutil.which", return_value="/Users/yihanc/.local/bin/cursor-agent"),
+                patch("poco.agent.runner.subprocess.Popen", return_value=fake_process),
+                patch(
+                    "poco.agent.runner.select.select",
+                    side_effect=lambda readers, *_args: ([reader for reader in readers if not getattr(reader, "exhausted", True)], [], []),
+                ),
+            ):
+                updates = list(runner.start(task))
+
+            self.assertEqual(updates[-1].kind, "failed")
+            self.assertEqual(updates[-1].message, "runner crashed")
 
 
 class CocoRunnerTest(unittest.TestCase):

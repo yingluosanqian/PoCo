@@ -969,7 +969,7 @@ def _render_task_status(
     status = task.get("status") or "unknown"
     workdir = task.get("effective_workdir") or "no working dir"
     live_output = task.get("live_output") or ""
-    raw_result = task.get("raw_result") or task.get("result_summary") or "No result yet."
+    raw_result = _task_display_result(task)
     can_continue = bool(
         task.get("project_id")
         and task.get("backend_session_id")
@@ -1557,6 +1557,24 @@ def _config_option_display(key: object, value: object) -> str:
         if text == "ask":
             return "Ask"
     return text
+
+
+def _task_display_result(task: dict[str, Any]) -> str:
+    raw_result = task.get("raw_result") or task.get("result_summary")
+    if isinstance(raw_result, str) and raw_result.strip():
+        return raw_result
+    events = task.get("events")
+    if isinstance(events, list):
+        for event in reversed(events):
+            if not isinstance(event, dict):
+                continue
+            kind = str(event.get("kind") or "").strip()
+            message = str(event.get("message") or "").strip()
+            if not message:
+                continue
+            if kind in {"task_failed", "task_cancelled", "confirmation_rejected"}:
+                return message
+    return "No result yet."
 
 
 def _config_field_display(field: dict[str, Any]) -> str:
