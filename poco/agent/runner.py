@@ -15,6 +15,7 @@ from threading import Event, RLock
 from time import monotonic
 from typing import Literal, Protocol
 
+from poco.agent.completion_gate import CompletionGate
 from poco.task.models import Task
 
 _LOGGER = logging.getLogger(__name__)
@@ -487,8 +488,7 @@ class CodexAppServerRunner:
             last_reasoning_token_count: int | None = None
             deadline = monotonic() + self._timeout_seconds
             agent_message_phases: dict[str, str | None] = {}
-            candidate_completion_at: float | None = None
-            candidate_tick_seen = False
+            completion_gate = CompletionGate(settle_seconds=self._completion_settle_seconds)
             while True:
                 if self._consume_cancelled(task.id):
                     return
@@ -499,24 +499,20 @@ class CodexAppServerRunner:
                         backend_session_id=backend_session_id,
                     )
                     return
-                if candidate_completion_at is not None:
-                    if candidate_tick_seen:
-                        settle_elapsed = monotonic() - candidate_completion_at
-                        if settle_elapsed >= self._completion_settle_seconds:
-                            _LOGGER.info(
-                                "codex task %s completed via settle fallback after %.2fs (no turn/completed observed)",
-                                task.id,
-                                settle_elapsed,
-                            )
-                            yield AgentRunUpdate(
-                                kind="completed",
-                                message="Task completed by the codex app-server runner after the final answer settled.",
-                                raw_result=final_text or final_streamed_text or "Codex completed without a final response body.",
-                                backend_session_id=backend_session_id,
-                            )
-                            return
-                    else:
-                        candidate_tick_seen = True
+                should_fire, settle_elapsed = completion_gate.tick(monotonic())
+                if should_fire:
+                    _LOGGER.info(
+                        "codex task %s completed via settle fallback after %.2fs (no turn/completed observed)",
+                        task.id,
+                        settle_elapsed,
+                    )
+                    yield AgentRunUpdate(
+                        kind="completed",
+                        message="Task completed by the codex app-server runner after the final answer settled.",
+                        raw_result=final_text or final_streamed_text or "Codex completed without a final response body.",
+                        backend_session_id=backend_session_id,
+                    )
+                    return
                 with self._lock:
                     active_state = self._active_turns.get(task.id)
                 read_lock = active_state.io_lock if active_state is not None else None
@@ -586,7 +582,7 @@ class CodexAppServerRunner:
                         continue
                     delta = _string_or_none(params.get("delta"))
                     if delta:
-                        candidate_completion_at = None
+                        completion_gate.disarm()
                         streamed_text += delta
                         item_id = _optional_string(params.get("itemId"))
                         if item_id and agent_message_phases.get(item_id) == "final_answer":
@@ -612,17 +608,15 @@ class CodexAppServerRunner:
                                 agent_message_phases[item_id] = phase
                             if phase == "final_answer":
                                 final_text = _string_or_none(item.get("text")) or final_text
-                                if candidate_completion_at is None:
+                                if completion_gate.arm(current_time):
                                     _LOGGER.info(
                                         "codex task %s armed completion settle candidate (phase=final_answer)",
                                         task.id,
                                     )
-                                candidate_completion_at = current_time
-                                candidate_tick_seen = False
                             else:
-                                candidate_completion_at = None
+                                completion_gate.disarm()
                         elif item_type == "reasoning":
-                            candidate_completion_at = None
+                            completion_gate.disarm()
                             summary = _codex_reasoning_summary(item)
                             if summary:
                                 yield AgentRunUpdate(
@@ -631,7 +625,7 @@ class CodexAppServerRunner:
                                     backend_session_id=backend_session_id,
                                 )
                         else:
-                            candidate_completion_at = None
+                            completion_gate.disarm()
                     continue
 
                 if method == "turn/completed":
@@ -662,7 +656,7 @@ class CodexAppServerRunner:
                         continue
                     status = params.get("status")
                     if isinstance(status, dict) and status.get("type") == "active":
-                        candidate_completion_at = None
+                        completion_gate.disarm()
                         yield AgentRunUpdate(
                             kind="progress",
                             message="Codex is processing your prompt.",
@@ -712,16 +706,16 @@ class CodexAppServerRunner:
                     if item_type == "userMessage":
                         message = "Prompt accepted by Codex."
                     elif item_type == "reasoning":
-                        candidate_completion_at = None
+                        completion_gate.disarm()
                         message = "Codex is thinking."
                     elif item_type == "agentMessage":
                         item_id = _optional_string(item.get("id"))
                         if item_id:
                             agent_message_phases[item_id] = _optional_string(item.get("phase"))
-                        candidate_completion_at = None
+                        completion_gate.disarm()
                         message = "Codex is drafting a reply."
                     else:
-                        candidate_completion_at = None
+                        completion_gate.disarm()
                         continue
                     yield AgentRunUpdate(
                         kind="progress",
