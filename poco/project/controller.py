@@ -93,10 +93,16 @@ class ProjectController:
             self._store.save(project)
             return project
 
-    def bind_workspace_message(self, project_id: str, message_id: str) -> Project:
+    def bind_workspace_message(
+        self,
+        project_id: str,
+        message_id: str,
+        *,
+        channel: str | None = None,
+    ) -> Project:
         with self._lock:
             project = self.get_project(project_id)
-            project.bind_workspace_message(message_id)
+            project.bind_workspace_message(message_id, channel=channel)
             self._store.save(project)
             return project
 

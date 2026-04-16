@@ -479,10 +479,16 @@ class TaskController:
             self._sync_session(task)
             return task
 
-    def bind_notification_message(self, task_id: str, message_id: str | None) -> Task:
+    def bind_notification_message(
+        self,
+        task_id: str,
+        message_id: str | None,
+        *,
+        channel: str | None = None,
+    ) -> Task:
         with self._lock:
             task = self.get_task(task_id)
-            task.set_notification_message_id(message_id)
+            task.set_notification_message_id(message_id, channel=channel)
             self._store.save(task)
             return task
 

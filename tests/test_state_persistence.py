@@ -83,6 +83,7 @@ class StatePersistenceTest(unittest.TestCase):
                 self.assertIsNotNone(recovered_project)
                 assert recovered_project is not None
                 self.assertEqual(recovered_project.workspace_message_id, "om_workspace_demo")
+                self.assertIsNone(recovered_project.workspace_message_channel)
                 self.assertIn("/srv/poco/api", recovered_project.workdir_presets)
 
                 recovered_context = workspace_controller2.get_context(recovered_project)
@@ -91,6 +92,7 @@ class StatePersistenceTest(unittest.TestCase):
 
                 recovered_task = task_controller2.get_task(task.id)
                 self.assertEqual(recovered_task.notification_message_id, "om_task_demo")
+                self.assertIsNone(recovered_task.notification_message_channel)
                 self.assertEqual(recovered_task.project_id, recovered_project.id)
                 self.assertEqual(recovered_task.session_id, session.id)
                 self.assertEqual(recovered_task.backend_session_id, "thread_123")

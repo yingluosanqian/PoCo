@@ -53,6 +53,7 @@ class Task:
     session_id: str | None = None
     effective_workdir: str | None = None
     notification_message_id: str | None = None
+    notification_message_channel: str | None = None
     reply_receive_id: str | None = None
     reply_surface: Surface | None = None
     platform: Platform = Platform.FEISHU
@@ -87,8 +88,14 @@ class Task:
         self.status = status
         self.updated_at = utc_now()
 
-    def set_notification_message_id(self, message_id: str | None) -> None:
+    def set_notification_message_id(
+        self,
+        message_id: str | None,
+        *,
+        channel: str | None = None,
+    ) -> None:
         self.notification_message_id = message_id
+        self.notification_message_channel = channel
         self.updated_at = utc_now()
 
     def set_execution_context(
@@ -176,6 +183,7 @@ class Task:
             "session_id": self.session_id,
             "effective_workdir": self.effective_workdir,
             "notification_message_id": self.notification_message_id,
+            "notification_message_channel": self.notification_message_channel,
             "reply_receive_id": self.reply_receive_id,
             "reply_surface": self.reply_surface.value if self.reply_surface else None,
             "platform": self.platform.value,

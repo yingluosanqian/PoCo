@@ -25,6 +25,7 @@ class Project:
     workdir_presets: list[str] = field(default_factory=list)
     group_chat_id: str | None = None
     workspace_message_id: str | None = None
+    workspace_message_channel: str | None = None
     platform: Platform = Platform.FEISHU
     archived: bool = False
     created_at: datetime = field(default_factory=utc_now)
@@ -46,8 +47,14 @@ class Project:
         self.group_chat_id = group_chat_id
         self.updated_at = utc_now()
 
-    def bind_workspace_message(self, message_id: str) -> None:
+    def bind_workspace_message(
+        self,
+        message_id: str,
+        *,
+        channel: str | None = None,
+    ) -> None:
         self.workspace_message_id = message_id
+        self.workspace_message_channel = channel
         self.updated_at = utc_now()
 
     def archive(self) -> None:
@@ -99,6 +106,7 @@ class Project:
             "workdir_presets": list(self.workdir_presets),
             "group_chat_id": self.group_chat_id,
             "workspace_message_id": self.workspace_message_id,
+            "workspace_message_channel": self.workspace_message_channel,
             "platform": self.platform.value,
             "archived": self.archived,
             "created_at": self.created_at.isoformat(),

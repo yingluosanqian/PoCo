@@ -82,6 +82,7 @@ class _SqliteStoreBase:
                     workdir_presets TEXT NOT NULL,
                     group_chat_id TEXT,
                     workspace_message_id TEXT,
+                    workspace_message_channel TEXT,
                     platform TEXT NOT NULL DEFAULT 'feishu',
                     archived INTEGER NOT NULL,
                     created_at TEXT NOT NULL,
@@ -105,6 +106,7 @@ class _SqliteStoreBase:
                     session_id TEXT,
                     effective_workdir TEXT,
                     notification_message_id TEXT,
+                    notification_message_channel TEXT,
                     reply_receive_id TEXT,
                     reply_receive_id_type TEXT,
                     reply_surface TEXT,
@@ -171,6 +173,10 @@ class _SqliteStoreBase:
                 connection.execute(
                     "ALTER TABLE projects ADD COLUMN platform TEXT NOT NULL DEFAULT 'feishu'"
                 )
+            if "workspace_message_channel" not in project_columns:
+                connection.execute(
+                    "ALTER TABLE projects ADD COLUMN workspace_message_channel TEXT"
+                )
             if "session_id" not in task_columns:
                 connection.execute("ALTER TABLE tasks ADD COLUMN session_id TEXT")
             if "effective_model" not in task_columns:
@@ -190,6 +196,10 @@ class _SqliteStoreBase:
             if "platform" not in task_columns:
                 connection.execute(
                     "ALTER TABLE tasks ADD COLUMN platform TEXT NOT NULL DEFAULT 'feishu'"
+                )
+            if "notification_message_channel" not in task_columns:
+                connection.execute(
+                    "ALTER TABLE tasks ADD COLUMN notification_message_channel TEXT"
                 )
             if "reply_surface" not in task_columns:
                 connection.execute("ALTER TABLE tasks ADD COLUMN reply_surface TEXT")
@@ -217,8 +227,8 @@ class SqliteProjectStore(_SqliteStoreBase):
                 """
                 INSERT INTO projects (
                     id, name, created_by, backend, backend_config, model, sandbox, repo, workdir, workdir_presets,
-                    group_chat_id, workspace_message_id, platform, archived, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    group_chat_id, workspace_message_id, workspace_message_channel, platform, archived, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     name = excluded.name,
                     created_by = excluded.created_by,
@@ -231,6 +241,7 @@ class SqliteProjectStore(_SqliteStoreBase):
                     workdir_presets = excluded.workdir_presets,
                     group_chat_id = excluded.group_chat_id,
                     workspace_message_id = excluded.workspace_message_id,
+                    workspace_message_channel = excluded.workspace_message_channel,
                     platform = excluded.platform,
                     archived = excluded.archived,
                     created_at = excluded.created_at,
@@ -249,6 +260,7 @@ class SqliteProjectStore(_SqliteStoreBase):
                     json.dumps(project.workdir_presets, ensure_ascii=False),
                     project.group_chat_id,
                     project.workspace_message_id,
+                    project.workspace_message_channel,
                     project.platform.value,
                     int(project.archived),
                     project.created_at.isoformat(),
@@ -294,6 +306,7 @@ class SqliteProjectStore(_SqliteStoreBase):
             workdir_presets=list(presets),
             group_chat_id=row["group_chat_id"],
             workspace_message_id=row["workspace_message_id"],
+            workspace_message_channel=row["workspace_message_channel"],
             platform=Platform(row["platform"] or Platform.FEISHU.value),
             archived=bool(row["archived"]),
             created_at=_parse_datetime(row["created_at"]),
@@ -308,10 +321,10 @@ class SqliteTaskStore(_SqliteStoreBase):
                 """
                 INSERT INTO tasks (
                     id, source, requester_id, prompt, agent_backend, effective_backend_config, effective_model, effective_sandbox, backend_session_id, project_id, session_id,
-                    effective_workdir, notification_message_id, reply_receive_id,
+                    effective_workdir, notification_message_id, notification_message_channel, reply_receive_id,
                     reply_surface, platform, status, awaiting_confirmation_reason,
                     live_output, raw_result, result_summary, last_token_usage, total_token_usage, created_at, updated_at, events
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     source = excluded.source,
                     requester_id = excluded.requester_id,
@@ -325,6 +338,7 @@ class SqliteTaskStore(_SqliteStoreBase):
                     session_id = excluded.session_id,
                     effective_workdir = excluded.effective_workdir,
                     notification_message_id = excluded.notification_message_id,
+                    notification_message_channel = excluded.notification_message_channel,
                     reply_receive_id = excluded.reply_receive_id,
                     reply_surface = excluded.reply_surface,
                     platform = excluded.platform,
@@ -353,6 +367,7 @@ class SqliteTaskStore(_SqliteStoreBase):
                     task.session_id,
                     task.effective_workdir,
                     task.notification_message_id,
+                    task.notification_message_channel,
                     task.reply_receive_id,
                     task.reply_surface.value if task.reply_surface else None,
                     task.platform.value,
@@ -425,6 +440,7 @@ class SqliteTaskStore(_SqliteStoreBase):
             session_id=row["session_id"],
             effective_workdir=row["effective_workdir"],
             notification_message_id=row["notification_message_id"],
+            notification_message_channel=row["notification_message_channel"],
             reply_receive_id=row["reply_receive_id"],
             reply_surface=_parse_reply_surface(row["reply_surface"]),
             platform=Platform(row["platform"] or Platform.FEISHU.value),
