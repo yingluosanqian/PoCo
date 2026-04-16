@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Any, Protocol
 
 from poco.interaction.card_dispatcher import build_render_instruction
 from poco.interaction.card_models import Surface
@@ -26,27 +26,35 @@ class NullTaskNotifier:
         return None
 
 
-class FeishuTaskNotifier:
+class TaskNotifierBase:
+    """Platform-neutral task notifier.
+
+    Owns the shared rendering flow for ``task_status`` and
+    ``workspace_overview`` cards. Subclasses provide the small platform-bound
+    pieces: how a ``Surface`` maps to the platform's ``receive_id_type``
+    string, what the ``receive_id_type`` of a group/channel target is, and how
+    to forward debug events to a platform-specific recorder.
+    """
+
     def __init__(
         self,
         message_client: MessageClient,
         *,
-        renderer: CardRenderer | None = None,
+        renderer: CardRenderer,
         project_controller: ProjectController | None = None,
         session_controller: SessionController | None = None,
         task_controller: TaskController | None = None,
         workspace_controller: WorkspaceContextController | None = None,
-        debug_recorder: FeishuDebugRecorder | None = None,
-        running_update_interval_seconds: float = 0.1,
     ) -> None:
         self._message_client = message_client
-        self._renderer = renderer or FeishuCardRenderer()
+        self._renderer = renderer
         self._project_controller = project_controller
         self._session_controller = session_controller
         self._task_controller = task_controller
         self._workspace_controller = workspace_controller
-        self._debug_recorder = debug_recorder
-        self._workspace_sync_signatures: dict[str, tuple[str | None, str, str | None, str | None, str | None]] = {}
+        self._workspace_sync_signatures: dict[
+            str, tuple[str | None, str, str | None, str | None, str | None]
+        ] = {}
 
     def notify_task(self, task: Task) -> None:
         task = self._freshest_task(task)
@@ -54,7 +62,7 @@ class FeishuTaskNotifier:
             return
 
         surface = task.reply_surface
-        receive_id_type = _receive_id_type_from_surface(surface)
+        receive_id_type = self._receive_id_type_for_surface(surface)
         if receive_id_type is None:
             return
 
@@ -70,14 +78,13 @@ class FeishuTaskNotifier:
         )
         card = self._renderer.render(instruction)
         if task.notification_message_id:
-            if self._debug_recorder is not None:
-                self._debug_recorder.record_outbound_attempt(
-                    source="task_notifier_update",
-                    receive_id=task.reply_receive_id,
-                    receive_id_type=receive_id_type,
-                    text=f"[card-update] task_status:{task.status.value}",
-                    task_id=task.id,
-                )
+            self._record_outbound_attempt(
+                source="task_notifier_update",
+                receive_id=task.reply_receive_id,
+                receive_id_type=receive_id_type,
+                text=f"[card-update] task_status:{task.status.value}",
+                task_id=task.id,
+            )
             try:
                 self._message_client.update_interactive(
                     message_id=task.notification_message_id,
@@ -86,27 +93,25 @@ class FeishuTaskNotifier:
                 self._sync_workspace_card(task)
                 return
             except Exception as exc:
-                if self._debug_recorder is not None:
-                    self._debug_recorder.record_error(
-                        stage="task_notifier_update",
-                        message=str(exc),
-                        context={
-                            "task_id": task.id,
-                            "message_id": task.notification_message_id,
-                        },
-                    )
+                self._record_error(
+                    stage="task_notifier_update",
+                    message=str(exc),
+                    context={
+                        "task_id": task.id,
+                        "message_id": task.notification_message_id,
+                    },
+                )
                 if task.status == TaskStatus.RUNNING:
                     return
 
         preview = f"[card] task_status:{task.status.value}"
-        if self._debug_recorder is not None:
-            self._debug_recorder.record_outbound_attempt(
-                source="task_notifier",
-                receive_id=task.reply_receive_id,
-                receive_id_type=receive_id_type,
-                text=preview,
-                task_id=task.id,
-            )
+        self._record_outbound_attempt(
+            source="task_notifier",
+            receive_id=task.reply_receive_id,
+            receive_id_type=receive_id_type,
+            text=preview,
+            task_id=task.id,
+        )
         try:
             result = self._message_client.send_interactive(
                 receive_id=task.reply_receive_id,
@@ -122,17 +127,16 @@ class FeishuTaskNotifier:
             self._sync_workspace_card(task)
             return
         except Exception as exc:
-            if self._debug_recorder is not None:
-                self._debug_recorder.record_error(
-                    stage="task_notifier",
-                    message=str(exc),
-                    context={
-                        "task_id": task.id,
-                        "receive_id": task.reply_receive_id,
-                        "receive_id_type": receive_id_type,
-                        "mode": "interactive",
-                    },
-                )
+            self._record_error(
+                stage="task_notifier",
+                message=str(exc),
+                context={
+                    "task_id": task.id,
+                    "receive_id": task.reply_receive_id,
+                    "receive_id_type": receive_id_type,
+                    "mode": "interactive",
+                },
+            )
             raise
 
     def _freshest_task(self, task: Task) -> Task:
@@ -192,14 +196,13 @@ class FeishuTaskNotifier:
             surface=Surface.GROUP,
         )
         card = self._renderer.render(instruction)
-        if self._debug_recorder is not None:
-            self._debug_recorder.record_outbound_attempt(
-                source="workspace_notifier_update",
-                receive_id=project.group_chat_id or "",
-                receive_id_type="chat_id",
-                text=f"[card-update] workspace_overview:{task.status.value}",
-                task_id=task.id,
-            )
+        self._record_outbound_attempt(
+            source="workspace_notifier_update",
+            receive_id=project.group_chat_id or "",
+            receive_id_type=self._group_receive_id_type(),
+            text=f"[card-update] workspace_overview:{task.status.value}",
+            task_id=task.id,
+        )
         try:
             self._message_client.update_interactive(
                 message_id=workspace_message_id,
@@ -207,16 +210,15 @@ class FeishuTaskNotifier:
             )
             self._workspace_sync_signatures[project.id] = signature
         except Exception as exc:
-            if self._debug_recorder is not None:
-                self._debug_recorder.record_error(
-                    stage="workspace_notifier_update",
-                    message=str(exc),
-                    context={
-                        "task_id": task.id,
-                        "workspace_message_id": workspace_message_id,
-                        "project_id": project.id,
-                    },
-                )
+            self._record_error(
+                stage="workspace_notifier_update",
+                message=str(exc),
+                context={
+                    "task_id": task.id,
+                    "workspace_message_id": workspace_message_id,
+                    "project_id": project.id,
+                },
+            )
             self._bootstrap_workspace_card(project, task)
 
     def _bootstrap_workspace_card(self, project, task: Task) -> None:
@@ -247,24 +249,110 @@ class FeishuTaskNotifier:
         card = self._renderer.render(instruction)
         result = self._message_client.send_interactive(
             receive_id=project.group_chat_id,
-            receive_id_type="chat_id",
+            receive_id_type=self._group_receive_id_type(),
             card=card,
         )
         if result.message_id:
             self._project_controller.bind_workspace_message(project.id, result.message_id)
-        if self._debug_recorder is not None:
-            self._debug_recorder.record_outbound_attempt(
-                source="workspace_notifier_bootstrap",
-                receive_id=project.group_chat_id,
-                receive_id_type="chat_id",
-                text=f"[card] Workspace: {project.name}",
-                task_id=task.id,
-            )
+        self._record_outbound_attempt(
+            source="workspace_notifier_bootstrap",
+            receive_id=project.group_chat_id,
+            receive_id_type=self._group_receive_id_type(),
+            text=f"[card] Workspace: {project.name}",
+            task_id=task.id,
+        )
+
+    # Platform hooks -----------------------------------------------------
+
+    def _receive_id_type_for_surface(self, surface: Surface) -> str | None:
+        raise NotImplementedError
+
+    def _group_receive_id_type(self) -> str:
+        raise NotImplementedError
+
+    def _record_outbound_attempt(
+        self,
+        *,
+        source: str,
+        receive_id: str,
+        receive_id_type: str,
+        text: str,
+        task_id: str | None,
+    ) -> None:
+        return None
+
+    def _record_error(
+        self,
+        *,
+        stage: str,
+        message: str,
+        context: dict[str, Any],
+    ) -> None:
+        return None
 
 
-def _receive_id_type_from_surface(surface: Surface | None) -> str | None:
-    if surface == Surface.GROUP:
+class FeishuTaskNotifier(TaskNotifierBase):
+    def __init__(
+        self,
+        message_client: MessageClient,
+        *,
+        renderer: CardRenderer | None = None,
+        project_controller: ProjectController | None = None,
+        session_controller: SessionController | None = None,
+        task_controller: TaskController | None = None,
+        workspace_controller: WorkspaceContextController | None = None,
+        debug_recorder: FeishuDebugRecorder | None = None,
+    ) -> None:
+        super().__init__(
+            message_client,
+            renderer=renderer or FeishuCardRenderer(),
+            project_controller=project_controller,
+            session_controller=session_controller,
+            task_controller=task_controller,
+            workspace_controller=workspace_controller,
+        )
+        self._debug_recorder = debug_recorder
+
+    def _receive_id_type_for_surface(self, surface: Surface) -> str | None:
+        if surface == Surface.GROUP:
+            return "chat_id"
+        if surface == Surface.DM:
+            return "open_id"
+        return None
+
+    def _group_receive_id_type(self) -> str:
         return "chat_id"
-    if surface == Surface.DM:
-        return "open_id"
-    return None
+
+    def _record_outbound_attempt(
+        self,
+        *,
+        source: str,
+        receive_id: str,
+        receive_id_type: str,
+        text: str,
+        task_id: str | None,
+    ) -> None:
+        if self._debug_recorder is None:
+            return
+        self._debug_recorder.record_outbound_attempt(
+            source=source,
+            receive_id=receive_id,
+            receive_id_type=receive_id_type,
+            text=text,
+            task_id=task_id,
+        )
+
+    def _record_error(
+        self,
+        *,
+        stage: str,
+        message: str,
+        context: dict[str, Any],
+    ) -> None:
+        if self._debug_recorder is None:
+            return
+        self._debug_recorder.record_error(
+            stage=stage,
+            message=message,
+            context=context,
+        )
