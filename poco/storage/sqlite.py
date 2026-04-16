@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 from poco.agent.tokens import TokenUsage
+from poco.platform.common.platform import Platform
 from poco.project.models import Project
 from poco.session.models import Session, SessionStatus
 from poco.task.models import Task, TaskEvent, TaskStatus
@@ -71,6 +72,7 @@ class _SqliteStoreBase:
                     workdir_presets TEXT NOT NULL,
                     group_chat_id TEXT,
                     workspace_message_id TEXT,
+                    platform TEXT NOT NULL DEFAULT 'feishu',
                     archived INTEGER NOT NULL,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
@@ -95,6 +97,7 @@ class _SqliteStoreBase:
                     notification_message_id TEXT,
                     reply_receive_id TEXT,
                     reply_receive_id_type TEXT,
+                    platform TEXT NOT NULL DEFAULT 'feishu',
                     status TEXT NOT NULL,
                     awaiting_confirmation_reason TEXT,
                     live_output TEXT,
@@ -153,6 +156,10 @@ class _SqliteStoreBase:
                 connection.execute(
                     "ALTER TABLE projects ADD COLUMN sandbox TEXT NOT NULL DEFAULT 'workspace-write'"
                 )
+            if "platform" not in project_columns:
+                connection.execute(
+                    "ALTER TABLE projects ADD COLUMN platform TEXT NOT NULL DEFAULT 'feishu'"
+                )
             if "session_id" not in task_columns:
                 connection.execute("ALTER TABLE tasks ADD COLUMN session_id TEXT")
             if "effective_model" not in task_columns:
@@ -169,6 +176,10 @@ class _SqliteStoreBase:
                 connection.execute("ALTER TABLE tasks ADD COLUMN last_token_usage TEXT")
             if "total_token_usage" not in task_columns:
                 connection.execute("ALTER TABLE tasks ADD COLUMN total_token_usage TEXT")
+            if "platform" not in task_columns:
+                connection.execute(
+                    "ALTER TABLE tasks ADD COLUMN platform TEXT NOT NULL DEFAULT 'feishu'"
+                )
             session_columns = {
                 row["name"]
                 for row in connection.execute("PRAGMA table_info(sessions)").fetchall()
@@ -184,8 +195,8 @@ class SqliteProjectStore(_SqliteStoreBase):
                 """
                 INSERT INTO projects (
                     id, name, created_by, backend, backend_config, model, sandbox, repo, workdir, workdir_presets,
-                    group_chat_id, workspace_message_id, archived, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    group_chat_id, workspace_message_id, platform, archived, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     name = excluded.name,
                     created_by = excluded.created_by,
@@ -198,6 +209,7 @@ class SqliteProjectStore(_SqliteStoreBase):
                     workdir_presets = excluded.workdir_presets,
                     group_chat_id = excluded.group_chat_id,
                     workspace_message_id = excluded.workspace_message_id,
+                    platform = excluded.platform,
                     archived = excluded.archived,
                     created_at = excluded.created_at,
                     updated_at = excluded.updated_at
@@ -215,6 +227,7 @@ class SqliteProjectStore(_SqliteStoreBase):
                     json.dumps(project.workdir_presets, ensure_ascii=False),
                     project.group_chat_id,
                     project.workspace_message_id,
+                    project.platform.value,
                     int(project.archived),
                     project.created_at.isoformat(),
                     project.updated_at.isoformat(),
@@ -259,6 +272,7 @@ class SqliteProjectStore(_SqliteStoreBase):
             workdir_presets=list(presets),
             group_chat_id=row["group_chat_id"],
             workspace_message_id=row["workspace_message_id"],
+            platform=Platform(row["platform"] or Platform.FEISHU.value),
             archived=bool(row["archived"]),
             created_at=_parse_datetime(row["created_at"]),
             updated_at=_parse_datetime(row["updated_at"]),
@@ -273,9 +287,9 @@ class SqliteTaskStore(_SqliteStoreBase):
                 INSERT INTO tasks (
                     id, source, requester_id, prompt, agent_backend, effective_backend_config, effective_model, effective_sandbox, backend_session_id, project_id, session_id,
                     effective_workdir, notification_message_id, reply_receive_id,
-                    reply_receive_id_type, status, awaiting_confirmation_reason,
+                    reply_receive_id_type, platform, status, awaiting_confirmation_reason,
                     live_output, raw_result, result_summary, last_token_usage, total_token_usage, created_at, updated_at, events
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     source = excluded.source,
                     requester_id = excluded.requester_id,
@@ -291,6 +305,7 @@ class SqliteTaskStore(_SqliteStoreBase):
                     notification_message_id = excluded.notification_message_id,
                     reply_receive_id = excluded.reply_receive_id,
                     reply_receive_id_type = excluded.reply_receive_id_type,
+                    platform = excluded.platform,
                     status = excluded.status,
                     awaiting_confirmation_reason = excluded.awaiting_confirmation_reason,
                     live_output = excluded.live_output,
@@ -318,6 +333,7 @@ class SqliteTaskStore(_SqliteStoreBase):
                     task.notification_message_id,
                     task.reply_receive_id,
                     task.reply_receive_id_type,
+                    task.platform.value,
                     task.status.value,
                     task.awaiting_confirmation_reason,
                     task.live_output,
@@ -389,6 +405,7 @@ class SqliteTaskStore(_SqliteStoreBase):
             notification_message_id=row["notification_message_id"],
             reply_receive_id=row["reply_receive_id"],
             reply_receive_id_type=row["reply_receive_id_type"],
+            platform=Platform(row["platform"] or Platform.FEISHU.value),
             status=TaskStatus(row["status"]),
             events=events,
             awaiting_confirmation_reason=row["awaiting_confirmation_reason"],

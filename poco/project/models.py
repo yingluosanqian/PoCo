@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from poco.agent.catalog import backend_option, normalize_backend_config
+from poco.platform.common.platform import Platform
 
 
 def utc_now() -> datetime:
@@ -24,6 +25,7 @@ class Project:
     workdir_presets: list[str] = field(default_factory=list)
     group_chat_id: str | None = None
     workspace_message_id: str | None = None
+    platform: Platform = Platform.FEISHU
     archived: bool = False
     created_at: datetime = field(default_factory=utc_now)
     updated_at: datetime = field(default_factory=utc_now)
@@ -97,6 +99,7 @@ class Project:
             "workdir_presets": list(self.workdir_presets),
             "group_chat_id": self.group_chat_id,
             "workspace_message_id": self.workspace_message_id,
+            "platform": self.platform.value,
             "archived": self.archived,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),

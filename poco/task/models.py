@@ -6,6 +6,7 @@ from enum import StrEnum
 
 from poco.agent.catalog import backend_option, normalize_backend_config
 from poco.agent.tokens import TokenUsage
+from poco.platform.common.platform import Platform
 
 
 def utc_now() -> datetime:
@@ -53,6 +54,7 @@ class Task:
     notification_message_id: str | None = None
     reply_receive_id: str | None = None
     reply_receive_id_type: str | None = None
+    platform: Platform = Platform.FEISHU
     status: TaskStatus = TaskStatus.CREATED
     events: list[TaskEvent] = field(default_factory=list)
     awaiting_confirmation_reason: str | None = None
@@ -175,6 +177,7 @@ class Task:
             "notification_message_id": self.notification_message_id,
             "reply_receive_id": self.reply_receive_id,
             "reply_receive_id_type": self.reply_receive_id_type,
+            "platform": self.platform.value,
             "status": self.status.value,
             "awaiting_confirmation_reason": self.awaiting_confirmation_reason,
             "live_output": self.live_output,

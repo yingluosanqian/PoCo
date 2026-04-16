@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from poco.agent.tokens import TokenUsage
 from poco.main import create_app
+from poco.platform.common.platform import Platform
 
 
 class StatePersistenceTest(unittest.TestCase):
@@ -113,6 +114,8 @@ class StatePersistenceTest(unittest.TestCase):
                 recovered_session = session_controller2.get_session(session.id)
                 self.assertEqual(recovered_session.latest_task_id, task.id)
                 self.assertEqual(recovered_session.backend_session_id, "thread_123")
+                self.assertEqual(recovered_project.platform, Platform.FEISHU)
+                self.assertEqual(recovered_task.platform, Platform.FEISHU)
 
     def test_sqlite_backend_deletes_project_related_state(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
