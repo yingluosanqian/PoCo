@@ -2426,7 +2426,7 @@ class CocoRunnerTest(unittest.TestCase):
                 def drain_pending_notifications(self) -> list[dict[str, object]]:
                     return []
 
-                def read_next_message(self) -> dict[str, object] | None:
+                def read_next_message(self, **kwargs) -> dict[str, object] | None:
                     return next(self.reads, None)
 
                 def failure_detail(self, default: str) -> str:
@@ -2521,7 +2521,7 @@ class CocoRunnerTest(unittest.TestCase):
                 def drain_pending_notifications(self) -> list[dict[str, object]]:
                     return []
 
-                def read_next_message(self) -> dict[str, object] | None:
+                def read_next_message(self, **kwargs) -> dict[str, object] | None:
                     return next(self.reads, None)
 
                 def failure_detail(self, default: str) -> str:
@@ -2612,7 +2612,7 @@ class CocoRunnerTest(unittest.TestCase):
                 def drain_pending_notifications(self) -> list[dict[str, object]]:
                     return []
 
-                def read_next_message(self) -> dict[str, object] | None:
+                def read_next_message(self, **kwargs) -> dict[str, object] | None:
                     return next(self.reads, None)
 
                 def failure_detail(self, default: str) -> str:
@@ -2681,7 +2681,7 @@ class CocoRunnerTest(unittest.TestCase):
                 def drain_pending_notifications(self) -> list[dict[str, object]]:
                     return []
 
-                def read_next_message(self) -> dict[str, object] | None:
+                def read_next_message(self, **kwargs) -> dict[str, object] | None:
                     return next(self.reads, None)
 
                 def failure_detail(self, default: str) -> str:
@@ -2788,7 +2788,7 @@ class CocoRunnerTest(unittest.TestCase):
                     self._pending_notifications.clear()
                     return drained
 
-                def read_next_message(self) -> dict[str, object] | None:
+                def read_next_message(self, **kwargs) -> dict[str, object] | None:
                     return next(self.reads, None)
 
                 def failure_detail(self, default: str) -> str:
@@ -2805,7 +2805,7 @@ class CocoRunnerTest(unittest.TestCase):
             self.assertEqual([u.output_chunk for u in updates if u.output_chunk], ["fresh answer"])
             self.assertEqual(updates[-1].raw_result, "fresh answer")
 
-    def test_coco_runner_does_not_complete_on_last_chunk_without_terminal_signal(self) -> None:
+    def test_coco_runner_fails_when_stream_closes_after_last_chunk(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             runner = CocoRunner(command="traecli", workdir=tmpdir, model="GPT-5.2")
             task = Task(
@@ -2854,8 +2854,11 @@ class CocoRunnerTest(unittest.TestCase):
                 def drain_pending_notifications(self) -> list[dict[str, object]]:
                     return []
 
-                def read_next_message(self) -> dict[str, object] | None:
+                def read_next_message(self, **kwargs) -> dict[str, object] | None:
                     return next(self.reads, None)
+
+                def is_process_closed(self) -> bool:
+                    return True
 
                 def failure_detail(self, default: str) -> str:
                     return default
@@ -2870,6 +2873,143 @@ class CocoRunnerTest(unittest.TestCase):
             self.assertEqual([u.output_chunk for u in updates if u.output_chunk], ["final answer"])
             self.assertEqual(updates[-1].kind, "failed")
             self.assertIn("closed before task completion", updates[-1].message)
+
+    def test_coco_runner_completes_via_settle_after_last_chunk_while_stream_stays_open(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = CocoRunner(
+                command="traecli",
+                workdir=tmpdir,
+                model="GPT-5.2",
+                completion_settle_seconds=0.0,
+            )
+            task = Task(
+                id="coco_task_settle",
+                requester_id="ou_demo",
+                prompt="hello",
+                source="feishu",
+                status=TaskStatus.RUNNING,
+                agent_backend="coco",
+            )
+            fake_process = MagicMock()
+
+            class FakeSession:
+                def __init__(self, **kwargs):  # type: ignore[no-untyped-def]
+                    self.reads = iter(
+                        [
+                            {
+                                "method": "session/update",
+                                "params": {
+                                    "sessionId": "session_settle",
+                                    "update": {
+                                        "sessionUpdate": "agent_message_chunk",
+                                        "_meta": {"id": "msg_settle", "type": "full", "lastChunk": True},
+                                        "content": {"type": "text", "text": "final answer"},
+                                    },
+                                },
+                            },
+                        ]
+                    )
+
+                def initialize(self) -> None:
+                    return None
+
+                def open_session(self, *, session_id: str | None, cwd: str) -> dict[str, object]:
+                    return {"sessionId": "session_settle"}
+
+                def set_mode(self, *, session_id: str, mode_id: str) -> None:
+                    return None
+
+                def set_model(self, *, session_id: str, model_id: str) -> None:
+                    return None
+
+                def start_prompt(self, *, session_id: str, prompt: str) -> int:
+                    return 77
+
+                def drain_pending_notifications(self) -> list[dict[str, object]]:
+                    return []
+
+                def read_next_message(self, **kwargs) -> dict[str, object] | None:
+                    return next(self.reads, None)
+
+                def is_process_closed(self) -> bool:
+                    return False
+
+                def failure_detail(self, default: str) -> str:
+                    return default
+
+            with (
+                patch("poco.agent.runner.shutil.which", return_value="/Users/bytedance/.local/bin/traecli"),
+                patch("poco.agent.runner.subprocess.Popen", return_value=fake_process),
+                patch("poco.agent.coco._TraeAcpClient", FakeSession),
+            ):
+                updates = list(runner.start(task))
+
+            self.assertEqual([u.output_chunk for u in updates if u.output_chunk], ["final answer"])
+            self.assertEqual(updates[-1].kind, "completed")
+            self.assertEqual(updates[-1].raw_result, "final answer")
+            self.assertEqual(
+                updates[-1].message,
+                "Task completed by the coco runner after the final chunk settled.",
+            )
+
+    def test_coco_runner_times_out_when_acp_server_hangs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = CocoRunner(
+                command="traecli",
+                workdir=tmpdir,
+                model="GPT-5.2",
+                timeout_seconds=0,
+            )
+            task = Task(
+                id="coco_task_hang",
+                requester_id="ou_demo",
+                prompt="hello",
+                source="feishu",
+                status=TaskStatus.RUNNING,
+                agent_backend="coco",
+            )
+            fake_process = MagicMock()
+
+            class FakeSession:
+                def __init__(self, **kwargs):  # type: ignore[no-untyped-def]
+                    pass
+
+                def initialize(self) -> None:
+                    return None
+
+                def open_session(self, *, session_id: str | None, cwd: str) -> dict[str, object]:
+                    return {"sessionId": "session_hang"}
+
+                def set_mode(self, *, session_id: str, mode_id: str) -> None:
+                    return None
+
+                def set_model(self, *, session_id: str, model_id: str) -> None:
+                    return None
+
+                def start_prompt(self, *, session_id: str, prompt: str) -> int:
+                    return 55
+
+                def drain_pending_notifications(self) -> list[dict[str, object]]:
+                    return []
+
+                def read_next_message(self, **kwargs) -> dict[str, object] | None:
+                    return None
+
+                def is_process_closed(self) -> bool:
+                    return False
+
+                def failure_detail(self, default: str) -> str:
+                    return default
+
+            with (
+                patch("poco.agent.runner.shutil.which", return_value="/Users/bytedance/.local/bin/traecli"),
+                patch("poco.agent.runner.subprocess.Popen", return_value=fake_process),
+                patch("poco.agent.coco._TraeAcpClient", FakeSession),
+            ):
+                updates = list(runner.start(task))
+
+            self.assertEqual(updates[-1].kind, "failed")
+            self.assertIn("timed out", updates[-1].message.lower())
 
     def test_coco_runner_reuses_warm_transport_for_same_workdir(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -2940,7 +3080,7 @@ class CocoRunnerTest(unittest.TestCase):
                 def drain_pending_notifications(self) -> list[dict[str, object]]:
                     return []
 
-                def read_next_message(self) -> dict[str, object] | None:
+                def read_next_message(self, **kwargs) -> dict[str, object] | None:
                     if not self._reads:
                         return None
                     return self._reads.pop(0)

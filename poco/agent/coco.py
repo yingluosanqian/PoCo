@@ -24,6 +24,7 @@ from poco.agent.common import (
     _requires_confirmation,
     _string_or_none,
 )
+from poco.agent.completion_gate import CompletionGate
 from poco.task.models import Task
 
 _TraePromptEventKind = Literal["output", "completed", "failed", "cancelled"]
@@ -78,6 +79,7 @@ class CocoRunner:
         approval_mode: str = "default",
         timeout_seconds: int = 900,
         transport_idle_seconds: float = 30.0,
+        completion_settle_seconds: float = 1.0,
     ) -> None:
         self._command = command
         self._workdir = workdir
@@ -85,6 +87,7 @@ class CocoRunner:
         self._approval_mode = approval_mode
         self._timeout_seconds = timeout_seconds
         self._transport_idle_seconds = transport_idle_seconds
+        self._completion_settle_seconds = max(0.0, completion_settle_seconds)
         self._lock = RLock()
         self._active_processes: dict[str, subprocess.Popen[str]] = {}
         self._cancelled_tasks: set[str] = set()
@@ -217,6 +220,8 @@ class CocoRunner:
                 client=session,
                 state=turn_state,
                 ignored_message_ids=seen_message_ids,
+                timeout_seconds=float(self._timeout_seconds),
+                completion_settle_seconds=self._completion_settle_seconds,
             )
             for event in prompt_stream:
                 if self._consume_cancelled(task.id):
@@ -458,10 +463,14 @@ class _TraeAcpClient:
         )
         return request_id
 
-    def read_next_message(self) -> dict[str, object] | None:
+    def read_next_message(
+        self,
+        *,
+        poll_timeout_seconds: float | None = None,
+    ) -> dict[str, object] | None:
         if self._pending_notifications:
             return self._pending_notifications.popleft()
-        return self._read_message()
+        return self._read_message(poll_timeout_seconds=poll_timeout_seconds)
 
     def failure_detail(self, default: str) -> str:
         stderr = "".join(self._stderr_lines).strip()
@@ -469,21 +478,46 @@ class _TraeAcpClient:
             return stderr
         return default
 
+    def is_process_closed(self) -> bool:
+        stdout = self._process.stdout
+        stderr = self._process.stderr
+        if self._process.poll() is None:
+            return False
+        if stdout is None and stderr is None:
+            return True
+        return not _has_ready_stream(stdout, stderr)
+
     def _write(self, payload: dict[str, object]) -> None:
         if self._process.stdin is None:
             raise RuntimeError("Trae CLI ACP stdin is not available.")
         self._process.stdin.write(json.dumps(payload) + "\n")
         self._process.stdin.flush()
 
-    def _read_message(self) -> dict[str, object] | None:
+    def _read_message(
+        self,
+        *,
+        poll_timeout_seconds: float | None = None,
+    ) -> dict[str, object] | None:
         stdout = self._process.stdout
         stderr = self._process.stderr
         if stdout is None or stderr is None:
             raise RuntimeError("Trae CLI ACP pipes are not available.")
+        deadline = (
+            monotonic() + poll_timeout_seconds
+            if poll_timeout_seconds is not None
+            else None
+        )
         while True:
             if self._process.poll() is not None and not _has_ready_stream(stdout, stderr):
                 return None
-            ready, _, _ = select.select([stdout, stderr], [], [], 0.25)
+            if deadline is not None:
+                remaining = deadline - monotonic()
+                if remaining <= 0:
+                    return None
+                wait = min(0.25, remaining)
+            else:
+                wait = 0.25
+            ready, _, _ = select.select([stdout, stderr], [], [], wait)
             if not ready:
                 continue
             for stream in ready:
@@ -506,29 +540,58 @@ class _TraeAcpPromptStream:
         client: _TraeAcpClient,
         state: _TraePromptTurnState,
         ignored_message_ids: set[str] | None = None,
+        timeout_seconds: float,
+        completion_settle_seconds: float,
     ) -> None:
         self._client = client
         self._state = state
+        self._timeout_seconds = timeout_seconds
+        self._completion_settle_seconds = max(0.0, completion_settle_seconds)
         if ignored_message_ids:
             self._state.ignored_message_ids.update(ignored_message_ids)
 
     def __iter__(self) -> Iterator[_TraePromptEvent]:
+        deadline = monotonic() + self._timeout_seconds
+        completion_gate = CompletionGate(settle_seconds=self._completion_settle_seconds)
         while True:
-            message = self._client.read_next_message()
-            if message is None:
+            remaining = deadline - monotonic()
+            if remaining <= 0:
                 yield _TraePromptEvent(
                     kind="failed",
-                    message=self._client.failure_detail("Trae CLI ACP server closed before task completion."),
+                    message=f"Trae CLI timed out after {self._timeout_seconds:.0f} seconds.",
                 )
                 return
-            event = self._translate_message(message)
+            should_fire, _elapsed = completion_gate.tick(monotonic())
+            if should_fire:
+                yield _TraePromptEvent(
+                    kind="completed",
+                    message="Task completed by the coco runner after the final chunk settled.",
+                    raw_result=self._state.live_text.strip() or "Trae CLI completed without a final response body.",
+                )
+                return
+            poll_wait = min(0.25, remaining)
+            message = self._client.read_next_message(poll_timeout_seconds=poll_wait)
+            if message is None:
+                if self._client.is_process_closed():
+                    yield _TraePromptEvent(
+                        kind="failed",
+                        message=self._client.failure_detail("Trae CLI ACP server closed before task completion."),
+                    )
+                    return
+                continue
+            event = self._translate_message(message, completion_gate=completion_gate)
             if event is None:
                 continue
             yield event
             if event.kind != "output":
                 return
 
-    def _translate_message(self, message: dict[str, object]) -> _TraePromptEvent | None:
+    def _translate_message(
+        self,
+        message: dict[str, object],
+        *,
+        completion_gate: CompletionGate,
+    ) -> _TraePromptEvent | None:
         if message.get("id") == self._state.prompt_request_id:
             error = message.get("error")
             if isinstance(error, dict):
@@ -578,6 +641,10 @@ class _TraeAcpPromptStream:
             current_chunk_id=self._state.current_chunk_id,
         )
         self._state.record_message_id(self._state.current_chunk_id)
+        if _extract_coco_acp_last_chunk_flag(update):
+            completion_gate.arm(monotonic())
+        elif _optional_string(update.get("sessionUpdate")) == "agent_message_chunk":
+            completion_gate.disarm()
         if not output_chunk:
             return None
         return _TraePromptEvent(
@@ -642,6 +709,15 @@ def _extract_coco_acp_stop_reason(update: dict[str, object]) -> str | None:
     if _optional_string(update.get("sessionUpdate")) != "usage_update":
         return None
     return _optional_string(update.get("stopReason"))
+
+
+def _extract_coco_acp_last_chunk_flag(update: dict[str, object]) -> bool:
+    if _optional_string(update.get("sessionUpdate")) != "agent_message_chunk":
+        return False
+    meta = update.get("_meta")
+    if not isinstance(meta, dict):
+        return False
+    return meta.get("lastChunk") is True
 
 
 def _coco_content_text(value: object) -> str | None:
