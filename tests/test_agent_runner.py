@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -842,6 +843,7 @@ class ClaudeCodeRunnerTest(unittest.TestCase):
                 def __init__(self, command, **kwargs):  # type: ignore[no-untyped-def]
                     captured["command"] = command
                     captured["env"] = kwargs.get("env")
+                    captured["stdin"] = kwargs.get("stdin")
                     self.stdin = FakeStdin()
                     self.stdout = FakeStdout()
                     self.stderr = FakeStderr()
@@ -870,6 +872,93 @@ class ClaudeCodeRunnerTest(unittest.TestCase):
             env = captured["env"]
             self.assertIsInstance(env, dict)
             self.assertEqual(env["IS_SANDBOX"], "1")
+
+    def test_claude_runner_injects_anthropic_proxy_env(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = ClaudeCodeRunner(
+                command="claude",
+                workdir=tmpdir,
+                model="sonnet",
+            )
+            task = Task(
+                id="claude_task_proxy_env",
+                requester_id="ou_demo",
+                prompt="who are you",
+                source="feishu",
+                status=TaskStatus.RUNNING,
+                agent_backend="claude_code",
+                effective_backend_config={
+                    "anthropic_base_url": "http://localhost:8765",
+                    "anthropic_api_key": "mira-proxy",
+                },
+            )
+            captured: dict[str, object] = {}
+
+            class FakeStdout:
+                def __init__(self) -> None:
+                    self.exhausted = False
+                    self._lines = iter(
+                        [
+                            '{"type":"control_response","response":{"subtype":"success","request_id":"req_1_deadbeef","response":{"ok":true}}}\n',
+                            '{"type":"result","subtype":"success","result":"done","session_id":"session_proxy"}\n',
+                        ]
+                    )
+
+                def readline(self) -> str:
+                    line = next(self._lines, "")
+                    if not line:
+                        self.exhausted = True
+                    return line
+
+            class FakeStderr:
+                exhausted = True
+
+                def readline(self) -> str:
+                    return ""
+
+            class FakeStdin:
+                def write(self, _text: str) -> int:
+                    return 0
+
+                def flush(self) -> None:
+                    return None
+
+                def close(self) -> None:
+                    return None
+
+            class FakePopen:
+                def __init__(self, command, **kwargs):  # type: ignore[no-untyped-def]
+                    captured["command"] = command
+                    captured["env"] = kwargs.get("env")
+                    captured["stdin"] = kwargs.get("stdin")
+                    self.stdin = FakeStdin()
+                    self.stdout = FakeStdout()
+                    self.stderr = FakeStderr()
+                    self.returncode = 0
+
+                def poll(self):  # type: ignore[no-untyped-def]
+                    return 0
+
+                def kill(self) -> None:
+                    return None
+
+            with (
+                patch("poco.agent.runner.shutil.which", return_value="/Users/yihanc/.local/bin/claude"),
+                patch("poco.agent.runner.subprocess.Popen", FakePopen),
+                patch(
+                    "poco.agent.runner.select.select",
+                    side_effect=lambda readers, *_args: ([reader for reader in readers if not getattr(reader, "exhausted", True)], [], []),
+                ),
+                patch("poco.agent.runner.os.urandom", return_value=b"\xde\xad\xbe\xef"),
+            ):
+                updates = list(runner.start(task))
+
+            self.assertEqual(updates[-1].kind, "completed")
+            env = captured["env"]
+            self.assertIsInstance(env, dict)
+            self.assertEqual(env["ANTHROPIC_BASE_URL"], "http://localhost:8765")
+            self.assertEqual(env["ANTHROPIC_API_KEY"], "mira-proxy")
+            self.assertIs(captured["stdin"], subprocess.PIPE)
 
     def test_claude_runner_steers_active_session(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

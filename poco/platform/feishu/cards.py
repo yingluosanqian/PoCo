@@ -832,9 +832,9 @@ def _render_workspace_choose_agent(
                         f"**Agent:** `{agent_label}`",
                         f"**Model:** `{current_model or 'not set'}`" if model_options else None,
                         *[
-                            f"**{field.get('label')}:** `{_config_option_display(field.get('key'), field.get('current_value'))}`"
+                            f"**{field.get('label')}:** `{_config_field_display(field)}`"
                             for field in config_fields
-                            if field.get("key") and field.get("options")
+                            if field.get("key")
                         ],
                     ]
                     if line is not None
@@ -858,14 +858,10 @@ def _render_workspace_choose_agent(
                     else []
                 ),
                 *[
-                    _select_static(
-                        name=str(field.get("key")),
-                        placeholder=f"Select {str(field.get('label', 'option')).lower()}",
-                        options=field.get("options") or [],
-                        value=field.get("current_value"),
-                    )
+                    element
                     for field in config_fields
-                    if field.get("key") and field.get("options")
+                    if field.get("key")
+                    for element in _render_agent_config_field_elements(field)
                 ],
                 _two_up(
                     {
@@ -1561,6 +1557,47 @@ def _config_option_display(key: object, value: object) -> str:
         if text == "ask":
             return "Ask"
     return text
+
+
+def _config_field_display(field: dict[str, Any]) -> str:
+    value = field.get("current_value")
+    if field.get("sensitive"):
+        return _masked_secret(value)
+    return _config_option_display(field.get("key"), value)
+
+
+def _masked_secret(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return "not set"
+    if len(text) <= 4:
+        return "*" * len(text)
+    return f"{text[:2]}{'*' * (len(text) - 4)}{text[-2:]}"
+
+
+def _render_agent_config_field_elements(field: dict[str, Any]) -> list[dict[str, Any]]:
+    name = str(field.get("key") or "")
+    label = str(field.get("label") or "option")
+    current_value = str(field.get("current_value") or "")
+    options = field.get("options") or []
+    input_kind = str(field.get("input_kind") or "select").strip().lower()
+    if input_kind == "text" or not options:
+        return [
+            _markdown(f"**{label}**"),
+            _input(
+                name=name,
+                placeholder=str(field.get("placeholder") or f"Enter {label.lower()}"),
+                value=current_value,
+            ),
+        ]
+    return [
+        _select_static(
+            name=name,
+            placeholder=f"Select {label.lower()}",
+            options=options,
+            value=current_value or None,
+        )
+    ]
 
 
 def _task_title(

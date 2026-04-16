@@ -13,6 +13,9 @@ from pathlib import Path
 class BackendConfigField:
     key: str
     label: str
+    input_kind: str = "select"
+    placeholder: str | None = None
+    sensitive: bool = False
     options: tuple[tuple[str, str], ...] = ()
 
 
@@ -68,6 +71,19 @@ _BACKEND_DESCRIPTORS: dict[str, BackendDescriptor] = {
                     ("Plan", "plan"),
                     ("Bypass Permissions", "bypassPermissions"),
                 ),
+            ),
+            BackendConfigField(
+                key="anthropic_base_url",
+                label="ANTHROPIC_BASE_URL",
+                input_kind="text",
+                placeholder="http://localhost:8765",
+            ),
+            BackendConfigField(
+                key="anthropic_api_key",
+                label="ANTHROPIC_API_KEY",
+                input_kind="text",
+                placeholder="mira-proxy",
+                sensitive=True,
             ),
         ),
         default_config={"permission_mode": "default", "model": "sonnet"},

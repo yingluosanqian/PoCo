@@ -1108,6 +1108,9 @@ def _workspace_choose_agent_view_model(project) -> ViewModel:
             {
                 "key": field.key,
                 "label": field.label,
+                "input_kind": field.input_kind,
+                "placeholder": field.placeholder,
+                "sensitive": field.sensitive,
                 "current_value": current_value,
                 "options": [
                     {"label": label, "value": value}

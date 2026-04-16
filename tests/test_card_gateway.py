@@ -1526,6 +1526,68 @@ class FeishuCardGatewayTest(unittest.TestCase):
         self.assertEqual(updated.sandbox, "danger-full-access")
         self.assertEqual(updated.backend_config["reasoning_effort"], "low")
 
+    def test_workspace_apply_agent_persists_claude_proxy_settings(self) -> None:
+        project = self.project_controller.create_project(
+            name="PoCo Claude",
+            created_by="ou_demo_user",
+            backend="claude_code",
+        )
+        open_payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_choose_claude_agent_1"},
+                "action": {
+                    "value": {
+                        "intent_key": "workspace.choose_agent",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "request_id": "req_choose_claude_agent_1",
+                    },
+                },
+            }
+        }
+
+        opened = self.gateway.handle_action(open_payload)
+
+        self.assertEqual(opened["instruction"]["template_key"], "workspace_choose_agent")
+        form = opened["card"]["data"]["body"]["elements"][1]
+        self.assertEqual(form["elements"][0]["name"], "model")
+        self.assertEqual(form["elements"][1]["name"], "permission_mode")
+        self.assertIn("ANTHROPIC_BASE_URL", form["elements"][2]["content"])
+        self.assertEqual(form["elements"][3]["name"], "anthropic_base_url")
+        self.assertIn("ANTHROPIC_API_KEY", form["elements"][4]["content"])
+        self.assertEqual(form["elements"][5]["name"], "anthropic_api_key")
+
+        payload = {
+            "event": {
+                "operator": {"open_id": "ou_demo_user"},
+                "context": {"open_message_id": "om_choose_claude_agent_1"},
+                "action": {
+                    "value": {
+                        "intent_key": "workspace.apply_agent",
+                        "surface": "group",
+                        "project_id": project.id,
+                        "request_id": "req_apply_claude_agent_1",
+                    },
+                    "form_value": {
+                        "model": "opus",
+                        "permission_mode": "acceptEdits",
+                        "anthropic_base_url": "http://localhost:8765",
+                        "anthropic_api_key": "mira-proxy",
+                    },
+                },
+            }
+        }
+
+        applied = self.gateway.handle_action(payload)
+
+        self.assertEqual(applied["instruction"]["template_key"], "workspace_overview")
+        updated = self.project_controller.get_project(project.id)
+        self.assertEqual(updated.model, "opus")
+        self.assertEqual(updated.backend_config["permission_mode"], "acceptEdits")
+        self.assertEqual(updated.backend_config["anthropic_base_url"], "http://localhost:8765")
+        self.assertEqual(updated.backend_config["anthropic_api_key"], "mira-proxy")
+
     def test_workspace_apply_preset_rejects_unknown_preset(self) -> None:
         project = self.project_controller.create_project(
             name="PoCo",

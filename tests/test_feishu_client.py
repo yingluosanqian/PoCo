@@ -564,6 +564,93 @@ class FeishuClientTest(unittest.TestCase):
         self.assertEqual(form["elements"][1]["name"], "approval_mode")
         self.assertEqual(form["elements"][1]["value"], "yolo")
 
+    def test_workspace_choose_agent_card_contains_claude_proxy_inputs(self) -> None:
+        project = Project(
+            id="proj_claude",
+            name="PoCo Claude",
+            created_by="ou_demo_user",
+            backend="claude_code",
+            backend_config={
+                "model": "sonnet",
+                "permission_mode": "default",
+                "anthropic_base_url": "http://localhost:8765",
+                "anthropic_api_key": "mira-proxy",
+            },
+        )
+        card = FeishuCardRenderer().render(
+            build_render_instruction(
+                IntentDispatchResult(
+                    status=DispatchStatus.OK,
+                    intent_key="workspace.choose_agent",
+                    resource_refs=ResourceRefs(project_id=project.id),
+                    view_model=ViewModel(
+                        "workspace_choose_agent",
+                        {
+                            "project": project.to_dict(),
+                            "agent_label": "Claude Code",
+                            "current_model": "sonnet",
+                            "model_options": [
+                                {"label": "sonnet", "value": "sonnet"},
+                                {"label": "opus", "value": "opus"},
+                            ],
+                            "config_fields": [
+                                {
+                                    "key": "permission_mode",
+                                    "label": "Permission",
+                                    "input_kind": "select",
+                                    "current_value": "default",
+                                    "options": [
+                                        {"label": "Default", "value": "default"},
+                                        {"label": "Accept Edits", "value": "acceptEdits"},
+                                        {"label": "Plan", "value": "plan"},
+                                        {"label": "Bypass Permissions", "value": "bypassPermissions"},
+                                    ],
+                                },
+                                {
+                                    "key": "anthropic_base_url",
+                                    "label": "ANTHROPIC_BASE_URL",
+                                    "input_kind": "text",
+                                    "placeholder": "http://localhost:8765",
+                                    "current_value": "http://localhost:8765",
+                                    "options": [],
+                                },
+                                {
+                                    "key": "anthropic_api_key",
+                                    "label": "ANTHROPIC_API_KEY",
+                                    "input_kind": "text",
+                                    "placeholder": "mira-proxy",
+                                    "current_value": "mira-proxy",
+                                    "sensitive": True,
+                                    "options": [],
+                                },
+                            ],
+                        },
+                    ),
+                    refresh_mode=RefreshMode.REPLACE_CURRENT,
+                ),
+                surface=Surface.GROUP,
+            )
+        )
+
+        summary = card["body"]["elements"][0]["content"]
+        self.assertIn("ANTHROPIC_BASE_URL", summary)
+        self.assertIn("ANTHROPIC_API_KEY", summary)
+        self.assertIn("mi******xy", summary)
+        self.assertNotIn("`mira-proxy`", summary)
+        form = card["body"]["elements"][1]
+        self.assertEqual(form["elements"][0]["name"], "model")
+        self.assertEqual(form["elements"][1]["name"], "permission_mode")
+        self.assertEqual(form["elements"][2]["tag"], "markdown")
+        self.assertIn("ANTHROPIC_BASE_URL", form["elements"][2]["content"])
+        self.assertEqual(form["elements"][3]["tag"], "input")
+        self.assertEqual(form["elements"][3]["name"], "anthropic_base_url")
+        self.assertEqual(form["elements"][3]["value"], "http://localhost:8765")
+        self.assertEqual(form["elements"][4]["tag"], "markdown")
+        self.assertIn("ANTHROPIC_API_KEY", form["elements"][4]["content"])
+        self.assertEqual(form["elements"][5]["tag"], "input")
+        self.assertEqual(form["elements"][5]["name"], "anthropic_api_key")
+        self.assertEqual(form["elements"][5]["value"], "mira-proxy")
+
     def test_project_dir_presets_card_contains_input_and_add(self) -> None:
         project = Project(
             id="proj_1",

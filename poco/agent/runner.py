@@ -933,6 +933,12 @@ class ClaudeCodeRunner:
         if task.backend_session_id:
             command.extend(["--resume", task.backend_session_id])
         env = os.environ.copy()
+        anthropic_base_url = _string_or_none(task.effective_backend_config.get("anthropic_base_url"))
+        anthropic_api_key = _string_or_none(task.effective_backend_config.get("anthropic_api_key"))
+        if anthropic_base_url:
+            env["ANTHROPIC_BASE_URL"] = anthropic_base_url
+        if anthropic_api_key:
+            env["ANTHROPIC_API_KEY"] = anthropic_api_key
         if resolved_permission_mode == "bypassPermissions":
             env["IS_SANDBOX"] = "1"
 
@@ -947,6 +953,7 @@ class ClaudeCodeRunner:
                 command,
                 cwd=workdir,
                 env=env,
+                stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
