@@ -409,9 +409,13 @@ def _render_task_status(
     blocking_task_id = data.get("blocking_task_id")
     blocking_task_status = data.get("blocking_task_status")
 
+    activity_hint = task.get("activity_hint")
+    status_display = status
+    if activity_hint and status == "running":
+        status_display = f"{status} · {activity_hint}"
     blocks: list[dict[str, Any]] = [
         _section(
-            f"*Task `{task_id}`* — status `{status}`\n"
+            f"*Task `{task_id}`* — status `{status_display}`\n"
             f"Agent: `{model}` · Workdir: `{workdir}`"
         ),
     ]

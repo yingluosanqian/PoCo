@@ -291,18 +291,30 @@ class ClaudeCodeRunner:
                         stream_event = event.get("event")
                         backend_session_id = _optional_string(event.get("session_id")) or backend_session_id
                         active_session.session_id = backend_session_id
-                        if isinstance(stream_event, dict) and stream_event.get("type") == "content_block_delta":
-                            delta = stream_event.get("delta")
-                            if isinstance(delta, dict) and delta.get("type") == "text_delta":
-                                text = _string_or_none(delta.get("text"))
-                                if text:
-                                    completion_gate.disarm()
-                                    streamed_text += text
+                        if isinstance(stream_event, dict):
+                            se_type = stream_event.get("type")
+                            if se_type == "content_block_delta":
+                                delta = stream_event.get("delta")
+                                if isinstance(delta, dict) and delta.get("type") == "text_delta":
+                                    text = _string_or_none(delta.get("text"))
+                                    if text:
+                                        completion_gate.disarm()
+                                        streamed_text += text
+                                        yield AgentRunUpdate(
+                                            kind="progress",
+                                            message="Claude Code output updated.",
+                                            output_chunk=text,
+                                            backend_session_id=backend_session_id,
+                                        )
+                            elif se_type == "content_block_start":
+                                cb = stream_event.get("content_block")
+                                if isinstance(cb, dict) and cb.get("type") == "tool_use":
+                                    tool_name = _optional_string(cb.get("name")) or "tool"
                                     yield AgentRunUpdate(
                                         kind="progress",
-                                        message="Claude Code output updated.",
-                                        output_chunk=text,
+                                        message=f"Claude Code is using {tool_name}.",
                                         backend_session_id=backend_session_id,
+                                        activity_hint=tool_name,
                                     )
                         continue
                     if event_type == "assistant":
@@ -328,6 +340,8 @@ class ClaudeCodeRunner:
                                     "claude_code task %s armed completion settle candidate (stop_reason=end_turn)",
                                     task.id,
                                 )
+                        elif stop_reason == "tool_use":
+                            completion_gate.disarm()
                         else:
                             completion_gate.disarm()
                         continue

@@ -25,6 +25,7 @@ class AgentRunUpdate:
     backend_session_id: str | None = None
     last_token_usage: TokenUsage | None = None
     total_token_usage: TokenUsage | None = None
+    activity_hint: str | None = None
 
     @property
     def result_summary(self) -> str | None:

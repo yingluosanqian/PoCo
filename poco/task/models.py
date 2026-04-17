@@ -65,6 +65,7 @@ class Task:
     result_summary: str | None = None
     last_token_usage: TokenUsage | None = None
     total_token_usage: TokenUsage | None = None
+    activity_hint: str | None = None
     created_at: datetime = field(default_factory=utc_now)
     updated_at: datetime = field(default_factory=utc_now)
 
@@ -194,6 +195,7 @@ class Task:
             "result_summary": self.result_summary,
             "last_token_usage": self.last_token_usage.to_dict() if self.last_token_usage else None,
             "total_token_usage": self.total_token_usage.to_dict() if self.total_token_usage else None,
+            "activity_hint": self.activity_hint,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
             "events": [event.to_dict() for event in self.events],

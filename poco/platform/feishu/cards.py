@@ -1323,6 +1323,7 @@ def _render_task_status(
             status=status,
             agent=task.get("effective_model") or task.get("agent_backend") or "unknown",
             workdir=workdir,
+            activity_hint=task.get("activity_hint"),
         ),
         template=_task_template_for_status(status),
         elements=elements,
@@ -1889,8 +1890,12 @@ def _task_title(
     status: str,
     agent: str,
     workdir: str,
+    activity_hint: str | None = None,
 ) -> str:
-    return f"[{_task_status_label(status)}] Task: {task_id} ({agent}, {workdir})"
+    label = _task_status_label(status)
+    if activity_hint and status == "running":
+        label = f"{label} · {activity_hint}"
+    return f"[{label}] Task: {task_id} ({agent}, {workdir})"
 
 
 def _workspace_title(

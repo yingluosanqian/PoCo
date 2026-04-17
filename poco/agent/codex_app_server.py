@@ -529,24 +529,35 @@ class CodexAppServerRunner:
                     if not isinstance(item, dict):
                         continue
                     item_type = _optional_string(item.get("type"))
+                    activity_hint: str | None = None
                     if item_type == "userMessage":
                         message = "Prompt accepted by Codex."
                     elif item_type == "reasoning":
                         completion_gate.disarm()
                         message = "Codex is thinking."
+                        activity_hint = "Thinking"
                     elif item_type == "agentMessage":
                         item_id = _optional_string(item.get("id"))
                         if item_id:
                             agent_message_phases[item_id] = _optional_string(item.get("phase"))
                         completion_gate.disarm()
                         message = "Codex is drafting a reply."
+                        activity_hint = "Writing"
+                    elif item_type == "commandExecution":
+                        completion_gate.disarm()
+                        cmd_hint = _codex_command_hint(item)
+                        message = f"Codex is running: {cmd_hint}" if cmd_hint else "Codex is running a command."
+                        activity_hint = f"Running: {cmd_hint}" if cmd_hint else "Running command"
                     else:
                         completion_gate.disarm()
-                        continue
+                        tool_label = _codex_tool_label(item_type)
+                        message = f"Codex is using {tool_label}."
+                        activity_hint = tool_label
                     yield AgentRunUpdate(
                         kind="progress",
                         message=message,
                         backend_session_id=backend_session_id,
+                        activity_hint=activity_hint,
                     )
                     continue
 
@@ -848,6 +859,34 @@ def _turn_error_message(turn: dict[str, object]) -> str | None:
         if message:
             return message
     return None
+
+
+def _codex_command_hint(item: dict[str, object]) -> str | None:
+    for key in ("command", "name", "title"):
+        value = _optional_string(item.get(key))
+        if value:
+            return value[:80]
+    call = item.get("call")
+    if isinstance(call, dict):
+        for key in ("command", "name"):
+            value = _optional_string(call.get(key))
+            if value:
+                return value[:80]
+    return None
+
+
+def _codex_tool_label(item_type: str | None) -> str:
+    if not item_type:
+        return "a tool"
+    labels: dict[str, str] = {
+        "fileRead": "Read file",
+        "fileWrite": "Write file",
+        "fileSearch": "Search files",
+        "codeEdit": "Edit code",
+        "webSearch": "Web search",
+        "mcpCall": "MCP tool",
+    }
+    return labels.get(item_type, item_type.replace("_", " "))
 
 
 def _error_notification_message(params: dict[str, object]) -> str | None:

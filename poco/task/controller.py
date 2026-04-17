@@ -576,6 +576,9 @@ class TaskController:
                             last=getattr(update, "last_token_usage", None),
                             total=getattr(update, "total_token_usage", None),
                         )
+                        hint = getattr(update, "activity_hint", None)
+                        if hint is not None:
+                            task.activity_hint = hint
                         task.add_event("runner_progress", update.message)
                     elif update.kind == "confirmation_required":
                         task.awaiting_confirmation_reason = update.message
@@ -592,6 +595,7 @@ class TaskController:
                             )
                         task.set_result(update.raw_result)
                         task.clear_live_output()
+                        task.activity_hint = None
                         task.set_status(TaskStatus.COMPLETED)
                         task.add_event("task_completed", update.message)
                     elif update.kind == "failed":
@@ -606,6 +610,7 @@ class TaskController:
                         if task.live_output and not task.raw_result:
                             task.set_result(task.live_output)
                         task.clear_live_output()
+                        task.activity_hint = None
                         task.set_status(TaskStatus.FAILED)
                         task.add_event("task_failed", update.message)
                     else:
