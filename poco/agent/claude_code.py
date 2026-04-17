@@ -482,6 +482,14 @@ class ClaudeCodeRunner:
                 with active.io_lock:
                     active.pending_controls.pop(request_id, None)
                 raise RuntimeError(f"Claude Code control request timed out: {request.get('subtype')}")
+            if active.process.poll() is not None and not _has_ready_stream(stdout, stderr):
+                with active.io_lock:
+                    active.pending_controls.pop(request_id, None)
+                stderr_text = "".join(stderr_lines).strip()
+                raise RuntimeError(
+                    stderr_text
+                    or f"Claude Code exited during {request.get('subtype')} (exit code {active.process.returncode})."
+                )
             ready, _, _ = select.select([stdout, stderr], [], [], min(0.25, remaining))
             if not ready:
                 continue
