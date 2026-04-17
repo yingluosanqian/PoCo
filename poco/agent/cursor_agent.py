@@ -322,6 +322,13 @@ class CursorAgentRunner:
                 raw_result=raw_result,
                 backend_session_id=backend_session_id,
             )
+        except RuntimeError as exc:
+            self._logger.warning("cursor-agent task %s runtime error: %s", task.id, exc)
+            yield AgentRunUpdate(
+                kind="failed",
+                message=str(exc) or "Cursor Agent session failed.",
+                backend_session_id=backend_session_id,
+            )
         except OSError as exc:
             self._logger.warning("Failed to start cursor-agent task %s: %s", task.id, exc)
             yield AgentRunUpdate(

@@ -394,6 +394,12 @@ class ClaudeCodeRunner:
                 backend_session_id=backend_session_id,
                 last_token_usage=last_seen_usage,
             )
+        except RuntimeError as exc:
+            yield AgentRunUpdate(
+                kind="failed",
+                message=str(exc) or "Claude Code session failed.",
+                backend_session_id=backend_session_id,
+            )
         except OSError as exc:
             yield AgentRunUpdate(
                 kind="failed",
