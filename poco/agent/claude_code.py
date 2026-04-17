@@ -160,20 +160,6 @@ class ClaudeCodeRunner:
 
         resolved_model = task.effective_model or self._model
         resolved_permission_mode = _string_or_none(task.effective_backend_config.get("permission_mode")) or self._permission_mode
-        command = [
-            self._command,
-            "--verbose",
-            "--output-format=stream-json",
-            "--include-partial-messages",
-            "--input-format",
-            "stream-json",
-        ]
-        if resolved_model:
-            command.extend(["--model", resolved_model])
-        if resolved_permission_mode:
-            command.extend(["--permission-mode", resolved_permission_mode])
-        if task.backend_session_id:
-            command.extend(["--resume", task.backend_session_id])
         env = os.environ.copy()
         if resolved_permission_mode == "bypassPermissions":
             env["IS_SANDBOX"] = "1"
@@ -186,39 +172,29 @@ class ClaudeCodeRunner:
         last_seen_usage: TokenUsage | None = None
         active_session: _ClaudeActiveSession | None = None
         try:
-            process = subprocess.Popen(
-                command,
-                cwd=workdir,
+            original_session_id = backend_session_id
+            process, active_session, stdout, stderr, backend_session_id = self._start_claude_process(
+                task=task,
+                workdir=workdir,
                 env=env,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1,
+                resolved_model=resolved_model,
+                resolved_permission_mode=resolved_permission_mode,
+                resume_session_id=backend_session_id,
+                stderr_lines=stderr_lines,
             )
+            if process is None or active_session is None:
+                yield AgentRunUpdate(kind="failed", message="Claude Code pipes are not available.")
+                return
             with self._lock:
                 self._active_processes[task.id] = process
 
-            deadline = monotonic() + self._timeout_seconds
-            stdout = process.stdout
-            stderr = process.stderr
-            stdin = process.stdin
-            if stdout is None or stderr is None or stdin is None:
-                yield AgentRunUpdate(kind="failed", message="Claude Code pipes are not available.")
-                return
-            active_session = _ClaudeActiveSession(
-                process=process,
-                stdin=stdin,
-                session_id=backend_session_id,
-            )
-            self._initialize_claude_session(
-                active_session,
-                stdout,
-                stderr,
-                stderr_lines,
-                {"subtype": "initialize", "hooks": None},
-                timeout=min(max(self._timeout_seconds, 60), 120),
-            )
+            if original_session_id and not backend_session_id:
+                yield AgentRunUpdate(
+                    kind="progress",
+                    message=f"Previous session {original_session_id[:12]}… expired. Starting a fresh session.",
+                    backend_session_id=backend_session_id,
+                )
+
             self._send_claude_user_message(
                 active_session,
                 prompt,
@@ -227,6 +203,7 @@ class ClaudeCodeRunner:
             with self._lock:
                 self._active_sessions[task.id] = active_session
 
+            deadline = monotonic() + self._timeout_seconds
             completion_gate = CompletionGate(settle_seconds=self._completion_settle_seconds)
             main_stdout_eof = False
             main_stderr_eof = False
@@ -418,6 +395,131 @@ class ClaudeCodeRunner:
                 self._active_sessions.pop(task.id, None)
                 self._cancelled_tasks.discard(task.id)
             _cleanup_subprocess(process)
+
+    def _start_claude_process(
+        self,
+        *,
+        task: Task,
+        workdir: str,
+        env: dict[str, str],
+        resolved_model: str | None,
+        resolved_permission_mode: str | None,
+        resume_session_id: str | None,
+        stderr_lines: list[str],
+    ) -> tuple[
+        subprocess.Popen[str] | None,
+        _ClaudeActiveSession | None,
+        object,
+        object,
+        str | None,
+    ]:
+        command = self._build_claude_command(
+            resolved_model=resolved_model,
+            resolved_permission_mode=resolved_permission_mode,
+            resume_session_id=resume_session_id,
+        )
+        process = subprocess.Popen(
+            command,
+            cwd=workdir,
+            env=env,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
+        stdout = process.stdout
+        stderr = process.stderr
+        stdin = process.stdin
+        if stdout is None or stderr is None or stdin is None:
+            _cleanup_subprocess(process)
+            return None, None, None, None, resume_session_id
+
+        active_session = _ClaudeActiveSession(
+            process=process,
+            stdin=stdin,
+            session_id=resume_session_id,
+        )
+        try:
+            self._initialize_claude_session(
+                active_session,
+                stdout,
+                stderr,
+                stderr_lines,
+                {"subtype": "initialize", "hooks": None},
+                timeout=min(max(self._timeout_seconds, 60), 120),
+            )
+        except RuntimeError:
+            if not resume_session_id:
+                raise
+            _LOGGER.info(
+                "claude_code task %s resume failed for session %s, retrying fresh: %s",
+                task.id,
+                resume_session_id,
+                "".join(stderr_lines).strip() or "unknown reason",
+            )
+            _cleanup_subprocess(process)
+            stderr_lines.clear()
+            command = self._build_claude_command(
+                resolved_model=resolved_model,
+                resolved_permission_mode=resolved_permission_mode,
+                resume_session_id=None,
+            )
+            process = subprocess.Popen(
+                command,
+                cwd=workdir,
+                env=env,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+            )
+            stdout = process.stdout
+            stderr = process.stderr
+            stdin = process.stdin
+            if stdout is None or stderr is None or stdin is None:
+                _cleanup_subprocess(process)
+                return None, None, None, None, None
+            active_session = _ClaudeActiveSession(
+                process=process,
+                stdin=stdin,
+                session_id=None,
+            )
+            self._initialize_claude_session(
+                active_session,
+                stdout,
+                stderr,
+                stderr_lines,
+                {"subtype": "initialize", "hooks": None},
+                timeout=min(max(self._timeout_seconds, 60), 120),
+            )
+            resume_session_id = None
+
+        return process, active_session, stdout, stderr, resume_session_id
+
+    def _build_claude_command(
+        self,
+        *,
+        resolved_model: str | None,
+        resolved_permission_mode: str | None,
+        resume_session_id: str | None,
+    ) -> list[str]:
+        command = [
+            self._command,
+            "--verbose",
+            "--output-format=stream-json",
+            "--include-partial-messages",
+            "--input-format",
+            "stream-json",
+        ]
+        if resolved_model:
+            command.extend(["--model", resolved_model])
+        if resolved_permission_mode:
+            command.extend(["--permission-mode", resolved_permission_mode])
+        if resume_session_id:
+            command.extend(["--resume", resume_session_id])
+        return command
 
     def _consume_cancelled(self, task_id: str) -> bool:
         with self._lock:
