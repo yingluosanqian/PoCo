@@ -28,6 +28,8 @@ poco start
 poco status
 ```
 
+For a step-by-step walkthrough covering all platforms and first-task flow, see **[docs/quickstart.md](docs/quickstart.md)**.
+
 `poco config` writes `~/.poco/poco.config.json`. Environment variables override file values at runtime. To run with no chat platform at all (just the HTTP demo surface and agent runner), skip `poco config` and start directly:
 
 ```bash
@@ -67,49 +69,6 @@ Long-connection mode authenticates inbound events via the long-connection sessio
 | `POCO_SLACK_DELIVERY_MODE` | `socket` (default) or `webhook`. |
 
 Slack is considered enabled when bot token + signing secret (+ app token, for socket mode) are all set. `/poco` slash command posts the project-list card as an ephemeral reply.
-
-### Agent backend (server-side)
-
-Minimum:
-
-```bash
-export POCO_AGENT_BACKEND="codex"
-export POCO_CODEX_COMMAND="codex"
-export POCO_CODEX_WORKDIR="/absolute/path/to/your/repo"
-```
-
-Optional per-backend tuning:
-
-```bash
-# Codex
-export POCO_CODEX_MODEL="gpt-5"
-export POCO_CODEX_SANDBOX="workspace-write"
-export POCO_CODEX_APPROVAL_POLICY="never"
-export POCO_CODEX_TIMEOUT_SECONDS="900"
-export POCO_CODEX_TRANSPORT_IDLE_SECONDS="1800"
-
-# Claude Code
-export POCO_CLAUDE_COMMAND="claude"
-export POCO_CLAUDE_WORKDIR="/absolute/path/to/your/repo"
-export POCO_CLAUDE_MODEL="sonnet"
-export POCO_CLAUDE_PERMISSION_MODE="default"
-export POCO_CLAUDE_TIMEOUT_SECONDS="900"
-
-# Cursor Agent
-export POCO_CURSOR_COMMAND="cursor-agent"
-export POCO_CURSOR_WORKDIR="/absolute/path/to/your/repo"
-export POCO_CURSOR_MODEL="auto"
-export POCO_CURSOR_MODE="default"
-export POCO_CURSOR_SANDBOX="default"
-export POCO_CURSOR_TIMEOUT_SECONDS="900"
-
-# Trae CLI (coco)
-export POCO_COCO_COMMAND="traecli"
-export POCO_COCO_WORKDIR="/absolute/path/to/your/repo"
-export POCO_COCO_MODEL="GPT-5"
-export POCO_COCO_APPROVAL_MODE="default"
-export POCO_COCO_TIMEOUT_SECONDS="900"
-```
 
 ### State backend
 
