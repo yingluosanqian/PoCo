@@ -23,6 +23,7 @@ from poco.agent.common import (
     _string_or_none,
 )
 from poco.agent.completion_gate import CompletionGate
+from poco.agent.tokens import TokenUsage
 from poco.task.models import Task
 
 _LOGGER = logging.getLogger(__name__)
@@ -182,6 +183,7 @@ class ClaudeCodeRunner:
         stderr_lines: list[str] = []
         final_text: str | None = None
         streamed_text = ""
+        last_seen_usage: TokenUsage | None = None
         active_session: _ClaudeActiveSession | None = None
         try:
             process = subprocess.Popen(
@@ -252,6 +254,7 @@ class ClaudeCodeRunner:
                         message="Task completed by the claude_code runner after the final assistant message settled.",
                         raw_result=streamed_text or final_text or "Claude Code completed without a final response body.",
                         backend_session_id=backend_session_id,
+                        last_token_usage=last_seen_usage,
                     )
                     return
                 ready, _, _ = select.select([stdout, stderr], [], [], min(0.25, remaining))
@@ -308,6 +311,15 @@ class ClaudeCodeRunner:
                         if isinstance(message, dict):
                             final_text = _extract_claude_message_text(message) or final_text
                             stop_reason = _extract_claude_message_stop_reason(message)
+                            turn_usage = _extract_claude_message_usage(message)
+                            if turn_usage is not None and turn_usage != last_seen_usage:
+                                last_seen_usage = turn_usage
+                                yield AgentRunUpdate(
+                                    kind="progress",
+                                    message="Claude Code token usage updated.",
+                                    backend_session_id=backend_session_id,
+                                    last_token_usage=turn_usage,
+                                )
                         backend_session_id = _optional_string(event.get("session_id")) or backend_session_id
                         active_session.session_id = backend_session_id
                         if stop_reason == "end_turn":
@@ -341,6 +353,7 @@ class ClaudeCodeRunner:
                                 message="Task completed by the claude_code runner.",
                                 raw_result=raw_result,
                                 backend_session_id=backend_session_id,
+                                last_token_usage=last_seen_usage,
                             )
                             return
                         detail = _optional_string(event.get("result")) or _optional_string(event.get("error")) or "".join(stderr_lines).strip() or "Claude Code failed."
@@ -365,6 +378,7 @@ class ClaudeCodeRunner:
                 message="Task completed by the claude_code runner.",
                 raw_result=streamed_text or final_text or "Claude Code completed without a final response body.",
                 backend_session_id=backend_session_id,
+                last_token_usage=last_seen_usage,
             )
         except OSError as exc:
             yield AgentRunUpdate(
@@ -568,3 +582,10 @@ def _extract_claude_message_text(message: dict[str, object]) -> str | None:
 
 def _extract_claude_message_stop_reason(message: dict[str, object]) -> str | None:
     return _optional_string(message.get("stop_reason"))
+
+
+def _extract_claude_message_usage(message: dict[str, object]) -> TokenUsage | None:
+    usage = message.get("usage")
+    if not isinstance(usage, dict):
+        return None
+    return TokenUsage.from_dict(usage)

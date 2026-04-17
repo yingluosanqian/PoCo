@@ -25,6 +25,7 @@ from poco.agent.common import (
     _string_or_none,
 )
 from poco.agent.completion_gate import CompletionGate
+from poco.agent.tokens import TokenUsage
 from poco.task.models import Task
 
 _TraePromptEventKind = Literal["output", "completed", "failed", "cancelled"]
@@ -36,6 +37,7 @@ class _TraePromptEvent:
     message: str
     output_chunk: str | None = None
     raw_result: str | None = None
+    last_token_usage: TokenUsage | None = None
 
 
 @dataclass(slots=True)
@@ -240,6 +242,7 @@ class CocoRunner:
                         message=event.message,
                         raw_result=event.raw_result,
                         backend_session_id=backend_session_id,
+                        last_token_usage=event.last_token_usage,
                     )
                     return
                 if event.kind == "cancelled":
@@ -623,12 +626,14 @@ class _TraeAcpPromptStream:
 
         stop_reason = _extract_coco_acp_stop_reason(update)
         if stop_reason:
+            usage = _extract_coco_acp_usage(update)
             if stop_reason == "cancelled":
                 return _TraePromptEvent(kind="cancelled", message="Trae CLI prompt cancelled.")
             return _TraePromptEvent(
                 kind="completed",
                 message="Task completed by the coco runner.",
                 raw_result=self._state.live_text.strip() or "Trae CLI completed without a final response body.",
+                last_token_usage=usage,
             )
 
         message_id = _extract_coco_acp_message_id(update)
@@ -709,6 +714,17 @@ def _extract_coco_acp_stop_reason(update: dict[str, object]) -> str | None:
     if _optional_string(update.get("sessionUpdate")) != "usage_update":
         return None
     return _optional_string(update.get("stopReason"))
+
+
+def _extract_coco_acp_usage(update: dict[str, object]) -> TokenUsage | None:
+    if _optional_string(update.get("sessionUpdate")) != "usage_update":
+        return None
+    return TokenUsage.from_dict({
+        "input_tokens": update.get("inputTokens"),
+        "output_tokens": update.get("outputTokens"),
+        "reasoning_output_tokens": update.get("reasoningOutputTokens"),
+        "total_tokens": update.get("totalTokens"),
+    })
 
 
 def _extract_coco_acp_last_chunk_flag(update: dict[str, object]) -> bool:

@@ -1747,6 +1747,89 @@ class ClaudeCodeRunnerTest(unittest.TestCase):
             self.assertIsInstance(env, dict)
             self.assertEqual(env["IS_SANDBOX"], "1")
 
+    def test_claude_runner_surfaces_token_usage_from_assistant_event(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = ClaudeCodeRunner(command="claude", workdir=tmpdir, model="sonnet")
+            task = Task(
+                id="claude_task_usage",
+                requester_id="ou_demo",
+                prompt="count tokens",
+                source="feishu",
+                status=TaskStatus.RUNNING,
+                agent_backend="claude_code",
+            )
+
+            class FakeStdout:
+                def __init__(self) -> None:
+                    self.exhausted = False
+                    self._lines = iter(
+                        [
+                            '{"type":"control_response","response":{"subtype":"success","request_id":"req_1_deadbeef","response":{"ok":true}}}\n',
+                            '{"type":"system","subtype":"init","session_id":"session_usage"}\n',
+                            '{"type":"stream_event","session_id":"session_usage","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Hello"}}}\n',
+                            '{"type":"assistant","session_id":"session_usage","message":{"role":"assistant","content":[{"type":"text","text":"Hello"}],"stop_reason":"end_turn","usage":{"input_tokens":500,"output_tokens":120}}}\n',
+                            '{"type":"result","subtype":"success","result":"Hello","session_id":"session_usage"}\n',
+                        ]
+                    )
+
+                def readline(self) -> str:
+                    line = next(self._lines, "")
+                    if not line:
+                        self.exhausted = True
+                    return line
+
+            class FakeStderr:
+                exhausted = True
+
+                def readline(self) -> str:
+                    return ""
+
+            class FakeStdin:
+                def write(self, _text: str) -> int:
+                    return 0
+
+                def flush(self) -> None:
+                    return None
+
+                def close(self) -> None:
+                    return None
+
+            class FakePopen:
+                def __init__(self) -> None:
+                    self.stdin = FakeStdin()
+                    self.stdout = FakeStdout()
+                    self.stderr = FakeStderr()
+                    self.returncode = 0
+                    self.killed = False
+
+                def poll(self):  # type: ignore[no-untyped-def]
+                    return 0 if self.killed or self.stdout.exhausted else None
+
+                def kill(self) -> None:
+                    self.killed = True
+
+            fake_process = FakePopen()
+            with (
+                patch("poco.agent.runner.shutil.which", return_value="/Users/yihanc/.local/bin/claude"),
+                patch("poco.agent.runner.subprocess.Popen", return_value=fake_process),
+                patch(
+                    "poco.agent.runner.select.select",
+                    side_effect=lambda readers, *_args: ([reader for reader in readers if not getattr(reader, "exhausted", True)], [], []),
+                ),
+                patch("poco.agent.runner.os.urandom", return_value=b"\xde\xad\xbe\xef"),
+            ):
+                updates = list(runner.start(task))
+
+            usage_updates = [u for u in updates if u.last_token_usage is not None]
+            self.assertGreaterEqual(len(usage_updates), 1)
+            last_usage = usage_updates[0].last_token_usage
+            self.assertEqual(last_usage.input_tokens, 500)
+            self.assertEqual(last_usage.output_tokens, 120)
+
+            self.assertEqual(updates[-1].kind, "completed")
+            self.assertIsNotNone(updates[-1].last_token_usage)
+            self.assertEqual(updates[-1].last_token_usage.input_tokens, 500)
+
     def test_claude_runner_steers_active_session(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             runner = ClaudeCodeRunner(command="claude", workdir=tmpdir, model="sonnet")
@@ -3095,6 +3178,91 @@ class CocoRunnerTest(unittest.TestCase):
 
             self.assertEqual(updates[-1].kind, "failed")
             self.assertIn("timed out", updates[-1].message.lower())
+
+    def test_coco_runner_surfaces_token_usage_from_usage_update(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runner = CocoRunner(command="traecli", workdir=tmpdir, model="GPT-5.2")
+            task = Task(
+                id="coco_task_usage",
+                requester_id="ou_demo",
+                prompt="count tokens",
+                source="feishu",
+                status=TaskStatus.RUNNING,
+                agent_backend="coco",
+            )
+            fake_process = MagicMock()
+
+            class FakeSession:
+                def __init__(self, **kwargs):  # type: ignore[no-untyped-def]
+                    self.reads = iter(
+                        [
+                            {
+                                "method": "session/update",
+                                "params": {
+                                    "sessionId": "session_usage",
+                                    "update": {
+                                        "sessionUpdate": "agent_message_chunk",
+                                        "_meta": {"id": "msg_1", "type": "full", "lastChunk": False},
+                                        "content": {"type": "text", "text": "Hello"},
+                                    },
+                                },
+                            },
+                            {
+                                "method": "session/update",
+                                "params": {
+                                    "sessionId": "session_usage",
+                                    "update": {
+                                        "sessionUpdate": "usage_update",
+                                        "stopReason": "end_turn",
+                                        "inputTokens": 800,
+                                        "outputTokens": 250,
+                                        "totalTokens": 1050,
+                                    },
+                                },
+                            },
+                        ]
+                    )
+
+                def initialize(self) -> None:
+                    return None
+
+                def open_session(self, *, session_id: str | None, cwd: str) -> dict[str, object]:
+                    return {"sessionId": "session_usage"}
+
+                def set_mode(self, *, session_id: str, mode_id: str) -> None:
+                    return None
+
+                def set_model(self, *, session_id: str, model_id: str) -> None:
+                    return None
+
+                def start_prompt(self, *, session_id: str, prompt: str) -> int:
+                    return 77
+
+                def drain_pending_notifications(self) -> list[dict[str, object]]:
+                    return []
+
+                def read_next_message(self, **kwargs) -> dict[str, object] | None:
+                    return next(self.reads, None)
+
+                def is_process_closed(self) -> bool:
+                    return True
+
+                def failure_detail(self, default: str) -> str:
+                    return default
+
+            with (
+                patch("poco.agent.runner.shutil.which", return_value="/Users/bytedance/.local/bin/traecli"),
+                patch("poco.agent.runner.subprocess.Popen", return_value=fake_process),
+                patch("poco.agent.coco._TraeAcpClient", FakeSession),
+            ):
+                updates = list(runner.start(task))
+
+            self.assertEqual(updates[-1].kind, "completed")
+            usage = updates[-1].last_token_usage
+            self.assertIsNotNone(usage)
+            self.assertEqual(usage.input_tokens, 800)
+            self.assertEqual(usage.output_tokens, 250)
+            self.assertEqual(usage.total_tokens, 1050)
 
     def test_coco_runner_reuses_warm_transport_for_same_workdir(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
