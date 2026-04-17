@@ -228,10 +228,12 @@ class ClaudeCodeRunner:
                 self._active_sessions[task.id] = active_session
 
             completion_gate = CompletionGate(settle_seconds=self._completion_settle_seconds)
+            main_stdout_eof = False
+            main_stderr_eof = False
             while True:
                 if self._consume_cancelled(task.id):
                     return
-                if process.poll() is not None and not _has_ready_stream(stdout, stderr):
+                if process.poll() is not None and main_stdout_eof and main_stderr_eof:
                     break
                 remaining = max(0.0, deadline - monotonic())
                 if remaining == 0.0:
@@ -263,6 +265,10 @@ class ClaudeCodeRunner:
                 for stream in ready:
                     line = stream.readline()
                     if not line:
+                        if stream is stdout:
+                            main_stdout_eof = True
+                        else:
+                            main_stderr_eof = True
                         continue
                     if stream is stderr:
                         stderr_lines.append(line)
@@ -474,6 +480,8 @@ class ClaudeCodeRunner:
                 },
             )
         deadline = monotonic() + timeout
+        stdout_eof = False
+        stderr_eof = False
         while True:
             if pending.event.is_set():
                 break
@@ -482,7 +490,7 @@ class ClaudeCodeRunner:
                 with active.io_lock:
                     active.pending_controls.pop(request_id, None)
                 raise RuntimeError(f"Claude Code control request timed out: {request.get('subtype')}")
-            if active.process.poll() is not None and not _has_ready_stream(stdout, stderr):
+            if active.process.poll() is not None and stdout_eof and stderr_eof:
                 with active.io_lock:
                     active.pending_controls.pop(request_id, None)
                 stderr_text = "".join(stderr_lines).strip()
@@ -496,6 +504,10 @@ class ClaudeCodeRunner:
             for stream in ready:
                 line = stream.readline()
                 if not line:
+                    if stream is stdout:
+                        stdout_eof = True
+                    else:
+                        stderr_eof = True
                     continue
                 if stream is stderr:
                     stderr_lines.append(line)
