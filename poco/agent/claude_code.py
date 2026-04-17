@@ -344,6 +344,11 @@ class ClaudeCodeRunner:
                                 or final_text
                                 or "Claude Code completed without a final response body."
                             )
+                            result_usage = event.get("usage")
+                            if isinstance(result_usage, dict):
+                                final_usage = _normalize_claude_usage(result_usage)
+                                if final_usage is not None:
+                                    last_seen_usage = final_usage
                             _LOGGER.info("claude_code task %s completed via result event", task.id)
                             yield AgentRunUpdate(
                                 kind="completed",
@@ -730,4 +735,34 @@ def _extract_claude_message_usage(message: dict[str, object]) -> TokenUsage | No
     usage = message.get("usage")
     if not isinstance(usage, dict):
         return None
-    return TokenUsage.from_dict(usage)
+    return _normalize_claude_usage(usage)
+
+
+def _normalize_claude_usage(usage: dict[str, object]) -> TokenUsage | None:
+    cached = (
+        _coerce_int(usage.get("cached_input_tokens"))
+        or _coerce_int(usage.get("cache_read_input_tokens"))
+    )
+    input_tokens = _coerce_int(usage.get("input_tokens"))
+    output_tokens = _coerce_int(usage.get("output_tokens"))
+    total = _coerce_int(usage.get("total_tokens"))
+    if total is None and input_tokens is not None and output_tokens is not None:
+        raw_total = (input_tokens or 0) + (cached or 0) + (output_tokens or 0)
+        total = raw_total if raw_total > 0 else None
+    result = TokenUsage(
+        input_tokens=input_tokens,
+        cached_input_tokens=cached,
+        output_tokens=output_tokens,
+        total_tokens=total,
+    )
+    return None if result.is_empty() else result
+
+
+def _coerce_int(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    return None
